@@ -39,10 +39,12 @@ AP_HELPER="<skill-directory>/scripts/agent-profiles"
 # Health check and environment diagnosis (implemented in ticket 01)
 bash "$AP_HELPER" doctor [--json] [--agent claude|codex|agy|opencode] [--profile NAME]
 
+# Profile initialization, listing, and execution (implemented in ticket 02)
+bash "$AP_HELPER" init [--profile NAME]
+bash "$AP_HELPER" list [--json]
+bash "$AP_HELPER" run [--profile NAME] -- COMMAND [ARGS...]
+
 # Planned future commands (reserved for subsequent delivery tickets):
-# bash "$AP_HELPER" init [--profile NAME]
-# bash "$AP_HELPER" list [--json]
-# bash "$AP_HELPER" run [--profile NAME] -- COMMAND [ARGS...]
 # bash "$AP_HELPER" setup [--preview | --apply]
 # bash "$AP_HELPER" reset --profile NAME [--yes]
 # bash "$AP_HELPER" remove --profile NAME [--yes]
