@@ -51,10 +51,10 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | 01 | Installable skill and readiness | None | Verified and integrated | `6776906` |
 | 02 | Named Linux profile runtime | 01 | Verified and integrated | `c6817cb` |
 | 03 | Machine setup and mise tasks | 02 | Claimed | - |
-| 04 | Claude Code integration | 02 | Claimed | - |
+| 04 | Claude Code integration | 02 | Verified and integrated | `376201d` |
 | 05 | Codex CLI integration | 02 | Verified and integrated | `5eed95d` |
 | 06 | Antigravity CLI integration | 02 | Claimed | - |
-| 07 | OpenCode integration | 02 | Ready | - |
+| 07 | OpenCode integration | 02 | Claimed | - |
 | 08 | Lifecycle and migration | 02 | Verified and integrated | `8566f03` |
 | 09 | Public Linux release readiness | 03-08 | Blocked | - |
 
@@ -74,3 +74,7 @@ The effective default is `deepseek/deepseek-flash` with high thinking.
 The original worktrees, partial changes, reports, and independent evidence
 remain preserved. Tickets 05 and 08 passed their independent gates and serial
 integration CI; the combined integration suite has 165 tests with no skips.
+
+Claude integration passed the combined 191-test suite, lint and both installation
+modes at `376201d`. Antigravity is independently verified and merged; its combined
+integration gate remains in progress. OpenCode is claimed for the next Pi worker.
