@@ -47,8 +47,8 @@ except Exception:
   fi
 
   probe_raw=$(
-    cd "$temp_dir" &&
-      env -i PATH="$PATH" \
+    cd "$temp_dir" \
+      && env -i PATH="$PATH" \
         "${safe_mise_env[@]}" \
         HOME="$temp_dir" \
         XDG_CONFIG_HOME="$temp_dir/.config" \

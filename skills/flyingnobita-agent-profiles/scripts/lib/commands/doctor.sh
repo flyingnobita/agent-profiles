@@ -20,49 +20,49 @@ ap_cmd_doctor() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-    --json)
-      OUTPUT_JSON=1
-      shift
-      ;;
-    --agent)
-      [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--agent requires an argument"
-      local agent_arg="$2"
-      case "$agent_arg" in
-      claude | codex | agy | opencode)
-        SELECTED_AGENTS+=("$agent_arg")
+      --json)
+        OUTPUT_JSON=1
+        shift
+        ;;
+      --agent)
+        [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--agent requires an argument"
+        local agent_arg="$2"
+        case "$agent_arg" in
+          claude | codex | agy | opencode)
+            SELECTED_AGENTS+=("$agent_arg")
+            ;;
+          *)
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ;;
+        esac
+        shift 2
+        ;;
+      --agent=*)
+        local agent_arg="${1#*=}"
+        case "$agent_arg" in
+          claude | codex | agy | opencode)
+            SELECTED_AGENTS+=("$agent_arg")
+            ;;
+          *)
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ;;
+        esac
+        shift
+        ;;
+      --profile)
+        [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--profile requires an argument"
+        PROFILE_SPECIFIED=1
+        SELECTED_PROFILE="$2"
+        shift 2
+        ;;
+      --profile=*)
+        PROFILE_SPECIFIED=1
+        SELECTED_PROFILE="${1#*=}"
+        shift
         ;;
       *)
-        ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+        ap_die "$EX_USAGE" "unknown doctor option: $1"
         ;;
-      esac
-      shift 2
-      ;;
-    --agent=*)
-      local agent_arg="${1#*=}"
-      case "$agent_arg" in
-      claude | codex | agy | opencode)
-        SELECTED_AGENTS+=("$agent_arg")
-        ;;
-      *)
-        ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
-        ;;
-      esac
-      shift
-      ;;
-    --profile)
-      [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--profile requires an argument"
-      PROFILE_SPECIFIED=1
-      SELECTED_PROFILE="$2"
-      shift 2
-      ;;
-    --profile=*)
-      PROFILE_SPECIFIED=1
-      SELECTED_PROFILE="${1#*=}"
-      shift
-      ;;
-    *)
-      ap_die "$EX_USAGE" "unknown doctor option: $1"
-      ;;
     esac
   done
 
