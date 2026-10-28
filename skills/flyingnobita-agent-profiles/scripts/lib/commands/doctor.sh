@@ -3,9 +3,12 @@
 # shellcheck disable=SC2154
 
 ap_cmd_doctor() {
+  ap_require_python "$@"
+
   local OUTPUT_JSON=0
   local SELECTED_AGENTS=()
   local SELECTED_PROFILE=""
+  local PROFILE_SPECIFIED=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -15,19 +18,37 @@ ap_cmd_doctor() {
         ;;
       --agent)
         [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--agent requires an argument"
-        SELECTED_AGENTS+=("$2")
+        local agent_arg="$2"
+        case "$agent_arg" in
+          claude | codex | agy | opencode)
+            SELECTED_AGENTS+=("$agent_arg")
+            ;;
+          *)
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ;;
+        esac
         shift 2
         ;;
       --agent=*)
-        SELECTED_AGENTS+=("${1#*=}")
+        local agent_arg="${1#*=}"
+        case "$agent_arg" in
+          claude | codex | agy | opencode)
+            SELECTED_AGENTS+=("$agent_arg")
+            ;;
+          *)
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ;;
+        esac
         shift
         ;;
       --profile)
         [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--profile requires an argument"
+        PROFILE_SPECIFIED=1
         SELECTED_PROFILE="$2"
         shift 2
         ;;
       --profile=*)
+        PROFILE_SPECIFIED=1
         SELECTED_PROFILE="${1#*=}"
         shift
         ;;
@@ -36,6 +57,15 @@ ap_cmd_doctor() {
         ;;
     esac
   done
+
+  if [[ $PROFILE_SPECIFIED -eq 1 ]]; then
+    if [[ -z "$SELECTED_PROFILE" ]]; then
+      ap_die "$EX_USAGE" "--profile requires a non-empty profile name"
+    fi
+    if [[ ! "$SELECTED_PROFILE" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+      ap_die "$EX_DATAERR" "invalid profile name: $SELECTED_PROFILE. Names must match ^[a-z][a-z0-9_-]{0,31}$"
+    fi
+  fi
 
   # Run pluggable doctor checks
   local doctor_d="$LIB_DIR/doctor.d"

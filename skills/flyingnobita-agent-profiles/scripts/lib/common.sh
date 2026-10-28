@@ -24,6 +24,24 @@ ap_warn() {
   printf "agent-profiles: warning: %s\n" "$*" >&2
 }
 
+ap_require_python() {
+  local json_mode=0
+  for arg in "$@"; do
+    if [[ "$arg" == "--json" ]]; then
+      json_mode=1
+      break
+    fi
+  done
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf "agent-profiles: error: python3 is required but not found on PATH. Install python3 via your system package manager.\n" >&2
+    if [[ $json_mode -eq 1 ]]; then
+      printf '{\n  "version": "0.1.0",\n  "status": "unavailable",\n  "error": "python3 is required but not found on PATH"\n}\n'
+    fi
+    exit "$EX_UNAVAILABLE"
+  fi
+}
+
 ap_json_escape() {
   python3 -c 'import json, sys; print(json.dumps(sys.argv[1])[1:-1])' "$1"
 }
