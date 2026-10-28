@@ -81,7 +81,7 @@ The default backup root is `${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-a
 agent-profiles migrate --yes --backup-root /path/outside/the/checkout
 ```
 
-The backup root and the per-run directory `<repo>-<sha8>-<UTC>` must be outside the checkout, owned by you, and not group or world writable. A per-run directory is created once with mode 0700 and is never reused. The recorded backup contains a `manifest.json` (mode 0600) listing every path, type, mode, size, symlink target, and SHA-256 digest, plus a copy of the operation journal. Contents are never printed.
+The backup root and the per-run directory `<repo>-<sha8>-<UTC>` must be outside the checkout, owned by you, and not group or world writable. A per-run directory is created once with mode 0700 and is never reused. Before the verified checkpoint the helper writes `content-manifest.json` (mode 0600), a durable per-source list of every path, type, mode, size, symlink target, and SHA-256 digest. The finished backup also contains a `manifest.json` and a copy of the operation journal. Contents are never printed.
 
 On the same filesystem the legacy tree is renamed into the backup, which is atomic. Across filesystems the tree is copied with `cp -a --no-dereference`, compared file-by-file and symlink-by-symlink against the source, flushed to disk, and only then are the originals removed. A mismatch aborts the migration with exit 77 and leaves the originals intact.
 
@@ -109,6 +109,8 @@ Recovery takes the same locks, re-validates every recorded path (profile path, t
 
 - Reset: `planned -> trashed -> rebuilt -> trash-deleted`. Remove: `planned -> trashed -> trash-deleted`. A `planned` operation with the profile still intact is aborted and cleared; later states roll forward.
 - Migrate: `planned -> staged -> verified -> originals-removed -> rebuilt`. Below `verified`, staging is deleted and originals stay intact. From `verified`, recovery completes moves, removes copied originals, writes the manifest, and initializes the target profiles.
+
+Recovery never treats the journal state as proof of integrity. Before it moves anything or deletes a remaining original, it revalidates every staged copy, every existing legacy destination, and every original that will be removed against the durable content manifest. A corrupt or mismatched copy, a missing or partial backup, an original changed since verification, or both source and destination present exits 77 and preserves the original data plus the journal for manual recovery.
 
 ## Locks and Concurrency
 
