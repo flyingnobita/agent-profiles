@@ -288,6 +288,10 @@ ap_live_run_offline_in_profile() {
   env -i "${env_args[@]}" bwrap --dev-bind / / --unshare-net -- bash "$helper" run --profile "$profile" -- "$@"
 }
 
+# Usage: ap_live_cleanup_pgid <pgid> <marker-file> <qa-profile-dir>
+# The marker must be written by ap_live_write_group_marker or
+# ap_live_spawn_test_process. Every group member must carry the caller's real
+# UID, and the profile marker must be present on a group member or descendant.
 ap_live_cleanup_pgid() {
   local pgid="${1:-}"
   local marker_file="${2:-}"

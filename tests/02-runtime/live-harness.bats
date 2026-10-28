@@ -109,7 +109,7 @@ force_stop_group() {
 
   # 3. Reject mismatched marker
   printf "99999\n" >"$marker_file"
-  run ap_live_cleanup_pgid 88888 "$marker_file"
+  run ap_live_cleanup_pgid 88888 "$marker_file" "$TEST_TMPDIR/test-profile"
   assert_failure
 
   # 4. Successfully clean up test-spawned process group
