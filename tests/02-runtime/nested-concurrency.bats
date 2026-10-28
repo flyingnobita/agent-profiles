@@ -49,6 +49,48 @@ print("NESTED_SAME_OK")
   assert_output_contains "nested execution"
 }
 
+@test "nested: different checkout with same profile name refuses with exit 75" {
+  local repo_a="$TEST_TMPDIR/repo-cross-a"
+  local repo_b="$TEST_TMPDIR/repo-cross-b"
+  create_fixture_repo "$repo_a"
+  create_fixture_repo "$repo_b"
+
+  cd "$repo_a"
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+
+  cd "$repo_b"
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+
+  # From inside repo_a's container, cd to repo_b and attempt to run default
+  cd "$repo_a"
+  run bash "$AP_HELPER" run --profile default -- sh -c '
+    cd "'"$repo_b"'"
+    bash "'"$AP_HELPER"'" run --profile default -- echo "should_not_run"
+  '
+  assert_failure
+  assert_equal "$status" 75
+  assert_output_contains "nested execution"
+}
+
+@test "nested: operates correctly in git checkout containing spaces in path" {
+  local repo_spaces="$TEST_TMPDIR/repo with spaces in path"
+  create_fixture_repo "$repo_spaces"
+  cd "$repo_spaces"
+
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+
+  run bash "$AP_HELPER" run --profile default -- bash "$AP_HELPER" run --profile default -- python3 -c '
+import os
+assert "repo with spaces in path" in os.environ["AGENT_PROFILES_DIR"]
+print("SPACES_OK")
+'
+  assert_success
+  assert_output_contains "SPACES_OK"
+}
+
 @test "nested: spurious inherited AGENT_PROFILES_DIR without live mount is ignored and reset" {
   local repo="$TEST_TMPDIR/repo-nested-spurious"
   create_fixture_repo "$repo"
