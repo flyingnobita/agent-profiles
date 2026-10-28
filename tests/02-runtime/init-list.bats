@@ -96,6 +96,7 @@ teardown() {
   # Check info/exclude has /.agent-profiles/ anchored entry
   local exclude_file
   exclude_file=$(git -C "$repo" rev-parse --git-path info/exclude)
+  [[ "$exclude_file" != /* ]] && exclude_file="$repo/$exclude_file"
   assert_file_exists "$exclude_file"
   run grep -Fx '/.agent-profiles/' "$exclude_file"
   assert_success
@@ -144,6 +145,7 @@ teardown() {
   # Check exclude has exactly one /.agent-profiles/ entry
   local exclude_file
   exclude_file=$(git -C "$repo" rev-parse --git-path info/exclude)
+  [[ "$exclude_file" != /* ]] && exclude_file="$repo/$exclude_file"
   local count
   count=$(grep -Fxc '/.agent-profiles/' "$exclude_file")
   assert_equal "$count" "1"
@@ -171,9 +173,9 @@ teardown() {
   assert_output_contains "alpha"
   assert_output_contains "beta"
   assert_output_contains "default"
-  refute_output_contains ".locks"
-  refute_output_contains ".journal"
-  refute_output_contains ".trash"
+  assert_output_not_contains ".locks"
+  assert_output_not_contains ".journal"
+  assert_output_not_contains ".trash"
 
   # Test json list
   run bash "$AP_HELPER" list --json
