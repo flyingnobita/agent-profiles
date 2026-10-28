@@ -102,8 +102,9 @@ In 2.1.312 this prints JSON (and exits 1 when logged out) with `loggedIn`,
   directory, not in the host home.
 
 `agent-profiles doctor --agent claude --profile NAME` reports the profile name,
-initialization state, config directory and an auth classification. It reads no
-credential contents and never prints environment values. A profile becomes
+initialization state, config directory and an auth classification using
+`logged_in`, `status` and `method` (`none`, `environment`, `profile_stored`). It
+reads no credential contents and never prints environment values. A profile becomes
 logged in only through the normal `claude auth login`, `claude setup-token`, or
 an explicitly inherited environment variable; the helper never copies, links or
 makes host credential files writable.
