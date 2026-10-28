@@ -142,3 +142,52 @@ JOURNAL
   kill -TERM -"$holder_pid" 2>/dev/null || true
   wait "$holder_pid" 2>/dev/null || true
 }
+
+@test "ordering: a profile that disappears before the lock is refused without leaving a journal" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile raceprof
+  assert_success
+  echo "keep" >"$fixture_repo/.agent-profiles/raceprof/home/keep.txt"
+
+  # A PATH wrapper interleaves a competing removal exactly when the first
+  # command is about to acquire the profile lock, after its pre-checks.
+  local wrap_dir="$TEST_TMPDIR/flock-wrap"
+  mkdir -p "$wrap_dir"
+  local real_flock
+  real_flock=$(command -v flock)
+  cat >"$wrap_dir/flock" <<WRAP
+#!/usr/bin/env bash
+last="\${*: -1}"
+if [[ "\$last" =~ ^[0-9]+\$ ]]; then
+  target=\$(readlink "/proc/self/fd/\$last" 2>/dev/null || true)
+  if [[ -n "\${RACE_TRIGGER:-}" && "\$target" == *"/.locks/\${RACE_PROFILE}.lock" && ! -e "\$RACE_TRIGGER" ]]; then
+    : >"\$RACE_TRIGGER"
+    rm -rf "\$RACE_REPO/.agent-profiles/\$RACE_PROFILE"
+  fi
+fi
+exec "$real_flock" "\$@"
+WRAP
+  chmod +x "$wrap_dir/flock"
+
+  local trigger="$TEST_TMPDIR/race-triggered"
+  run env PATH="$wrap_dir:$PATH" \
+    RACE_REPO="$fixture_repo" RACE_PROFILE="raceprof" RACE_TRIGGER="$trigger" \
+    bash "$AP_HELPER" remove --profile raceprof --yes
+  assert_failure 66
+  assert_output_contains "not initialized"
+  assert_file_exists "$trigger"
+
+  # No journal and no trash were created for the vanished profile, so the
+  # checkout stays usable instead of blocking on an unrecoverable operation.
+  run bash -c 'find "$1" -name "*.json" | grep .' _ "$fixture_repo/.agent-profiles/.journal"
+  assert_failure
+  [[ -z "$(ls -A "$fixture_repo/.agent-profiles/.trash" 2>/dev/null)" ]]
+
+  run bash "$AP_HELPER" init --profile raceprof
+  assert_success
+  run bash "$AP_HELPER" run --profile raceprof -- true
+  assert_success
+}
