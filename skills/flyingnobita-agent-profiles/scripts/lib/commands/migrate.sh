@@ -173,10 +173,11 @@ ap_migrate_build_extra_json() {
     sources_json+="{\"path\":\"$(ap_json_escape "${MIG_SOURCE_PATHS[index]}")\",\"label\":\"$(ap_json_escape "${MIG_SOURCE_LABELS[index]}")\",\"mode\":\"${MIG_SOURCE_MODES[index]}\"}"
   done
 
-  printf '{"backup_dir":"%s","staged_dir":"%s","legacy_dir":"%s","migrated_profiles":[%s],"sources":[%s]}' \
+  printf '{"backup_dir":"%s","staged_dir":"%s","legacy_dir":"%s","content_manifest":"%s","migrated_profiles":[%s],"sources":[%s]}' \
     "$(ap_json_escape "$backup_dir")" \
     "$(ap_json_escape "$staged_dir")" \
     "$(ap_json_escape "$legacy_dir")" \
+    "$(ap_json_escape "$backup_dir/content-manifest.json")" \
     "$profiles_json" \
     "$sources_json"
 }
@@ -370,6 +371,21 @@ ap_cmd_migrate() {
 
   ap_fsync_tree "$staged_dir" \
     || ap_migrate_abort_copy "$run_backup" "$journal_file" "unable to flush staged legacy data to disk; original data preserved"
+
+  local content_manifest="$run_backup/content-manifest.json"
+  local manifest_pairs=()
+  local index
+  for index in "${!MIG_SOURCE_PATHS[@]}"; do
+    local manifest_tree
+    if [[ "${MIG_SOURCE_MODES[index]}" == "copy" ]]; then
+      manifest_tree="$staged_dir/${MIG_SOURCE_LABELS[index]}"
+    else
+      manifest_tree="${MIG_SOURCE_PATHS[index]}"
+    fi
+    manifest_pairs+=("${MIG_SOURCE_LABELS[index]}" "$manifest_tree")
+  done
+  ap_write_content_manifest "$content_manifest" "${manifest_pairs[@]}" \
+    || ap_migrate_abort_copy "$run_backup" "$journal_file" "unable to write durable content manifest; original data preserved"
 
   ap_record_journal "$journal_file" "migrate" "all" "staged" "$repo_root" "" "$assume_unrelated" "$extra_json"
   ap_copy_journal_to_backup "$journal_file" "$run_backup"

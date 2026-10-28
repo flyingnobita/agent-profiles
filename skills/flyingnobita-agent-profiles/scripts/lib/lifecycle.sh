@@ -164,7 +164,7 @@ ap_copy_journal_to_backup() {
 
 # Reads a journal into NUL-separated fields: op, profile, state, profile_dir,
 # trash_path, assume_unrelated CSV, backup_dir, staged_dir, legacy_dir,
-# migrated_profiles CSV.
+# migrated_profiles CSV, content_manifest.
 ap_read_journal_fields() {
   local journal_file="$1"
 
@@ -185,6 +185,7 @@ fields = [
     str(data.get("staged_dir", "")),
     str(data.get("legacy_dir", "")),
     " ".join(str(p) for p in data.get("migrated_profiles", [])),
+    str(data.get("content_manifest", "")),
 ]
 sys.stdout.buffer.write(("\0".join(fields) + "\0").encode())
 PY
@@ -515,6 +516,137 @@ if found:
     for path in found:
         print(f"unsafe special file in legacy data: {path}", file=sys.stderr)
     raise SystemExit(1)
+PY
+}
+
+# Writes a durable per-source content manifest for the verified migration
+# backup. Arguments are alternating label and tree path pairs.
+ap_write_content_manifest() {
+  local destination="$1"
+  shift
+
+  python3 - "$destination" "$@" <<'PY'
+import hashlib, json, os, stat, sys
+
+
+def manifest(root):
+    records = {}
+    for current, dirs, files in os.walk(root, followlinks=False):
+        rel_dir = os.path.relpath(current, root)
+        if rel_dir != ".":
+            st = os.lstat(current)
+            records[rel_dir] = {"type": "dir", "mode": stat.S_IMODE(st.st_mode)}
+        for name in list(dirs) + list(files):
+            path = os.path.join(current, name)
+            rel = os.path.relpath(path, root)
+            if rel in records:
+                continue
+            st = os.lstat(path)
+            mode = stat.S_IMODE(st.st_mode)
+            if stat.S_ISLNK(st.st_mode):
+                records[rel] = {"type": "link", "mode": mode, "target": os.readlink(path)}
+            elif stat.S_ISDIR(st.st_mode):
+                records[rel] = {"type": "dir", "mode": mode}
+            elif stat.S_ISREG(st.st_mode):
+                digest = hashlib.sha256()
+                with open(path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(65536), b""):
+                        digest.update(chunk)
+                records[rel] = {"type": "file", "mode": mode, "size": st.st_size, "sha256": digest.hexdigest()}
+            else:
+                records[rel] = {"type": "other", "mode": mode}
+    return records
+
+
+destination = sys.argv[1]
+pairs = sys.argv[2:]
+if len(pairs) % 2 != 0:
+    raise SystemExit("content manifest requires label/tree pairs")
+
+sources = {}
+for index in range(0, len(pairs), 2):
+    sources[pairs[index]] = manifest(pairs[index + 1])
+
+data = {"version": 1, "sources": sources}
+tmp_path = destination + ".tmp"
+with open(tmp_path, "w") as handle:
+    json.dump(data, handle, indent=2)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(tmp_path, 0o600)
+os.replace(tmp_path, destination)
+
+dir_fd = os.open(os.path.dirname(destination) or ".", os.O_RDONLY)
+try:
+    os.fsync(dir_fd)
+finally:
+    os.close(dir_fd)
+PY
+}
+
+# Compares a tree against one label in a durable content manifest.
+# Exit 0: match; 1: mismatch; 2: manifest or label missing/unreadable.
+ap_verify_tree_matches_manifest() {
+  local manifest_file="$1"
+  local label="$2"
+  local tree="$3"
+
+  python3 - "$manifest_file" "$label" "$tree" <<'PY'
+import hashlib, json, os, stat, sys
+
+
+def manifest(root):
+    records = {}
+    for current, dirs, files in os.walk(root, followlinks=False):
+        rel_dir = os.path.relpath(current, root)
+        if rel_dir != ".":
+            st = os.lstat(current)
+            records[rel_dir] = {"type": "dir", "mode": stat.S_IMODE(st.st_mode)}
+        for name in list(dirs) + list(files):
+            path = os.path.join(current, name)
+            rel = os.path.relpath(path, root)
+            if rel in records:
+                continue
+            st = os.lstat(path)
+            mode = stat.S_IMODE(st.st_mode)
+            if stat.S_ISLNK(st.st_mode):
+                records[rel] = {"type": "link", "mode": mode, "target": os.readlink(path)}
+            elif stat.S_ISDIR(st.st_mode):
+                records[rel] = {"type": "dir", "mode": mode}
+            elif stat.S_ISREG(st.st_mode):
+                digest = hashlib.sha256()
+                with open(path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(65536), b""):
+                        digest.update(chunk)
+                records[rel] = {"type": "file", "mode": mode, "size": st.st_size, "sha256": digest.hexdigest()}
+            else:
+                records[rel] = {"type": "other", "mode": mode}
+    return records
+
+
+try:
+    with open(sys.argv[1], "r") as handle:
+        data = json.load(handle)
+except Exception:
+    print("MISSING-MANIFEST")
+    raise SystemExit(2)
+
+sources = data.get("sources")
+if data.get("version") != 1 or not isinstance(sources, dict) or sys.argv[2] not in sources:
+    print("MISSING-LABEL")
+    raise SystemExit(2)
+
+try:
+    actual = manifest(sys.argv[3])
+except OSError as exc:
+    print(f"UNREADABLE-TREE: {exc}")
+    raise SystemExit(1)
+
+if actual != sources[sys.argv[2]]:
+    print("MISMATCH")
+    raise SystemExit(1)
+
+print("MATCH")
 PY
 }
 

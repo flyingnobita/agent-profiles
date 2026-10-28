@@ -144,6 +144,65 @@ ap_recover_finish_migrate() {
   done
 }
 
+ap_recover_validate_content_manifest() {
+  local manifest="$1"
+  local backup_dir="$2"
+
+  if [[ -z "$manifest" ]]; then
+    ap_die "$EX_REFUSED" "interrupted migrate journal has no durable content manifest; original data and journal preserved for manual recovery"
+  fi
+  if [[ "$manifest" != "$backup_dir"/* ]]; then
+    ap_die "$EX_LAYOUT" "unsafe content manifest path '$manifest' (not under '$backup_dir')"
+  fi
+  ap_assert_no_symlink_components "$backup_dir" "$manifest"
+
+  if [[ -L "$manifest" || ! -f "$manifest" ]]; then
+    ap_die "$EX_REFUSED" "durable content manifest '$manifest' is missing; original data and journal preserved for manual recovery"
+  fi
+
+  local owner mode
+  owner=$(stat -c "%u" "$manifest" 2>/dev/null || true)
+  if [[ "$owner" != "$(id -u)" ]]; then
+    ap_die "$EX_LAYOUT" "content manifest '$manifest' is not owned by the current user"
+  fi
+  mode=$(stat -c "%a" "$manifest" 2>/dev/null || true)
+  if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
+    ap_die "$EX_LAYOUT" "content manifest '$manifest' is group or world writable (mode $mode)"
+  fi
+
+  if ! python3 - "$manifest" <<'PY'
+import json, sys
+
+with open(sys.argv[1], "r") as handle:
+    data = json.load(handle)
+if data.get("version") != 1 or not isinstance(data.get("sources"), dict):
+    raise SystemExit(1)
+PY
+  then
+    ap_die "$EX_REFUSED" "durable content manifest '$manifest' is unreadable; original data and journal preserved for manual recovery"
+  fi
+}
+
+ap_recover_verify_backup_content() {
+  local manifest="$1"
+  local label="$2"
+  local tree="$3"
+  local context="$4"
+
+  local verify_status=0
+  ap_verify_tree_matches_manifest "$manifest" "$label" "$tree" >/dev/null 2>&1 || verify_status=$?
+
+  case "$verify_status" in
+    0) return 0 ;;
+    2)
+      ap_die "$EX_REFUSED" "durable content manifest has no usable record for '$label' ($context); original data and journal preserved for manual recovery"
+      ;;
+    *)
+      ap_die "$EX_REFUSED" "verified backup content for '$label' is corrupt or does not match the durable content manifest ($context); original data and journal preserved for manual recovery"
+      ;;
+  esac
+}
+
 ap_recover_migrate_operation() {
   local repo_root="$1"
   local journal_file="$2"
@@ -152,6 +211,7 @@ ap_recover_migrate_operation() {
   local staged_dir="$5"
   local legacy_dir="$6"
   local profiles_csv="$7"
+  local content_manifest="$8"
 
   if [[ -z "$backup_dir" ]]; then
     ap_die "$EX_LAYOUT" "interrupted migrate journal has no recorded backup directory"
@@ -218,45 +278,89 @@ ap_recover_migrate_operation() {
       fi
       ;;
     verified | originals-removed | rebuilt)
+      # The state string alone is not integrity proof. Validate the durable
+      # content manifest and every tree that will be kept or deleted before
+      # any move or removal.
+      ap_recover_validate_content_manifest "$content_manifest" "$backup_dir"
+
       (umask 077 && mkdir -p "$legacy_dir" && chmod 700 "$legacy_dir")
 
+      local destination_present=()
+      local source_present=()
+      local staged_present=()
+      local final_destinations=()
       local index
+
+      # Phase 1: verify first, mutate second.
       for index in "${!source_paths[@]}"; do
         local source="${source_paths[index]}"
-        local destination="$legacy_dir/${source_labels[index]}"
-        (umask 077 && mkdir -p "$(dirname "$destination")")
+        local label="${source_labels[index]}"
+        local mode="${source_modes[index]}"
+        local destination="$legacy_dir/$label"
+        local staged="$staged_dir/$label"
 
-        if [[ "${source_modes[index]}" == "rename" ]]; then
-          if [[ -e "$source" || -L "$source" ]]; then
-            if [[ -e "$destination" || -L "$destination" ]]; then
-              ap_die "$EX_LAYOUT" "cannot complete migration: both '$source' and '$destination' exist"
-            fi
-            mv "$source" "$destination"
-          elif [[ ! -e "$destination" && ! -L "$destination" ]]; then
-            ap_die "$EX_LAYOUT" "cannot complete migration: '$source' and '$destination' are both missing"
+        local has_source=0
+        local has_staged=0
+        local has_destination=0
+        [[ -e "$source" || -L "$source" ]] && has_source=1
+        [[ -e "$staged" || -L "$staged" ]] && has_staged=1
+        [[ -e "$destination" || -L "$destination" ]] && has_destination=1
+
+        source_present+=("$has_source")
+        staged_present+=("$has_staged")
+        destination_present+=("$has_destination")
+        final_destinations+=("$destination")
+
+        if [[ $has_destination -eq 1 ]]; then
+          ap_recover_verify_backup_content "$content_manifest" "$label" "$destination" "existing legacy destination"
+          if [[ "$mode" == "rename" && $has_source -eq 1 ]]; then
+            ap_die "$EX_REFUSED" "cannot recover migrate: both source '$source' and destination '$destination' exist; original data and journal preserved for manual recovery"
           fi
+        elif [[ "$mode" == "rename" ]]; then
+          if [[ $has_source -eq 0 ]]; then
+            ap_die "$EX_REFUSED" "cannot recover migrate: source and destination for '$label' are both missing; original data and journal preserved for manual recovery"
+          fi
+          ap_recover_verify_backup_content "$content_manifest" "$label" "$source" "source tree"
+        elif [[ $has_staged -eq 1 ]]; then
+          ap_recover_verify_backup_content "$content_manifest" "$label" "$staged" "staged backup copy"
         else
-          if [[ -e "$destination" || -L "$destination" ]]; then
-            :
-          elif [[ -e "$staged_dir/${source_labels[index]}" || -L "$staged_dir/${source_labels[index]}" ]]; then
-            mv "$staged_dir/${source_labels[index]}" "$destination"
-          elif [[ -e "$source" || -L "$source" ]]; then
-            cp -a --no-dereference "$source" "$destination"
-            ap_verify_tree_copy "$source" "$destination" >/dev/null \
-              || ap_die "$EX_REFUSED" "checksum mismatch while recovering '$source'; inspect '$backup_dir' manually"
-          else
-            ap_die "$EX_LAYOUT" "cannot complete migration: '$source' and '$destination' are both missing"
-          fi
+          ap_die "$EX_REFUSED" "cannot recover migrate: verified backup content for '$label' is missing or partial; original data and journal preserved for manual recovery"
+        fi
+
+        if [[ $has_source -eq 1 && "$mode" == "copy" ]]; then
+          ap_recover_verify_backup_content "$content_manifest" "$label" "$source" "original changed since verification"
         fi
       done
 
-      local index
+      # Phase 2: every tree matched. Complete moves and remove verified originals.
       for index in "${!source_paths[@]}"; do
-        if [[ "${source_modes[index]}" == "copy" ]]; then
+        if [[ "${destination_present[index]}" == "1" ]]; then
+          continue
+        fi
+
+        local label="${source_labels[index]}"
+        local mode="${source_modes[index]}"
+        local destination="${final_destinations[index]}"
+        local source="${source_paths[index]}"
+        local staged="$staged_dir/$label"
+
+        (umask 077 && mkdir -p "$(dirname "$destination")")
+
+        if [[ "$mode" == "rename" ]]; then
+          mv "$source" "$destination"
+        elif [[ "${staged_present[index]}" == "1" ]]; then
+          mv "$staged" "$destination"
+        else
+          ap_die "$EX_REFUSED" "cannot recover migrate: verified backup content for '$label' is missing or partial; original data and journal preserved for manual recovery"
+        fi
+      done
+
+      for index in "${!source_paths[@]}"; do
+        if [[ "${source_modes[index]}" == "copy" && "${source_present[index]}" == "1" ]]; then
           rm -rf "${source_paths[index]}"
         fi
       done
-      rmdir "$staged_dir" 2>/dev/null || true
+      rm -rf "$staged_dir"
 
       ap_recover_finish_migrate "$repo_root" "$backup_dir" "${profiles[@]}"
       ;;
@@ -393,6 +497,7 @@ ap_cmd_recover() {
     local journal_staged_dir="${fields[7]:-}"
     local journal_legacy_dir="${fields[8]:-}"
     migrated_profiles="${fields[9]:-}"
+    local journal_content_manifest="${fields[10]:-}"
 
     case "$journal_op" in
       reset | remove)
@@ -405,7 +510,8 @@ ap_cmd_recover() {
           ap_scan_processes "$repo_root" "$target" "$journal_assume"
         done
         ap_recover_migrate_operation "$repo_root" "$journal_file" "$journal_state" \
-          "$journal_backup_dir" "$journal_staged_dir" "$journal_legacy_dir" "$migrated_profiles"
+          "$journal_backup_dir" "$journal_staged_dir" "$journal_legacy_dir" "$migrated_profiles" \
+          "$journal_content_manifest"
         ;;
     esac
 
