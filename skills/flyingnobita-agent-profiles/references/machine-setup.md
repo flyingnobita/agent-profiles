@@ -73,7 +73,9 @@ previous configuration is copied to the backups directory first. A managed
 configuration (symlink, chezmoi, read-only, or a symlinked config directory) is
 never rewritten: with `--prepare-dir` setup writes
 `mise/config.toml.fragment` and `INSTRUCTIONS.md` there for you to commit, and
-without it the install is skipped with a message.
+without it the install is skipped with a message. The versioned helper release
+is always deployed to XDG data on `--apply`, managed configuration or not, so
+task shims copied from a prepared directory point at a real helper.
 
 ## Task Conflicts and Backups
 
