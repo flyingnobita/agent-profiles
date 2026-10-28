@@ -191,3 +191,78 @@ WRAP
   run bash "$AP_HELPER" run --profile raceprof -- true
   assert_success
 }
+
+@test "journal sidecar: a symlinked lock file is refused and never treated as a live operation" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile sidecar
+  assert_success
+
+  # Interrupted remove leaves a real journal and sidecar lock file.
+  run env AP_FAULT_AFTER=planned bash "$AP_HELPER" remove --profile sidecar --yes
+  assert_failure 137
+  local journal="$fixture_repo/.agent-profiles/.journal/remove-sidecar.json"
+  local sidecar="$fixture_repo/.agent-profiles/.journal/remove-sidecar.lock"
+  assert_file_exists "$journal"
+  assert_file_exists "$sidecar"
+
+  # A symlinked sidecar would let the reader follow a path outside the checkout.
+  local sentinel="$TEST_TMPDIR/outside-sentinel.lock"
+  printf 'sentinel-content\n' >"$sentinel"
+  local sentinel_hash_before
+  sentinel_hash_before=$(sha256sum "$sentinel" | cut -d' ' -f1)
+  rm -f "$sidecar"
+  ln -s "$sentinel" "$sidecar"
+
+  # Even while the outside lock is held, this must be a refusal, not "live".
+  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$sentinel" &
+  local holder_pid=$!
+  local i=0
+  while flock -n "$sentinel" true 2>/dev/null; do
+    sleep 0.1
+    i=$((i + 1))
+    [[ $i -lt 100 ]] || break
+  done
+
+  run bash "$AP_HELPER" run --profile sidecar -- true
+  assert_failure 73
+  assert_output_contains "journal lock"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 73
+  assert_output_contains "journal lock"
+
+  assert_equal "$sentinel_hash_before" "$(sha256sum "$sentinel" | cut -d' ' -f1)"
+  assert_file_exists "$journal"
+
+  kill -TERM -"$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+}
+
+@test "journal sidecar: a non-regular lock file is refused instead of skipped" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile nosidecar
+  assert_success
+
+  run env AP_FAULT_AFTER=planned bash "$AP_HELPER" reset --profile nosidecar --yes
+  assert_failure 137
+  local journal="$fixture_repo/.agent-profiles/.journal/reset-nosidecar.json"
+  local sidecar="$fixture_repo/.agent-profiles/.journal/reset-nosidecar.lock"
+  assert_file_exists "$journal"
+
+  rm -f "$sidecar"
+  mkdir "$sidecar"
+
+  run bash "$AP_HELPER" run --profile nosidecar -- true
+  assert_failure 73
+  assert_output_contains "journal lock"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 73
+  assert_file_exists "$journal"
+}
