@@ -74,3 +74,50 @@ teardown() {
 
   chmod 700 "$MISE_CONFIG_DIR/tasks"
 }
+
+@test "setup apply: managed configuration still deploys the versioned release for prepared tasks" {
+  mkdir -p "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR/tasks"
+  local prepared="$TEST_TMPDIR/prepared managed"
+  local release_root="${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases"
+
+  run bash "$AP_HELPER" setup --apply --prepare-dir "$prepared"
+  assert_success
+
+  # The versioned release lives in owned XDG data, not in managed configuration.
+  [[ -d "$release_root" ]]
+  local release
+  release=$(find "$release_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  [[ -n "$release" ]]
+  assert_file_exists "$release/scripts/agent-profiles"
+
+  # Adopt the prepared tasks into the managed source as a user would.
+  cp "$prepared/tasks/agent-profiles-init" "$prepared/tasks/agent-profiles" "$TEST_TMPDIR/dotfiles/tasks/"
+
+  # A rerun keeps the managed target authoritative and still deploys the release.
+  run bash "$AP_HELPER" setup --apply --prepare-dir "$prepared"
+  assert_success
+
+  # The tasks now run from the versioned release resources.
+  local fixture_repo="$TEST_TMPDIR/work/repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+  run mise run agent-profiles-init -- --profile demo
+  assert_success
+  assert_dir_exists "$fixture_repo/.agent-profiles/demo/home"
+
+  run mise run agent-profiles -- --profile demo sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
+  assert_success
+  assert_output_contains "demo"
+}
+
+@test "setup apply: managed mode reports prepared tasks instead of applied task writes" {
+  mkdir -p "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR/tasks"
+  local prepared="$TEST_TMPDIR/prepared"
+
+  run bash "$AP_HELPER" setup --apply --prepare-dir "$prepared"
+  assert_success
+  assert_output_contains "prepared: $prepared/tasks/agent-profiles-init"
+  assert_output_not_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles-init"
+}

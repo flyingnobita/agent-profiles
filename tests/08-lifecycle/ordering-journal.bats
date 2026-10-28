@@ -266,3 +266,123 @@ WRAP
   assert_failure 73
   assert_file_exists "$journal"
 }
+
+@test "ordering: a journal that appears under the locks is refused before mutation" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile concurrent
+  assert_success
+  echo "keep" >"$fixture_repo/.agent-profiles/concurrent/home/keep.txt"
+
+  # The wrapper plants a concurrent crash journal exactly when the profile lock
+  # is acquired, after the first preflight already ran.
+  local wrap_dir="$TEST_TMPDIR/flock-wrap"
+  mkdir -p "$wrap_dir"
+  local real_flock
+  real_flock=$(command -v flock)
+  cat >"$wrap_dir/flock" <<WRAP
+#!/usr/bin/env bash
+last="\${*: -1}"
+if [[ "\$last" =~ ^[0-9]+\$ ]]; then
+  target=\$(readlink "/proc/self/fd/\$last" 2>/dev/null || true)
+  if [[ -n "\${RACE_TRIGGER:-}" && "\$target" == *"/.locks/\${RACE_PROFILE}.lock" && ! -e "\$RACE_TRIGGER" ]]; then
+    : >"\$RACE_TRIGGER"
+    cat >"\$RACE_REPO/.agent-profiles/.journal/reset-\$RACE_PROFILE.json" <<JOURNAL
+{"op":"reset","profile":"\$RACE_PROFILE","state":"planned","profile_dir":"\$RACE_REPO/.agent-profiles/\$RACE_PROFILE","trash_path":"","assume_unrelated":[],"boot_id":"00000000-0000-0000-0000-000000000000"}
+JOURNAL
+  fi
+fi
+exec "$real_flock" "\$@"
+WRAP
+  chmod +x "$wrap_dir/flock"
+
+  local trigger="$TEST_TMPDIR/lock-triggered"
+  run env PATH="$wrap_dir:$PATH" \
+    RACE_REPO="$fixture_repo" RACE_PROFILE="concurrent" RACE_TRIGGER="$trigger" \
+    bash "$AP_HELPER" remove --profile concurrent --yes
+  assert_failure 77
+  assert_output_contains "interrupted reset"
+  assert_file_exists "$trigger"
+
+  # Nothing was mutated and the concurrent journal is preserved.
+  assert_file_exists "$fixture_repo/.agent-profiles/concurrent/home/keep.txt"
+  assert_file_exists "$fixture_repo/.agent-profiles/.journal/reset-concurrent.json"
+  run bash -c 'find "$1" -newer "$2" -name "remove-concurrent.json" | grep .' _ \
+    "$fixture_repo/.agent-profiles/.journal" "$trigger"
+  assert_failure
+}
+
+@test "recovery: clearing an incomplete journal requires the storage lock" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile lockprof
+  assert_success
+  echo "keep" >"$fixture_repo/.agent-profiles/lockprof/home/keep.txt"
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  : >"$fixture_repo/.agent-profiles/.journal/reset-lockprof.json"
+
+  local storage_lock="$fixture_repo/.agent-profiles/.locks/.storage.lock"
+  assert_file_exists "$storage_lock"
+  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$storage_lock" &
+  local holder_pid=$!
+  local i=0
+  while flock -n "$storage_lock" true 2>/dev/null; do
+    sleep 0.1
+    i=$((i + 1))
+    [[ $i -lt 100 ]] || break
+  done
+
+  run timeout 20 bash "$AP_HELPER" recover --yes
+  assert_failure 75
+  assert_file_exists "$fixture_repo/.agent-profiles/.journal/reset-lockprof.json"
+  assert_file_exists "$fixture_repo/.agent-profiles/lockprof/home/keep.txt"
+
+  kill -TERM -"$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  assert_output_contains "incomplete journal"
+  assert_file_exists "$fixture_repo/.agent-profiles/lockprof/home/keep.txt"
+}
+
+@test "ordering: an incomplete journal is refused without a Python traceback" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile quietprof
+  assert_success
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  : >"$fixture_repo/.agent-profiles/.journal/reset-quietprof.json"
+
+  run bash "$AP_HELPER" run --profile quietprof -- true
+  assert_failure 77
+  assert_output_contains "incomplete journal"
+  assert_output_not_contains "Traceback"
+}
+
+@test "journal: a pre-existing temporary symlink is never followed" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile tmpprof
+  assert_success
+
+  local sentinel="$TEST_TMPDIR/outside-tmp-sentinel"
+  printf 'sentinel-content\n' >"$sentinel"
+  local sentinel_hash_before
+  sentinel_hash_before=$(sha256sum "$sentinel" | cut -d' ' -f1)
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  ln -s "$sentinel" "$fixture_repo/.agent-profiles/.journal/reset-tmpprof.json.tmp"
+
+  run bash "$AP_HELPER" reset --profile tmpprof --yes
+  assert_success
+
+  assert_equal "$sentinel_hash_before" "$(sha256sum "$sentinel" | cut -d' ' -f1)"
+}
