@@ -50,12 +50,12 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | --- | --- | --- | --- | --- |
 | 01 | Installable skill and readiness | None | Verified and integrated | `6776906` |
 | 02 | Named Linux profile runtime | 01 | Verified and integrated | `c6817cb` |
-| 03 | Machine setup and mise tasks | 02 | Ready | - |
+| 03 | Machine setup and mise tasks | 02 | Claimed | - |
 | 04 | Claude Code integration | 02 | Claimed | - |
-| 05 | Codex CLI integration | 02 | Claimed | - |
-| 06 | Antigravity CLI integration | 02 | Ready | - |
+| 05 | Codex CLI integration | 02 | Verified and integrated | `5eed95d` |
+| 06 | Antigravity CLI integration | 02 | Claimed | - |
 | 07 | OpenCode integration | 02 | Ready | - |
-| 08 | Lifecycle and migration | 02 | Claimed | - |
+| 08 | Lifecycle and migration | 02 | Verified and integrated | `8566f03` |
 | 09 | Public Linux release readiness | 03-08 | Blocked | - |
 
 ## Ownership
@@ -65,3 +65,12 @@ parallel agent work begins. One implementer owns shared changelog and final evid
 updates. Lifecycle operations hold exclusive leases for every affected profile.
 All doctor modes preserve persistent configuration, using disposable probe state
 when agent commands would otherwise initialize it.
+
+## Implementer profile update
+
+On October 29, 2026 the user authorized Pi for all new implementers and
+handoffs of tickets 04, 05, and 08 from quota-blocked Antigravity sessions.
+The effective default is `deepseek/deepseek-flash` with high thinking.
+The original worktrees, partial changes, reports, and independent evidence
+remain preserved. Tickets 05 and 08 passed their independent gates and serial
+integration CI; the combined integration suite has 165 tests with no skips.
