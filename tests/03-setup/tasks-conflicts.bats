@@ -106,3 +106,21 @@ teardown() {
   (cd "$release_one" && sha256sum -c manifest.sha256 --quiet)
   (cd "$release_two" && sha256sum -c manifest.sha256 --quiet)
 }
+
+@test "setup apply: repeated setup stays idempotent without cmp or diffutils" {
+  local bin="$TEST_TMPDIR/no-cmp-bin"
+  make_restricted_bin "$bin" cmp diff
+
+  run env PATH="$bin" bash "$AP_HELPER" setup --apply
+  assert_success
+  local tasks_before
+  tasks_before=$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)
+
+  run env PATH="$bin" bash "$AP_HELPER" setup --apply
+  assert_success
+
+  assert_equal "$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)" "$tasks_before"
+  if [[ -d "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" ]]; then
+    [[ -z "$(find "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" -type f)" ]]
+  fi
+}
