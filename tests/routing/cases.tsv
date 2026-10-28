@@ -1,0 +1,34 @@
+topic	query	target_ref	required_heading	required_term
+concept	What is an agent profile?	references/questions.md	### What is an agent profile?	named collection
+security	Is an agent profile a security sandbox for untrusted code?	references/questions.md	### Is an agent profile a security sandbox?	not a security boundary
+credentials	How are credentials and API keys handled?	references/questions.md	### How are credentials handled?	inherited environment credentials
+resources	How are shared host resources accessed?	references/questions.md	### Is an agent profile a security sandbox?	shared host resources
+platforms	Does agent profiles support macOS or Darwin?	references/questions.md	### What platforms are supported?	not qualified
+redirection	How does profile directory redirection work on Linux?	references/questions.md	### How does profile separation work?	bubblewrap
+error_64	What does exit code 64 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 64
+error_65	What does exit code 65 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 65
+error_69	What does exit code 69 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 69
+error_73	What does exit code 73 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 73
+error_75	What does exit code 75 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 75
+error_77	What does exit code 77 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 77
+error_78	What does exit code 78 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 78
+recovery	How do I recover an interrupted operation?	references/troubleshooting.md	## Stale Operation Recovery	agent-profiles recover
+init	How do I initialize an agent profile in a repository?	references/repository-operations.md	## Initializing Profiles	agent-profiles init
+list	How do I list existing agent profiles?	references/repository-operations.md	## Listing Profiles	agent-profiles list
+run	How do I execute a command in a named profile?	references/repository-operations.md	## Executing Commands Inside a Profile	agent-profiles run
+prereqs	What are the system prerequisites for agent profiles?	references/machine-setup.md	## System Prerequisites	unprivileged user namespaces
+tasks	How do I setup global mise tasks for agent profiles?	references/machine-setup.md	## Global Mise Task Integration	agent-profiles setup
+reset	How do I reset an agent profile?	references/lifecycle.md	## Resetting a Profile	agent-profiles reset
+remove	How do I remove an agent profile?	references/lifecycle.md	## Removing a Profile	agent-profiles remove
+migrate	How do I migrate legacy storage?	references/lifecycle.md	## Migrating Legacy Storage	agent-profiles migrate
+recover	How do I recover stale operation journals?	references/lifecycle.md	## Interrupted Operation Recovery	agent-profiles recover
+compat_os	Which operating systems are qualified for agent profiles?	references/compatibility.md	## Platform Support	Linux (x86_64)
+compat_agents	Which agent CLIs are supported?	references/compatibility.md	## Agent CLI Integration Matrix	Claude Code
+claude	How does Claude Code run inside an agent profile?	references/agents/claude-code.md	## Directory Redirection	CLAUDE_CONFIG_DIR
+codex	How does Codex CLI run inside an agent profile?	references/agents/codex.md	## Directory Redirection	CODEX_HOME
+antigravity	How does Antigravity CLI run inside an agent profile?	references/agents/antigravity.md	## Directory Redirection	.gemini
+opencode	How does OpenCode run inside an agent profile?	references/agents/opencode.md	## Directory Redirection	OPENCODE_CONFIG_DIR
+pkg_mgr	How do package managers interact with agent profiles?	references/questions.md	### How do package managers interact with profiles?	profile-isolated
+isolation_diff	Why are profiles not a substitute for VM or container isolation?	references/questions.md	### Why are profiles not a substitute for VM or container isolation?	kernel attack surface
+proc_refusal	What should I do when a lifecycle operation is refused due to active processes?	references/troubleshooting.md	## Process Scan Refusals	active processes
+bwrap_fix	How do I resolve missing bubblewrap or disabled user namespaces?	references/troubleshooting.md	## Missing Bubblewrap or User Namespaces	sysctl
