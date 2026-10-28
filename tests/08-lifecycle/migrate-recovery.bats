@@ -181,3 +181,132 @@ EOF
   assert_file_exists "$fixture_repo/.agent-profiles/someprof/home/keep.txt"
   assert_file_exists "$fixture_repo/.agent-profiles/.journal/reset-someprof.json"
 }
+
+@test "migrate recovery: refuses a corrupted verified backup and preserves the original and journal" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  echo "correct original" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  run env AP_FORCE_COPY=1 AP_FAULT_AFTER=verified bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_failure 137
+
+  local journal_file="$fixture_repo/.agent-profiles/.journal/migrate-all.json"
+  assert_file_exists "$journal_file"
+  local run_backup
+  run_backup=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  echo "corrupted after verification" >"$run_backup/staged/agent-sandbox/home/file.txt"
+  assert_file_exists "$run_backup/content-manifest.json"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 77
+  assert_output_contains "corrupt"
+  assert_output_contains "preserved"
+
+  # The original is untouched, the journal is kept, and the bad copy is retained.
+  run cat "$fixture_repo/.agent-sandbox/home/file.txt"
+  assert_output_contains "correct original"
+  assert_file_exists "$journal_file"
+  run cat "$run_backup/staged/agent-sandbox/home/file.txt"
+  assert_output_contains "corrupted after verification"
+  [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
+}
+
+@test "migrate recovery: refuses an original changed after verification and preserves both trees" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  echo "correct original" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  run env AP_FORCE_COPY=1 AP_FAULT_AFTER=verified bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_failure 137
+
+  local journal_file="$fixture_repo/.agent-profiles/.journal/migrate-all.json"
+  local run_backup
+  run_backup=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  echo "changed after verification" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 77
+  assert_output_contains "changed since verification"
+  assert_output_contains "preserved"
+
+  run cat "$fixture_repo/.agent-sandbox/home/file.txt"
+  assert_output_contains "changed after verification"
+  run cat "$run_backup/staged/agent-sandbox/home/file.txt"
+  assert_output_contains "correct original"
+  assert_file_exists "$journal_file"
+  [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
+}
+
+@test "migrate recovery: refuses missing staged backup content instead of re-copying" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  echo "correct original" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  run env AP_FORCE_COPY=1 AP_FAULT_AFTER=verified bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_failure 137
+
+  local journal_file="$fixture_repo/.agent-profiles/.journal/migrate-all.json"
+  local run_backup
+  run_backup=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  rm -rf "$run_backup/staged/agent-sandbox"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 77
+  assert_output_contains "missing or partial"
+  assert_output_contains "preserved"
+
+  run cat "$fixture_repo/.agent-sandbox/home/file.txt"
+  assert_output_contains "correct original"
+  assert_file_exists "$journal_file"
+  [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
+}
+
+@test "migrate recovery: refuses a corrupted existing legacy destination" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  echo "correct original" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  # Cross-device flow removes the originals before writing this checkpoint.
+  run env AP_FORCE_COPY=1 AP_FAULT_AFTER=originals-removed bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_failure 137
+
+  local journal_file="$fixture_repo/.agent-profiles/.journal/migrate-all.json"
+  local run_backup
+  run_backup=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  assert_file_exists "$run_backup/content-manifest.json"
+  echo "corrupted destination" >"$run_backup/legacy/agent-sandbox/home/file.txt"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 77
+  assert_output_contains "corrupt"
+  assert_output_contains "preserved"
+
+  assert_file_exists "$journal_file"
+  [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
+  run cat "$run_backup/legacy/agent-sandbox/home/file.txt"
+  assert_output_contains "corrupted destination"
+}
