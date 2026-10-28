@@ -49,7 +49,6 @@ teardown() {
 }
 
 @test "guard: isolation environment is isolated from host HOME" {
-  [[ "$HOME" != "/home/omarchy" ]]
   [[ "$HOME" == "$TEST_TMPDIR/home" ]]
   [[ -d "$HOME" ]]
 }
