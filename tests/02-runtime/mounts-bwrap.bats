@@ -159,3 +159,49 @@ EOF
   assert_equal "$status" 69
   assert_output_contains "unprivileged user namespaces"
 }
+
+@test "bwrap: rejects symlinked profile subdirectory with exit 73 and preserves outside sentinel" {
+  local repo="$TEST_TMPDIR/repo-symlink-subdir"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local outside_dir="$TEST_TMPDIR/outside_subdir"
+  mkdir -p "$outside_dir"
+  printf "pristine\n" > "$outside_dir/sentinel.txt"
+
+  rm -rf "$repo/.agent-profiles/default/.codex"
+  ln -s "$outside_dir" "$repo/.agent-profiles/default/.codex"
+
+  run bash "$AP_HELPER" run -- touch "$HOME/.codex/marker"
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "symbolic link"
+
+  # Outside sentinel must remain unchanged and marker not written
+  assert_file_not_exists "$outside_dir/marker"
+  assert_file_exists "$outside_dir/sentinel.txt"
+  local content
+  content=$(cat "$outside_dir/sentinel.txt")
+  assert_equal "$content" "pristine"
+}
+
+@test "bwrap: rejects symlink in managed profile ancestor .local with exit 73" {
+  local repo="$TEST_TMPDIR/repo-symlink-ancestor"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local outside_dir="$TEST_TMPDIR/outside_local"
+  mkdir -p "$outside_dir"
+
+  rm -rf "$repo/.agent-profiles/default/.local"
+  ln -s "$outside_dir" "$repo/.agent-profiles/default/.local"
+
+  run bash "$AP_HELPER" run -- true
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "symbolic link"
+}

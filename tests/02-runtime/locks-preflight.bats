@@ -109,6 +109,45 @@ teardown() {
   assert_output_contains ".locks"
 }
 
+@test "locks: rejects symlinked lock and runs files with exit 73 and preserves outside sentinel" {
+  local repo="$TEST_TMPDIR/repo-lock-file-symlink"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local outside_dir="$TEST_TMPDIR/outside_locks"
+  mkdir -p "$outside_dir"
+  printf "original-sentinel\n" > "$outside_dir/default.lock"
+
+  # Replace lock file with symlink pointing outside
+  rm -f "$repo/.agent-profiles/.locks/default.lock"
+  ln -s "$outside_dir/default.lock" "$repo/.agent-profiles/.locks/default.lock"
+
+  run bash "$AP_HELPER" run -- true
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "symbolic link"
+
+  # Outside sentinel must remain untouched
+  local content
+  content=$(cat "$outside_dir/default.lock")
+  assert_equal "$content" "original-sentinel"
+
+  # Also test runs file symlink
+  rm -f "$repo/.agent-profiles/.locks/default.lock"
+  touch "$repo/.agent-profiles/.locks/default.lock"
+  printf "original-runs\n" > "$outside_dir/default.runs"
+  rm -f "$repo/.agent-profiles/.locks/default.runs"
+  ln -s "$outside_dir/default.runs" "$repo/.agent-profiles/.locks/default.runs"
+
+  run bash "$AP_HELPER" run -- true
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "symbolic link"
+  assert_equal "$(cat "$outside_dir/default.runs")" "original-runs"
+}
+
 @test "preflight: executes preflight hooks and aborts if hook fails" {
   local repo="$TEST_TMPDIR/repo-preflight"
   create_fixture_repo "$repo"
