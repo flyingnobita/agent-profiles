@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+LIB_DIR="$SCRIPT_DIR/lib"
+COMMANDS_DIR="$LIB_DIR/commands"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+VERSION_FILE="$SKILL_DIR/VERSION"
+
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/common.sh
+source "$LIB_DIR/common.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: agent-profiles [--help | --version] <command> [options] [arguments...]
+
+Commands:
+  doctor   Diagnose host, OS, dependencies, and agent integrations
+  init     Initialize a named agent profile for this checkout
+  list     List existing agent profiles in this checkout
+  run      Execute a command within an agent profile
+  setup    Configure machine dependencies and mise tasks
+  reset    Reset a profile to an empty initial state
+  remove   Delete an existing profile
+  migrate  Migrate legacy profile storage to current format
+  recover  Recover interrupted lifecycle operations
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+  usage >&2
+  exit "$EX_USAGE"
+fi
+
+case "$1" in
+  --help | -h)
+    usage
+    exit "$EX_OK"
+    ;;
+  --version | -v)
+    if [[ -f "$VERSION_FILE" ]]; then
+      tr -d '[:space:]' <"$VERSION_FILE"
+      echo
+      exit "$EX_OK"
+    else
+      ap_die "$EX_BROKEN" "VERSION file missing"
+    fi
+    ;;
+esac
+
+cmd="$1"
+shift
+
+if [[ ! "$cmd" =~ ^[a-z][a-z-]{0,31}$ ]]; then
+  ap_die "$EX_USAGE" "invalid command: $cmd"
+fi
+
+cmd_file="$COMMANDS_DIR/$cmd.sh"
+if [[ ! -f "$cmd_file" ]]; then
+  ap_die "$EX_USAGE" "unknown command: $cmd"
+fi
+
+# shellcheck source=/dev/null
+source "$cmd_file"
+"ap_cmd_${cmd//-/_}" "$@"

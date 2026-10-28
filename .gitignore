@@ -1,0 +1,6 @@
+# Project gitignore
+.agent-profiles/
+.agent-sandbox/
+node_modules/
+tmp/
+*.tmp
