@@ -199,3 +199,44 @@ teardown() {
   hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
   assert_equal "$hash_before" "$hash_after"
 }
+
+@test "migrate: migrates unnamed data under .agent-profiles and preserves named profiles" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile workingprof
+  assert_success
+  echo "pre-existing data" >"$fixture_repo/.agent-profiles/workingprof/home/important.txt"
+  local working_hash_before
+  working_hash_before=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+
+  # Unnamed default-profile data directly under the new storage directory.
+  mkdir -p "$fixture_repo/.agent-profiles/home"
+  mkdir -p "$fixture_repo/.agent-profiles/.codex"
+  echo "unnamed home" >"$fixture_repo/.agent-profiles/home/unnamed.txt"
+  echo "unnamed codex" >"$fixture_repo/.agent-profiles/.codex/auth.json"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  run bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_success
+  assert_output_contains "Migration completed successfully"
+
+  # Unnamed data moved to the backup, default rebuilt empty, named profile intact.
+  [[ ! -d "$fixture_repo/.agent-profiles/home" ]]
+  [[ ! -d "$fixture_repo/.agent-profiles/.codex" ]]
+  assert_dir_exists "$fixture_repo/.agent-profiles/default/home"
+  [[ ! -f "$fixture_repo/.agent-profiles/default/home/unnamed.txt" ]]
+
+  local working_hash_after
+  working_hash_after=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+  assert_equal "$working_hash_before" "$working_hash_after"
+
+  local run_backup
+  run_backup=$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  assert_file_exists "$run_backup/legacy/unnamed-profiles/home/unnamed.txt"
+  assert_file_exists "$run_backup/legacy/unnamed-profiles/.codex/auth.json"
+  assert_file_exists "$run_backup/manifest.json"
+}

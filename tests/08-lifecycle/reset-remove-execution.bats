@@ -152,3 +152,28 @@ assert "trash_path" in data
 assert "boot_id" in data
 ' "$journal_file"
 }
+
+@test "execution: remove preserves unrelated Git exclusion lines" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile prof1
+  assert_success
+
+  local exclude_file
+  exclude_file=$(git rev-parse --git-path info/exclude)
+  [[ "$exclude_file" != /* ]] && exclude_file="$fixture_repo/$exclude_file"
+  printf '# foreign exclusion\n*.log\n' >>"$exclude_file"
+
+  run bash "$AP_HELPER" remove --profile prof1 --yes
+  assert_success
+
+  run grep -Fx '*.log' "$exclude_file"
+  assert_success
+  run grep -Fx '# foreign exclusion' "$exclude_file"
+  assert_success
+  run grep -Fxc '/.agent-profiles/' "$exclude_file"
+  assert_success
+  assert_equal "$output" "1"
+}
