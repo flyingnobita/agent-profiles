@@ -132,7 +132,8 @@ contains per-profile logs and crash reports, so keep raw QA logs private.
 Tested version: Antigravity CLI `1.4.9` (mise-managed; `agy --version` prints
 the version, and `--version` is informational, not readiness evidence).
 
-Onboarding is a sequence of screens and is what a real launch reaches offline:
+Onboarding is a sequence of screens; a first-run home that has no profile state
+reaches them offline:
 
 1. `Welcome to Antigravity CLI!` with a color-scheme list (`[Next]`).
 2. `Terms of Service & Data Use` with a data-collection consent toggle and
@@ -141,10 +142,16 @@ Onboarding is a sequence of screens and is what a real launch reaches offline:
 4. With no usable credential source, the sign-in screen:
    `You are currently not signed in.` with a login-method choice.
 
-A fresh profile is ready when startup reaches the onboarding or sign-in screen.
-Before an authenticated composer exists, slash-command and skill completion
-cannot be exercised; do not press through the sign-in screen in automated QA,
-because it starts an OAuth flow.
+A freshly initialized profile in the offline QA run reached the sign-in screen
+directly, because the CLI treats that profile state as already onboarded. The
+QA script waits for either screen, drives the onboarding screens when they
+appear, and records the sign-in screen as the ready marker. A profile is ready
+when startup reaches one of them. Before an authenticated composer exists,
+slash-command and skill completion cannot be exercised; do not press through
+the sign-in screen in automated QA, because it starts an OAuth flow. The
+composer header shows the account that the OS credential service supplied, so
+raw screens are kept private and only the absence of account identifiers is
+recorded.
 
 ## Troubleshooting and Gaps
 
