@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
 # Release readiness contract for flyingnobita-agent-profiles.
 #
-# Usage: tests/tools/check-release <repo-root>
+# Usage: tests/tools/check-release <repo-root> [--artifacts DIR]
 #
 # Verifies the documented release surface: the public README, the MIT license,
-# the dated compatibility matrix, the sanitized evidence summary and the absence
-# of author-specific paths or private delivery identifiers. It reads only
-# tracked release files, never private QA logs, and writes nothing.
+# the dated compatibility matrix, the sanitized evidence summary, the versioned
+# release notes and the absence of author-specific paths or private delivery
+# identifiers. With --artifacts it also verifies the built tarball, its checksum
+# and the extracted copy. It reads only tracked release files and artifact
+# output, never private QA logs, and writes only to a temporary directory.
 set -euo pipefail
 
 ROOT_DIR="${1:-$PWD}"
 shift || true
 
+ARTIFACT_DIR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --artifacts)
+      if [[ $# -lt 2 ]]; then
+        echo "check-release: FAIL: --artifacts requires a directory" >&2
+        exit 1
+      fi
+      ARTIFACT_DIR="$2"
+      shift 2
+      ;;
     *)
       echo "check-release: FAIL: unknown option: $1" >&2
       exit 1
@@ -26,6 +37,7 @@ SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
 README="$ROOT_DIR/README.md"
 COMPAT="$SKILL_DIR/references/compatibility.md"
 EVIDENCE="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+RELEASE_NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
 AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
 VERSIONS=("2.1.312" "0.165.0" "1.4.9" "2.2.0")
@@ -187,6 +199,74 @@ require_term "$EVIDENCE" "credential-dependent gap" \
   "the approved credential-dependent gaps"
 require_term "$EVIDENCE" "sanitized" "that only sanitized evidence is published"
 pass "docs/evidence release summary is sanitized and separates the evidence classes"
+
+# --- 4b. Versioned release notes --------------------------------------------
+require_file "$RELEASE_NOTES"
+grep -qE "^# +.*flyingnobita-agent-profiles v$VERSION$" "$RELEASE_NOTES" \
+  || fail "RELEASE_NOTES.md needs a top-level heading naming flyingnobita-agent-profiles v$VERSION"
+for term in "MIT" "Linux" "macOS" "not qualified" "not a security sandbox" \
+  "credential-dependent" "not published"; do
+  require_term "$RELEASE_NOTES" "$term" "the release notes scope"
+done
+for agent in "${AGENTS[@]}"; do
+  require_term "$RELEASE_NOTES" "$agent" "the release notes integration list"
+done
+pass "RELEASE_NOTES.md is versioned and describes the local release scope"
+
+# --- 4c. Versioned artifacts with a disposable extract and run --------------
+verify_artifacts() (
+  local dir tarball work listing helper
+  dir="$(cd "$1" && pwd)"
+  tarball="$dir/flyingnobita-agent-profiles-$VERSION.tar.gz"
+
+  require_file "$tarball"
+  require_file "$tarball.sha256"
+  (cd "$dir" && sha256sum -c "$(basename "$tarball").sha256" >/dev/null) \
+    || fail "artifact checksum verification failed for $(basename "$tarball")"
+  pass "artifact checksum verifies: $(basename "$tarball").sha256"
+
+  require_file "$dir/RELEASE_NOTES.md"
+  cmp -s "$dir/RELEASE_NOTES.md" "$RELEASE_NOTES" \
+    || fail "artifact RELEASE_NOTES.md differs from the tracked release notes"
+  pass "artifact release notes match RELEASE_NOTES.md"
+
+  listing=$(tar -tzf "$tarball")
+  if printf '%s\n' "$listing" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+    fail "artifact contains an absolute or parent-traversal path"
+  fi
+  for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
+    "references/compatibility.md"; do
+    printf '%s\n' "$listing" | grep -qxF "flyingnobita-agent-profiles/$required" \
+      || fail "artifact is missing flyingnobita-agent-profiles/$required"
+  done
+  pass "artifact contains the installable skill bundle and license"
+
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  tar -xzf "$tarball" -C "$work"
+  helper="$work/flyingnobita-agent-profiles/scripts/agent-profiles"
+
+  [[ "$(bash "$helper" --version)" == "$VERSION" ]] \
+    || fail "extracted helper does not report VERSION $VERSION"
+  mkdir -p "$work/home/.config" "$work/home/.local/share" "$work/home/.local/state" \
+    "$work/home/.cache"
+  env -i PATH="$PATH" \
+    HOME="$work/home" \
+    XDG_CONFIG_HOME="$work/home/.config" \
+    XDG_DATA_HOME="$work/home/.local/share" \
+    XDG_STATE_HOME="$work/home/.local/state" \
+    XDG_CACHE_HOME="$work/home/.cache" \
+    DISABLE_TELEMETRY=1 \
+    bash "$helper" doctor --json >"$work/doctor.json" \
+    || fail "extracted helper doctor --json failed"
+  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$work/doctor.json" \
+    || fail "extracted helper doctor --json is not valid JSON"
+  pass "extracted artifact runs --version and doctor --json from a disposable directory"
+)
+
+if [[ -n "$ARTIFACT_DIR" ]]; then
+  verify_artifacts "$ARTIFACT_DIR"
+fi
 
 # --- 5. No author paths or private delivery identifiers -------------------
 FORBIDDEN='((^|[^[:alnum:]_.-])/home/[a-zA-Z0-9_-]+|@users\.noreply\.github\.com|~/dotfiles|flyingnobita-deliver|4efade3f099f42f991db984676edec70|\.scratch/)'
