@@ -168,14 +168,32 @@ ap_journal_lock_path() {
   printf "%s.lock\n" "${journal_file%.json}"
 }
 
+# Validates the journal sidecar lock path before it is ever opened. A symlinked
+# or non-regular sidecar would let a stale record follow a path outside the
+# checkout, and an unreadable or unwritable one cannot be inspected safely.
+ap_validate_journal_lock_path() {
+  local lock_file="$1"
+
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "journal lock file '$lock_file' is a symbolic link"
+  fi
+  if [[ -e "$lock_file" ]]; then
+    if [[ ! -f "$lock_file" ]]; then
+      ap_die "$EX_LAYOUT" "journal lock file '$lock_file' is not a regular file"
+    fi
+    if [[ ! -r "$lock_file" || ! -w "$lock_file" ]]; then
+      ap_die "$EX_REFUSED" "journal lock file '$lock_file' is not readable and writable; inspect it manually instead of guessing whether the operation is live"
+    fi
+  fi
+}
+
 ap_ensure_journal_lock_file() {
   local journal_file="$1"
   local lock_file
   lock_file=$(ap_journal_lock_path "$journal_file")
 
-  if [[ -L "$lock_file" ]]; then
-    ap_die "$EX_LAYOUT" "journal lock file '$lock_file' is a symbolic link"
-  fi
+  ap_validate_journal_lock_path "$lock_file"
+
   if [[ ! -f "$lock_file" ]]; then
     (umask 077 && mkdir -p "$(dirname "$lock_file")" && touch "$lock_file" && chmod 600 "$lock_file")
   fi
@@ -183,11 +201,14 @@ ap_ensure_journal_lock_file() {
 }
 
 # Returns 0 when the journal is stale (no process holds its lock) and 1 when
-# a live operation still owns it. A missing lock file means stale.
+# a live operation still owns it. A missing lock file means stale. Only actual
+# flock contention counts as live; an uninspectable sidecar fails safely.
 ap_journal_is_stale() {
   local journal_file="$1"
   local lock_file
   lock_file=$(ap_journal_lock_path "$journal_file")
+
+  ap_validate_journal_lock_path "$lock_file"
 
   if [[ ! -e "$lock_file" ]]; then
     return 0
@@ -195,11 +216,22 @@ ap_journal_is_stale() {
 
   local rc=0
   (
-    exec {probe_fd}<>"$lock_file"
+    if ! exec {probe_fd}<>"$lock_file" 2>/dev/null; then
+      exit 3
+    fi
     flock -x -n "$probe_fd"
   ) 2>/dev/null || rc=$?
 
-  [[ $rc -eq 0 ]]
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+    3)
+      ap_die "$EX_REFUSED" "journal lock file '$lock_file' could not be opened; refusing to guess whether the operation is live"
+      ;;
+    *)
+      ap_die "$EX_REFUSED" "journal lock file '$lock_file' could not be probed (status $rc); refusing to guess whether the operation is live"
+      ;;
+  esac
 }
 
 ap_lock_journal() {
