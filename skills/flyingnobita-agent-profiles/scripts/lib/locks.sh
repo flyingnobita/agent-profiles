@@ -7,6 +7,10 @@ ap_ensure_locks_dir() {
   local storage_dir="$repo_root/.agent-profiles"
   local locks_dir="$storage_dir/.locks"
 
+  if [[ -L "$storage_dir" ]]; then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' is a symbolic link (must be a real directory)"
+  fi
+
   if [[ -L "$locks_dir" ]]; then
     ap_die "$EX_LAYOUT" "locks directory '$locks_dir' is a symbolic link (must be a real directory)"
   fi
@@ -27,6 +31,9 @@ ap_lock_storage_shared() {
   ap_ensure_locks_dir "$repo_root"
 
   local storage_lock="$repo_root/.agent-profiles/.locks/.storage.lock"
+  if [[ -L "$storage_lock" ]]; then
+    ap_die "$EX_LAYOUT" "storage lock file '$storage_lock' is a symbolic link"
+  fi
   if [[ ! -f "$storage_lock" ]]; then
     (umask 077 && touch "$storage_lock" && chmod 600 "$storage_lock")
   fi
@@ -49,6 +56,9 @@ ap_lock_storage_exclusive() {
   ap_ensure_locks_dir "$repo_root"
 
   local storage_lock="$repo_root/.agent-profiles/.locks/.storage.lock"
+  if [[ -L "$storage_lock" ]]; then
+    ap_die "$EX_LAYOUT" "storage lock file '$storage_lock' is a symbolic link"
+  fi
   if [[ ! -f "$storage_lock" ]]; then
     (umask 077 && touch "$storage_lock" && chmod 600 "$storage_lock")
   fi
@@ -65,6 +75,9 @@ ap_lease_profile_shared() {
   ap_ensure_locks_dir "$repo_root"
 
   local lock_file="$repo_root/.agent-profiles/.locks/$profile.lock"
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
+  fi
   if [[ ! -f "$lock_file" ]]; then
     (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
   fi
@@ -82,6 +95,9 @@ ap_lock_profile_exclusive() {
   ap_ensure_locks_dir "$repo_root"
 
   local lock_file="$repo_root/.agent-profiles/.locks/$profile.lock"
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
+  fi
   if [[ ! -f "$lock_file" ]]; then
     (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
   fi
@@ -98,6 +114,9 @@ ap_record_run() {
   ap_ensure_locks_dir "$repo_root"
 
   local runs_file="$repo_root/.agent-profiles/.locks/$profile.runs"
+  if [[ -L "$runs_file" ]]; then
+    ap_die "$EX_LAYOUT" "profile runs file '$runs_file' is a symbolic link"
+  fi
   local boot_id="00000000-0000-0000-0000-000000000000"
   if [[ -r /proc/sys/kernel/random/boot_id ]]; then
     boot_id=$(tr -d '[:space:]' </proc/sys/kernel/random/boot_id)

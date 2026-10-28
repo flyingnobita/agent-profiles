@@ -87,6 +87,10 @@ ap_check_profile_aliasing() {
   local storage_dir="$repo_root/.agent-profiles"
   local prof_dir="$storage_dir/$profile"
 
+  if [[ -L "$storage_dir" ]]; then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' is a symbolic link (must be a real directory)"
+  fi
+
   if [[ -L "$prof_dir" ]]; then
     ap_die "$EX_LAYOUT" "profile directory '$prof_dir' is a symbolic link (must be a real directory)"
   fi
@@ -97,6 +101,50 @@ ap_check_profile_aliasing() {
     if [[ "$real_pd" != "$prof_dir" ]]; then
       ap_die "$EX_LAYOUT" "profile directory '$prof_dir' realpath mismatch ($real_pd)"
     fi
+
+    # Check for symbolic links inside profile internals
+    local managed_subdirs=(
+      .claude
+      .codex
+      .gemini
+      .agents
+      .opencode
+      home
+      bin
+      npm-global
+      npm-global/bin
+      uv-tools
+      uv-tools/bin
+      cargo-global
+      cargo-global/bin
+      python-user
+      python-user/bin
+      .config
+      .local
+      .local/share
+      .local/state
+      .cache
+      .cache/npm
+      .cache/uv
+      .agent-profile
+    )
+
+    for sub in "${managed_subdirs[@]}"; do
+      local p="$prof_dir/$sub"
+      if [[ -L "$p" ]]; then
+        ap_die "$EX_LAYOUT" "profile path '$p' is a symbolic link (symlinks inside profile storage are prohibited)"
+      fi
+    done
+
+    for entry in "$prof_dir"/* "$prof_dir"/.*; do
+      [[ -e "$entry" || -L "$entry" ]] || continue
+      local b
+      b=$(basename "$entry")
+      [[ "$b" == "." || "$b" == ".." ]] && continue
+      if [[ -L "$entry" ]]; then
+        ap_die "$EX_LAYOUT" "profile entry '$entry' is a symbolic link (symlinks inside profile storage are prohibited)"
+      fi
+    done
 
     local target_ino
     target_ino=$(stat -c "%d:%i" "$prof_dir" 2>/dev/null || true)
@@ -152,11 +200,17 @@ ap_ensure_exclude() {
   mkdir -p "$(dirname "$exclude_path")"
 
   local locks_dir="$storage_dir/.locks"
+  if [[ -L "$locks_dir" ]]; then
+    ap_die "$EX_LAYOUT" "locks directory '$locks_dir' is a symbolic link (must be a real directory)"
+  fi
   if [[ ! -d "$locks_dir" ]]; then
     (umask 077 && mkdir -p "$locks_dir")
   fi
 
   local lock_file="$locks_dir/.exclude.lock"
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "exclude lock file '$lock_file' is a symbolic link"
+  fi
   (
     exec 9>>"$lock_file"
     flock -x 9
@@ -173,6 +227,7 @@ ap_init_profile() {
   ap_validate_profile_name "$name"
   ap_ensure_storage_dir "$repo_root"
   ap_ensure_exclude "$repo_root"
+  ap_check_profile_aliasing "$repo_root" "$name"
 
   local storage_dir="$repo_root/.agent-profiles"
   local prof_dir="$storage_dir/$name"
@@ -203,6 +258,9 @@ ap_init_profile() {
     umask 077
     mkdir -p "$prof_dir"
     for sub in "${subdirs[@]}"; do
+      if [[ -L "$prof_dir/$sub" ]]; then
+        ap_die "$EX_LAYOUT" "profile path '$prof_dir/$sub' is a symbolic link"
+      fi
       mkdir -p "$prof_dir/$sub"
     done
     if [[ ! -f "$prof_dir/.agent-profile" ]]; then
@@ -360,6 +418,9 @@ ap_build_bwrap_mounts() {
 
   for d in "${redirect_dirs[@]}"; do
     local src="$prof_dir/$d"
+    if [[ -L "$src" ]]; then
+      ap_die "$EX_LAYOUT" "profile source path '$src' is a symbolic link (symlinks inside profile storage are prohibited)"
+    fi
     if [[ ! -d "$src" ]]; then
       mkdir -p "$src"
     fi

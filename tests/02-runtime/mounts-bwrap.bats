@@ -180,7 +180,7 @@ EOF
   assert_output_contains "symbolic link"
 
   # Outside sentinel must remain unchanged and marker not written
-  assert_file_not_exists "$outside_dir/marker"
+  [[ ! -e "$outside_dir/marker" ]]
   assert_file_exists "$outside_dir/sentinel.txt"
   local content
   content=$(cat "$outside_dir/sentinel.txt")
