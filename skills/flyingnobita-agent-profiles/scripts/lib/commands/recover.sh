@@ -501,11 +501,36 @@ ap_cmd_recover() {
 
     case "$journal_op" in
       reset | remove)
-        ap_scan_processes "$repo_root" "$journal_profile" "$journal_assume"
+        # The data may already have been moved into trash by the interrupted
+        # operation, so scan both the profile path and the recorded trash path.
+        local scan_paths=("$repo_root/.agent-profiles/$journal_profile")
+        if [[ -n "$journal_trash_path" && (-d "$journal_trash_path" || -L "$journal_trash_path") ]]; then
+          scan_paths+=("$journal_trash_path")
+        fi
+        ap_scan_legacy_processes "$repo_root" "interrupted $journal_op data" \
+          "$journal_assume" "${scan_paths[@]}"
         ap_recover_profile_operation "$repo_root" "$journal_op" "$journal_profile" \
           "$journal_state" "$journal_profile_dir" "$journal_trash_path"
         ;;
       migrate)
+        # Every actual recorded source can still be in use by a non-wrapper or
+        # fd-closing process, so scan the recorded sources as well as targets.
+        local migrate_scan_paths=()
+        local source_path source_label source_mode
+        while IFS=$'\t' read -r source_path source_label source_mode; do
+          [[ -n "$source_path" ]] || continue
+          migrate_scan_paths+=("$source_path")
+        done < <(ap_read_journal_sources "$journal_file")
+        if [[ -n "$journal_trash_path" ]]; then
+          migrate_scan_paths+=("$journal_trash_path")
+        fi
+        if [[ -n "$journal_backup_dir" ]]; then
+          migrate_scan_paths+=("$journal_backup_dir/staged" "$journal_backup_dir/legacy")
+        fi
+        if [[ ${#migrate_scan_paths[@]} -gt 0 ]]; then
+          ap_scan_legacy_processes "$repo_root" "legacy migration data" \
+            "$journal_assume" "${migrate_scan_paths[@]}"
+        fi
         for target in $migrated_profiles; do
           ap_scan_processes "$repo_root" "$target" "$journal_assume"
         done

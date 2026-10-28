@@ -269,11 +269,6 @@ ap_cmd_migrate() {
   ap_lock_storage_exclusive "$repo_root"
   ap_lock_profiles_exclusive "$repo_root" "${MIG_TARGETS[@]}"
 
-  local target
-  for target in "${MIG_TARGETS[@]}"; do
-    ap_scan_processes "$repo_root" "$target" "$assume_unrelated"
-  done
-
   # Re-validate while holding the locks: layout and targets may have changed.
   ap_migrate_compute_plan "$repo_root"
   if [[ -z "$MIG_LAYOUTS" ]]; then
@@ -285,7 +280,16 @@ ap_cmd_migrate() {
 
   ap_migrate_build_sources "$repo_root"
 
+  # Refuse while any owned process still uses an actual legacy source, such as
+  # cwd, open files, exe or environment markers under .agent-sandbox or unnamed
+  # storage. Target-profile storage is scanned as well.
   local index
+  ap_scan_legacy_processes "$repo_root" "legacy storage" "$assume_unrelated" \
+    "${MIG_SOURCE_PATHS[@]}"
+  for index in "${!MIG_TARGETS[@]}"; do
+    ap_scan_processes "$repo_root" "${MIG_TARGETS[index]}" "$assume_unrelated"
+  done
+
   for index in "${!MIG_SOURCE_PATHS[@]}"; do
     ap_assert_tree_has_no_special_files "${MIG_SOURCE_PATHS[index]}" \
       || ap_die "$EX_LAYOUT" "refusing to migrate legacy data containing sockets, device nodes, or FIFOs"

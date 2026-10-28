@@ -2,19 +2,46 @@
 # Process scanning and relevance detection for agent profiles
 # shellcheck disable=SC2034
 
-ap_scan_processes() {
-  local repo_root="$1"
-  local profile="$2"
-  local assume_unrelated_csv="${3:-}"
+# Returns the earliest recorded start tick for a profile in the current boot,
+# or an empty string when the profile has no run record for this boot.
+ap_earliest_run_ticks() {
+  local runs_file="$1"
+
+  local proc_root="${AP_PROC_ROOT:-/proc}"
+  local boot_id="00000000-0000-0000-0000-000000000000"
+  if [[ -r "$proc_root/sys/kernel/random/boot_id" ]]; then
+    boot_id=$(tr -d '[:space:]' <"$proc_root/sys/kernel/random/boot_id")
+  elif [[ -r /proc/sys/kernel/random/boot_id ]]; then
+    boot_id=$(tr -d '[:space:]' </proc/sys/kernel/random/boot_id)
+  fi
+
+  local earliest="" rec_boot rec_ticks
+  if [[ -f "$runs_file" && -r "$runs_file" ]]; then
+    while read -r rec_boot rec_ticks; do
+      if [[ "$rec_boot" == "$boot_id" && -n "$rec_ticks" ]]; then
+        if [[ -z "$earliest" || "$rec_ticks" -lt "$earliest" ]]; then
+          earliest="$rec_ticks"
+        fi
+      fi
+    done <"$runs_file"
+  fi
+  printf "%s\n" "$earliest"
+}
+
+# Refuses when an owned process uses one of the given target paths. The scan
+# covers environment markers, cwd, root, exe, open file descriptors and mount
+# sources, plus conservative handling of uninspectable processes, exactly as
+# documented in references/lifecycle.md. Nothing is ever killed.
+ap_scan_processes_for_paths() {
+  local label="$1"
+  local assume_unrelated_csv="$2"
+  local earliest_run_ticks="${3:-}"
+  shift 3
 
   local proc_root="${AP_PROC_ROOT:-/proc}"
   if [[ ! -d "$proc_root" ]]; then
     return 0
   fi
-
-  local target_prof_dir="$repo_root/.agent-profiles/$profile"
-  local real_target_dir
-  real_target_dir=$(readlink -f "$target_prof_dir" 2>/dev/null || echo "$target_prof_dir")
 
   local current_uid
   current_uid=$(id -u)
@@ -32,43 +59,34 @@ ap_scan_processes() {
     curr_p="$next_p"
   done
 
-  # Parse assume-unrelated list
   local assume_unrelated=()
   if [[ -n "$assume_unrelated_csv" ]]; then
     IFS=',' read -r -a assume_unrelated <<<"$assume_unrelated_csv"
   fi
 
-  # Determine earliest run record start ticks for this profile in current boot
-  local boot_id="00000000-0000-0000-0000-000000000000"
-  if [[ -r "$proc_root/sys/kernel/random/boot_id" ]]; then
-    boot_id=$(tr -d '[:space:]' <"$proc_root/sys/kernel/random/boot_id")
-  elif [[ -r /proc/sys/kernel/random/boot_id ]]; then
-    boot_id=$(tr -d '[:space:]' </proc/sys/kernel/random/boot_id)
-  fi
+  local target
+  local -a real_targets=()
+  for target in "$@"; do
+    [[ -n "$target" ]] || continue
+    local resolved
+    resolved=$(readlink -f "$target" 2>/dev/null || printf '%s\n' "$target")
+    real_targets+=("$resolved")
+  done
 
-  local earliest_run_ticks=""
-  local runs_file="$repo_root/.agent-profiles/.locks/$profile.runs"
-  if [[ -f "$runs_file" && -r "$runs_file" ]]; then
-    while read -r rec_boot rec_ticks; do
-      if [[ "$rec_boot" == "$boot_id" && -n "$rec_ticks" ]]; then
-        if [[ -z "$earliest_run_ticks" || "$rec_ticks" -lt "$earliest_run_ticks" ]]; then
-          earliest_run_ticks="$rec_ticks"
-        fi
-      fi
-    done <"$runs_file"
+  if [[ ${#real_targets[@]} -eq 0 ]]; then
+    return 0
   fi
 
   python3 -c '
-import os, sys, glob, re
+import os, sys, glob
 
-repo_root = sys.argv[1]
-profile = sys.argv[2]
-target_dir = os.path.realpath(sys.argv[3])
-proc_root = sys.argv[4]
-current_uid = int(sys.argv[5])
-caller_pids = set(int(p) for p in sys.argv[6].split() if p)
-assume_unrelated = set(int(p) for p in sys.argv[7].split(",") if p.isdigit())
-earliest_run_ticks = int(sys.argv[8]) if sys.argv[8].isdigit() else None
+label = sys.argv[1]
+proc_root = sys.argv[2]
+current_uid = int(sys.argv[3])
+caller_pids = set(int(p) for p in sys.argv[4].split() if p)
+assume_unrelated = set(int(p) for p in sys.argv[5].split(",") if p.isdigit())
+earliest_run_ticks = int(sys.argv[6]) if sys.argv[6].isdigit() else None
+target_dirs = [os.path.realpath(p) for p in sys.argv[7:] if p]
 
 relevant_processes = []
 relevant_unknown_processes = []
@@ -78,10 +96,11 @@ def is_path_under_target(p):
         return False
     try:
         rp = os.path.realpath(p)
-        if rp == target_dir or rp.startswith(target_dir + "/"):
-            return True
     except OSError:
-        pass
+        return False
+    for target in target_dirs:
+        if rp == target or rp.startswith(target + "/"):
+            return True
     return False
 
 for pdir in glob.glob(os.path.join(proc_root, "[0-9]*")):
@@ -279,12 +298,34 @@ for pid, comm in relevant_unknown_processes:
     refusal_lines.append(f"  PID {pid} ({comm}) [relevant-unknown: uninspectable process potentially bound to profile]")
 
 if refusal_lines:
-    print("agent-profiles: error: refused: active process(es) associated with profile '\''" + profile + "'\'':", file=sys.stderr)
+    print("agent-profiles: error: refused: active process(es) associated with " + label + ":", file=sys.stderr)
     for line in refusal_lines:
         print(line, file=sys.stderr)
     print("Use --assume-unrelated PID[,PID...] to explicitly vouch for unknown uninspectable processes.", file=sys.stderr)
     sys.exit(75)
 
 sys.exit(0)
-' "$repo_root" "$profile" "$real_target_dir" "$proc_root" "$current_uid" "${caller_pids[*]}" "${assume_unrelated[*]}" "$earliest_run_ticks"
+' "$label" "$proc_root" "$current_uid" "${caller_pids[*]}" "${assume_unrelated[*]}" "$earliest_run_ticks" "${real_targets[@]}"
+}
+
+# Scans one profile's storage. Kept as the public entry point for reset/remove.
+ap_scan_processes() {
+  local repo_root="$1"
+  local profile="$2"
+  local assume_unrelated_csv="${3:-}"
+  local earliest
+  earliest=$(ap_earliest_run_ticks "$repo_root/.agent-profiles/.locks/$profile.runs")
+  ap_scan_processes_for_paths "profile '$profile'" "$assume_unrelated_csv" \
+    "$earliest" "$repo_root/.agent-profiles/$profile"
+}
+
+# Scans arbitrary legacy sources that are not profile storage. No run record
+# exists for non-wrapper legacy use, so orphaned uninspectable processes that
+# started this boot are treated conservatively as relevant-unknown.
+ap_scan_legacy_processes() {
+  local repo_root="$1"
+  local label="$2"
+  local assume_unrelated_csv="$3"
+  shift 3
+  ap_scan_processes_for_paths "$label" "$assume_unrelated_csv" "" "$@"
 }
