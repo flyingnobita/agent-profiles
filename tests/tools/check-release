@@ -302,4 +302,16 @@ done < <(release_files)
   || fail "the release surface contains author paths or private delivery identifiers"
 pass "the release surface contains no author paths or private delivery identifiers"
 
+# --- 4d. Tracked and shipped content uses standard dashes ------------------
+EM_DASH_VIOLATIONS=0
+while IFS= read -r file; do
+  if grep -qP '\x{2014}' "$file" 2>/dev/null; then
+    echo "check-release: FAIL: em dash in ${file#"$ROOT_DIR"/}" >&2
+    EM_DASH_VIOLATIONS=$((EM_DASH_VIOLATIONS + 1))
+  fi
+done < <(release_files)
+[[ "$EM_DASH_VIOLATIONS" -eq 0 ]] \
+  || fail "the release surface contains em dashes; use standard dashes"
+pass "the release surface uses standard dashes"
+
 echo "check-release: all release readiness checks passed"
