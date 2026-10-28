@@ -47,7 +47,9 @@ ap_cmd_run() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout (run 'agent-profiles init --profile $profile' first)"
   fi
 
+  ap_check_bwrap_readiness
   ap_prepare_profile_env "$repo_root" "$profile"
+  ap_build_bwrap_mounts "$repo_root" "$profile"
 
-  exec "$@"
+  exec bwrap --dev-bind / / "${BWRAP_MOUNT_ARGS[@]}" --die-with-parent -- "$@"
 }

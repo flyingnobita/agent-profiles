@@ -235,3 +235,83 @@ ap_prepare_profile_env() {
     fi
   done
 }
+
+ap_check_bwrap_readiness() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    ap_die "$EX_UNAVAILABLE" "operating system '$(uname -s)' is not qualified (Linux is required)"
+  fi
+
+  if ! command -v bwrap >/dev/null 2>&1; then
+    ap_die "$EX_UNAVAILABLE" "bubblewrap (bwrap) is required but not found on PATH. Install bubblewrap via your system package manager."
+  fi
+
+  if ! bwrap --dev-bind / / true >/dev/null 2>&1; then
+    ap_die "$EX_UNAVAILABLE" "bubblewrap namespace setup failed. Ensure unprivileged user namespaces are enabled (check kernel.unprivileged_userns_clone sysctl, AppArmor apparmor_restrict_unprivileged_userns, or container seccomp profiles)."
+  fi
+}
+
+ap_build_bwrap_mounts() {
+  local repo_root="$1"
+  local profile="$2"
+  local prof_dir="$repo_root/.agent-profiles/$profile"
+  local storage_dir="$repo_root/.agent-profiles"
+
+  local redirect_dirs=(.claude .codex .gemini .agents)
+  local seen_targets=()
+  BWRAP_MOUNT_ARGS=()
+
+  for d in "${redirect_dirs[@]}"; do
+    local src="$prof_dir/$d"
+    if [[ ! -d "$src" ]]; then
+      mkdir -p "$src"
+    fi
+
+    local target="$HOME/$d"
+
+    # Check for dangling symlink
+    if [[ -L "$target" && ! -e "$target" ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' is a dangling symlink"
+    fi
+
+    # Follow valid directory symlinks to their physical host target
+    if [[ -L "$target" ]]; then
+      local phys_target
+      phys_target=$(readlink -f "$target" 2>/dev/null || true)
+      if [[ ! -d "$phys_target" ]]; then
+        ap_die "$EX_LAYOUT" "mount target '$target' resolves to '$phys_target' which is not a directory"
+      fi
+      target="$phys_target"
+    fi
+
+    # Check if target is a regular file or other non-directory
+    if [[ -e "$target" && ! -d "$target" ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' exists but is not a directory"
+    fi
+
+    # Check root target
+    if [[ "$target" == "/" ]]; then
+      ap_die "$EX_LAYOUT" "mount target cannot be '/'"
+    fi
+
+    # Check if target overlaps profile storage
+    if [[ "$target" == "$storage_dir"* || "$storage_dir" == "$target"* ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' cannot overlap with profile storage directory '$storage_dir'"
+    fi
+
+    # Check for target duplicate / overlap
+    for seen in "${seen_targets[@]}"; do
+      if [[ "$target" == "$seen" ]]; then
+        ap_die "$EX_LAYOUT" "duplicate mount target '$target'"
+      fi
+    done
+    seen_targets+=("$target")
+
+    # If missing, create as empty host directory with stderr notice
+    if [[ ! -e "$target" ]]; then
+      mkdir -p "$target"
+      printf "agent-profiles: notice: created empty host mountpoint %s\n" "$target" >&2
+    fi
+
+    BWRAP_MOUNT_ARGS+=(--bind "$src" "$target")
+  done
+}
