@@ -13,6 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=tests/live/lib.sh
 source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=tests/live/claude-cleanup.sh
+source "$SCRIPT_DIR/claude-cleanup.sh"
 
 usage() {
   cat <<'EOF'
@@ -48,6 +50,8 @@ mkdir -p "$EVIDENCE_ROOT"
 chmod 700 "$EVIDENCE_ROOT" 2>/dev/null || true
 OUT="$EVIDENCE_ROOT/claude-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -m 700 "$OUT"
+QA_START_TICKS="$(ap_claude_qa_uptime_ticks)"
+QA_BOOT_ID="$(ap_claude_qa_boot_id)"
 
 HOST_HOME="$HOME"
 HOST_CLAUDE_DIR="$HOST_HOME/.local/share/claude"
@@ -55,6 +59,7 @@ QA_KEY="placeholder-not-a-real-key"
 WORK="$(mktemp -d /tmp/ap-claude-live-XXXXXX)"
 BG_ID=""
 WATCH_PID=""
+QA_PROFILE_DIR=""
 FAILURES=0
 CHECKS_JSON="[]"
 
@@ -87,34 +92,12 @@ stop_background_session() {
   BG_ID=""
 }
 
-# A stopped background session can leave a transient Claude daemon running with
-# the disposable checkout as its cwd. Stop only daemons that name this run's
-# work directory, never another session's daemon.
-stop_test_daemons() {
-  local pid
-  local -a pids=()
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] || continue
-    if cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | grep -qF -- "$WORK"; then
-      pids+=("$pid")
-    fi
-  done < <(ps -eo pid=,args= | awk '/claude daemon run/ {print $1}')
-  if [[ ${#pids[@]} -gt 0 ]]; then
-    printf '%s\n' "${pids[*]}" >>"$OUT/daemons-stopped.txt" 2>/dev/null || true
-    kill -TERM "${pids[@]}" 2>/dev/null || true
-    sleep 1
-    kill -KILL "${pids[@]}" 2>/dev/null || true
-  fi
-}
-
-test_daemons_running() {
-  local pid
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] || continue
-    if cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | grep -qF -- "$WORK"; then
-      printf '%s\n' "$pid"
-    fi
-  done < <(ps -eo pid=,args= | awk '/claude daemon run/ {print $1}')
+# Owned QA processes are identified by the disposable profile environment and
+# their start-time identity in tests/live/claude-cleanup.sh. argv and cwd are
+# not ownership evidence, so a scanner cannot detect itself.
+stop_test_processes() {
+  ap_claude_qa_cleanup "$QA_PROFILE_DIR" "$QA_START_TICKS" "$QA_BOOT_ID" \
+    >>"$OUT/daemons-stopped.txt" 2>/dev/null || true
 }
 
 cleanup() {
@@ -123,7 +106,7 @@ cleanup() {
     WATCH_PID=""
   fi
   stop_background_session
-  stop_test_daemons
+  stop_test_processes
   rm -rf "$WORK"
   rm -f "${DENIED:-}"
 }
@@ -207,6 +190,8 @@ $profile profile marker skill
 MD
   printf '{"marker":"%s-settings"}\n' "$profile" >"$REPO/.agent-profiles/$profile/.claude/settings.json"
 done
+
+QA_PROFILE_DIR="$REPO/.agent-profiles/a"
 
 # Profile a is pre-trusted so the sandbox check reaches the composer without a
 # human. It also carries a user-scope MCP marker for discovery.
@@ -561,8 +546,7 @@ if [[ -n "$BG_ID" ]]; then
     fail_check sandbox-enforcement "sandboxed shell-mode write denial was not observed with the expected files"
   fi
   stop_background_session
-  ap_run_profile a claude agents --json >"$OUT/background-agents.json" 2>&1 || true
-  stop_test_daemons
+  stop_test_processes
 else
   fail_check sandbox-enforcement "could not start an idle background session for the shell-mode sandbox check"
 fi
@@ -581,25 +565,18 @@ else
   pass_check no-credential-copy "no host credential file was copied or linked into the profile"
 fi
 
-if python3 - "$OUT/background-agents.json" <<'PY'
-import json, sys
-try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
-except Exception:
-    sys.exit(1)
-if not isinstance(data, list):
-    sys.exit(1)
-sys.exit(0 if all(s.get("state") == "stopped" for s in data) else 1)
-PY
-then
-  DAEMONS_LEFT="$(test_daemons_running)"
-  if [[ -z "$DAEMONS_LEFT" ]]; then
-    pass_check cleanup "test-owned background session and transient daemon were stopped"
-  else
-    fail_check cleanup "test-owned daemon(s) remain: $DAEMONS_LEFT"
-  fi
+STOPPED_SESSION=0
+if grep -q "^stopped " "$OUT/background-stop.txt" 2>/dev/null; then
+  STOPPED_SESSION=1
+fi
+DAEMONS_LEFT="$(ap_claude_qa_owned_pids "$QA_PROFILE_DIR" "$QA_START_TICKS" "$QA_BOOT_ID")"
+if [[ "$STOPPED_SESSION" -eq 1 && -z "$DAEMONS_LEFT" ]]; then
+  pass_check cleanup "test-owned background session and transient daemon were stopped"
+elif [[ "$STOPPED_SESSION" -ne 1 ]]; then
+  fail_check cleanup "the test-owned background session stop was not confirmed"
 else
-  fail_check cleanup "a test-owned background session may remain; inspect background-agents.json"
+  printf '%s\n' "$DAEMONS_LEFT" >"$OUT/processes-left.txt" 2>/dev/null || true
+  fail_check cleanup "test-owned daemon(s) remain: $DAEMONS_LEFT"
 fi
 
 python3 - "$OUT/summary.json" "$VERSION" "$FAILURES" "$CHECKS_JSON" "$OUT" <<'PY'
