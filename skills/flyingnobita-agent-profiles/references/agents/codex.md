@@ -52,6 +52,7 @@ Codex provides its own process sandbox for executing commands:
 Common diagnostic procedures and known boundaries:
 
 - Local health: Run `codex doctor --json` to inspect configuration loading, app-server socket paths, and authentication status. The app server is ephemeral by default and normally reports as not running.
+- Profile diagnostics: `agent-profiles doctor --json --agent codex --profile NAME` reports the profile `CODEX_HOME`, initialization, artifact presence, inherited credential variable names, and a login state probed in a disposable snapshot. `login_reported` means the CLI reported a login; it is not authentication, and an auth file's presence alone is never treated as one.
 - Verified version: The discovery, login-status, and sandbox behavior above was verified with `codex-cli 0.165.0`. Re-run `codex doctor --json` after upgrades because flags and skill sources can change.
 - Credential gaps: Live model turns and authenticated skill execution require valid API credentials; when testing without credentials, model responses remain explicit unverified gaps.
 - Process cleanup: Always terminate test app-servers and helper processes using `kill -TERM -$PGID` and `kill -KILL -$PGID` against recorded test markers.
