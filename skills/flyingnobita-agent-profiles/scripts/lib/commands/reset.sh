@@ -7,6 +7,7 @@
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"
 source "$LIB_DIR/procscan.sh"
+source "$LIB_DIR/lifecycle.sh"
 
 ap_cmd_reset() {
   local profile=""
@@ -78,6 +79,7 @@ ap_cmd_reset() {
     printf "Reset preview for profile '%s':\n" "$profile"
     printf "  Path: %s\n" "$prof_dir"
     printf "  Consequences: settings, transcripts, credentials, and installed tools will be cleared\n"
+    ap_preview_profile_categories "$prof_dir"
     printf "Pass --yes to proceed with reset.\n"
     return 0
   fi

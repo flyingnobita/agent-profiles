@@ -7,6 +7,7 @@
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"
 source "$LIB_DIR/procscan.sh"
+source "$LIB_DIR/lifecycle.sh"
 
 ap_cmd_remove() {
   local profile=""
@@ -78,6 +79,7 @@ ap_cmd_remove() {
     printf "Remove preview for profile '%s':\n" "$profile"
     printf "  Path: %s\n" "$prof_dir"
     printf "  Consequences: profile directory and all stored settings, transcripts, credentials, and installed tools will be deleted\n"
+    ap_preview_profile_categories "$prof_dir"
     printf "Pass --yes to proceed with remove.\n"
     return 0
   fi
