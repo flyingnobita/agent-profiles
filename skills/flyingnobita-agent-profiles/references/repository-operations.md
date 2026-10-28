@@ -21,6 +21,7 @@ agent-profiles init --profile=my-worker
 ### Profile Storage and Naming
 
 - **Storage Layout**: Storage is created at `<git-toplevel>/.agent-profiles/<name>/` with private permissions (`0700`, `umask 077`). Initialized profiles contain subdirectories for `.claude`, `.codex`, `.gemini`, `.agents`, `.opencode`, `home`, `bin`, `npm-global`, `uv-tools`, `cargo-global`, `python-user`, `.config`, `.local/share`, `.local/state`, `.cache`, and an `.agent-profile` format marker.
+- **Symlink Safety**: Profile storage directories, profile roots, managed internal subdirectories (`.local`, `.cache`, install bins, etc.), and lock/runs files must be real files/directories. Any symbolic link within profile storage or lock structures is rejected with exit 73 (`EX_LAYOUT`), and no directories are created through source links.
 - **Naming Rule**: Names accept 1 to 32 characters matching `^[a-z][a-z0-9_-]{0,31}$` (lowercase letters, digits, underscores, or hyphens, starting with a letter). Invalid names exit 65 (`EX_DATAERR`). Omitting `--profile` defaults to `default`.
 - **Subdirectory and Worktree Resolution**: Running from any repository subdirectory creates storage at the Git toplevel. Separate Git worktrees maintain distinct, independent profile storage.
 - **Git Metadata Exclude**: An anchored `/.agent-profiles/` entry is added to `git rev-parse --git-path info/exclude` under lock, ensuring profile storage is untracked locally without modifying project files or `.gitignore`.
@@ -59,16 +60,18 @@ When executing commands, the helper resets managed environment variables (`AGENT
 - `AGENT_PROFILES_NAME`, `AGENT_PROFILES_DIR`, `AGENT_PROFILES_ROOT`, `AGENT_PROFILES_BASE_PATH`
 - Legacy output-only aliases `AGENT_SANDBOX_PROFILE` and `AGENT_SANDBOX_DIR`
 - Isolated XDG roots (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`) pointing inside `<profile>`
-- Isolated package managers: `NPM_CONFIG_PREFIX`, `NPM_CONFIG_CACHE`, `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`, `UV_CACHE_DIR`, `CARGO_INSTALL_ROOT`, `GOBIN`, `PYTHONUSERBASE`
+- Isolated package managers: `NPM_CONFIG_PREFIX`, `NPM_CONFIG_CACHE`, `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR` (points to `<profile>/bin`), `UV_CACHE_DIR`, `CARGO_INSTALL_ROOT`, `GOBIN`, `PYTHONUSERBASE`
 - `PATH`: Profile binaries (`npm-global/bin`, `bin`, `cargo-global/bin`, `python-user/bin`) are prepended first, followed by cleaned host PATH (stale `*/.agent-profiles/*/` entries are purged).
+- Shipped agent modules under `lib/agents/*.sh` are loaded and declare per-agent environment hooks (`ap_agent_env_<id>`) when defined.
 
 Project package managers and lockfiles remain unchanged.
 
 ### Bubblewrap Redirection and Host Boundaries
 
 - **Directory Redirection**: Bubblewrap (`bwrap`) bind-mounts `<profile>/{.claude,.codex,.gemini,.agents}` over corresponding host directories in `$HOME`. Writes inside the profile land in profile storage and do not touch host configuration.
-- **Host Symlinks**: If a host mount target is a valid directory symlink, bubblewrap binds over its physical destination (`readlink -f`). Dangling symlinks, non-directories, root (`/`), or targets overlapping profile storage are rejected with exit 73 (`EX_LAYOUT`).
-- **Empty Host Mountpoints**: If a mount target does not exist on the host, an empty directory is created on the host to serve as a bind mountpoint, accompanied by an explicit notice on stderr.
+- **Two-Pass Mount Validation**: The entire mount table is validated before creating any missing host mountpoints. Host directory symlinks are canonicalized to physical targets (`realpath -m`), including when ancestors of missing targets are symlinks.
+- **Overlap & Hiding Prohibitions**: Any duplicate target, ancestor/descendant target overlap in either direction, path hiding root (`/`), user `$HOME`, repository root, or profile storage is rejected with exit 73 (`EX_LAYOUT`). Storage overlap checks respect path-component boundaries, safely permitting sibling directory names sharing a prefix with storage (e.g. `.agent-profiles-sibling`).
+- **Empty Host Mountpoints**: If a validated mount target does not exist on the host, an empty directory is created on the host to serve as a bind mountpoint, accompanied by an explicit notice on stderr.
 - **Shared Host Access**: Agent profiles provide workflow separation, not a security sandbox for untrusted code. Host network, devices, project files, and system processes remain accessible.
 - **Capability Failure**: Missing `bwrap` or failure of unprivileged user namespaces exits 69 (`EX_UNAVAILABLE`) with an actionable hint.
 
@@ -78,7 +81,7 @@ Before environment variables are reset, `mise doctor --json` captures the host's
 
 ### Nested Invocations and Concurrency
 
-- **Nested Execution**: Nested detection inspects `/proc/self/mountinfo` for active profile binds. Nested execution within the same profile does not re-wrap with `bwrap`, rebuilds a deduplicated environment from `AGENT_PROFILES_BASE_PATH`, and succeeds. Attempting to switch to a different profile while nested inside another profile is refused with exit 75 (`EX_BUSY`). Inherited variables without live mountinfo evidence are treated as spurious and reset.
+- **Nested Execution**: Nested detection inspects `/proc/self/mountinfo`, decoding octal-escaped paths and matching active container mounts against the canonical `CHECKOUT+PROFILE` storage identity. Nested execution within the exact same profile and checkout does not re-wrap with `bwrap`, rebuilds a deduplicated environment from `AGENT_PROFILES_BASE_PATH`, and succeeds. Attempting to switch profiles or run inside another checkout from within a live container is refused with exit 75 (`EX_BUSY`). Inherited variables without live mountinfo evidence are treated as spurious and reset.
 - **Concurrent Profiles**: Multiple profiles in the same repository can run concurrently without interference. Profile directories must be distinct real directories; aliasing or sharing inodes across profiles is rejected with exit 73.
 - **Lease API**: Every run holds a persistent shared lease (`.agent-profiles/.locks/<name>.lock`) inherited by child processes across command execution. Lock ordering requires acquiring storage locks before profile leases. Runs record `<boot_id> <start_ticks>` in `.agent-profiles/.locks/<name>.runs`.
-- **Preflight Hooks**: Extensible preflight scripts in `lib/preflight.d/*.sh` execute before commands and can reject invalid or corrupted states.
+- **Preflight Hooks**: Extensible preflight scripts in `lib/preflight.d/*.sh` execute before `init`, `list`, `run`, and same-profile nested `run`. Hooks are sorted and execute prior to state mutation or lock acquisition; failures abort immediately with the hook's exact exit code. Doctor remains read-only without executing mutating preflight hooks.
