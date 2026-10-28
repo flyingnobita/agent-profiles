@@ -3,6 +3,7 @@
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/procscan.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"
@@ -69,10 +70,14 @@ ap_cmd_reset() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout"
   fi
 
-  # Run preflight
+  # 1. Preflight
   ap_run_preflight "$repo_root" "$profile"
 
-  # Process scan check
+  # 2. Acquire shared storage lock and exclusive profile lock in lock order
+  ap_lock_storage_shared "$repo_root"
+  ap_lock_profile_exclusive "$repo_root" "$profile"
+
+  # 3. Process scan check
   ap_scan_processes "$repo_root" "$profile" "$assume_unrelated"
 
   if [[ $yes_flag -eq 0 ]]; then
@@ -81,8 +86,41 @@ ap_cmd_reset() {
     printf "  Consequences: settings, transcripts, credentials, and installed tools will be cleared\n"
     ap_preview_profile_categories "$prof_dir"
     printf "Pass --yes to proceed with reset.\n"
+    ap_unlock_profile
+    ap_unlock_storage
     return 0
   fi
 
-  # Mutating logic will be implemented in subsequent slice
+  # 4. Mutating state machine with atomic journal
+  ap_ensure_journal_dir "$repo_root"
+  local journal_file="$repo_root/.agent-profiles/.journal/reset-$profile.json"
+  (umask 077 && touch "$journal_file" && chmod 600 "$journal_file")
+  ap_lock_journal "$journal_file"
+
+  ap_record_journal "$journal_file" "reset" "$profile" "planned" "$prof_dir" "" "$assume_unrelated"
+
+  ap_ensure_trash_dir "$repo_root"
+  local ts
+  ts=$(date +%s%N 2>/dev/null || date +%s)
+  local trash_path="$repo_root/.agent-profiles/.trash/$profile.$ts"
+  mv "$prof_dir" "$trash_path"
+
+  ap_record_journal "$journal_file" "reset" "$profile" "trashed" "$prof_dir" "$trash_path" "$assume_unrelated"
+
+  # Rebuild empty profile
+  ap_init_profile "$repo_root" "$profile"
+  ap_record_journal "$journal_file" "reset" "$profile" "rebuilt" "$prof_dir" "$trash_path" "$assume_unrelated"
+
+  # Delete trash path without dereferencing symlinks
+  rm -rf "$trash_path"
+  ap_record_journal "$journal_file" "reset" "$profile" "trash-deleted" "$prof_dir" "" "$assume_unrelated"
+
+  # Done: clear journal and release locks
+  ap_unlock_journal
+  rm -f "$journal_file"
+
+  ap_unlock_profile
+  ap_unlock_storage
+
+  printf "Reset profile '%s' successfully.\n" "$profile"
 }

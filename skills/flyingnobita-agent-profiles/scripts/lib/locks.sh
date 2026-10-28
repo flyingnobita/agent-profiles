@@ -108,6 +108,35 @@ ap_lock_profile_exclusive() {
   fi
 }
 
+ap_unlock_profile() {
+  if [[ -n "${AP_PROFILE_EXCLUSIVE_FD:-}" ]]; then
+    exec {AP_PROFILE_EXCLUSIVE_FD}>&-
+    unset AP_PROFILE_EXCLUSIVE_FD
+  fi
+  if [[ -n "${AP_PROFILE_LEASE_FD:-}" ]]; then
+    exec {AP_PROFILE_LEASE_FD}>&-
+    unset AP_PROFILE_LEASE_FD
+  fi
+}
+
+ap_lock_journal() {
+  local journal_file="$1"
+  if [[ -L "$journal_file" ]]; then
+    ap_die "$EX_LAYOUT" "journal file '$journal_file' is a symbolic link"
+  fi
+  exec {AP_JOURNAL_LOCK_FD}<>"$journal_file"
+  if ! flock -x -n "$AP_JOURNAL_LOCK_FD"; then
+    ap_die "$EX_BUSY" "cannot acquire exclusive lock for journal '$journal_file' (operation in progress)"
+  fi
+}
+
+ap_unlock_journal() {
+  if [[ -n "${AP_JOURNAL_LOCK_FD:-}" ]]; then
+    exec {AP_JOURNAL_LOCK_FD}>&-
+    unset AP_JOURNAL_LOCK_FD
+  fi
+}
+
 ap_record_run() {
   local repo_root="$1"
   local profile="$2"
