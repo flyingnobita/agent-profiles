@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="${1:?usage: red-run <repo> <subject-sha> <red-sha> <tests-dir>}"
+SUBJECT="${2:?missing subject sha}"
+RED="${3:?missing red sha}"
+DIR="${4:?missing tests dir}"
+
+W=$(mktemp -d)
+trap 'rm -rf "$W"' EXIT
+
+mkdir -p "$W/subject" "$W/tooling"
+
+# Subject: exactly the code under test
+if git -C "$REPO" cat-file -e "$SUBJECT^{commit}" 2>/dev/null; then
+  git -C "$REPO" archive "$SUBJECT" | tar -x -C "$W/subject"
+fi
+
+# Overlay: test side only
+git -C "$REPO" archive "$RED" -- tests | tar -x -C "$W/subject"
+
+# Tooling: pinned versions only, never the subject's config
+git -C "$REPO" show "$RED:mise.toml" >"$W/tooling/mise.toml"
+
+export MISE_TRUSTED_CONFIG_PATHS="$W/tooling"
+mise -C "$W/tooling" install >&2
+
+mise -C "$W/tooling" exec -- env AP_SUBJECT="$W/subject" bats -r "$W/subject/$DIR"

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="${1:-$PWD}"
+SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+[[ -d "$SKILL_DIR" ]] || fail "Skill directory does not exist: $SKILL_DIR"
+
+# 1. VERSION
+VERSION_FILE="$SKILL_DIR/VERSION"
+[[ -f "$VERSION_FILE" ]] || fail "VERSION file missing"
+VERSION=$(tr -d '[:space:]' <"$VERSION_FILE")
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] || fail "VERSION '$VERSION' is not valid semver"
+
+# 2. LICENSE
+LICENSE_FILE="$SKILL_DIR/LICENSE"
+[[ -f "$LICENSE_FILE" ]] || fail "LICENSE file missing"
+grep -q "MIT License" "$LICENSE_FILE" || fail "LICENSE does not specify MIT License"
+
+# 3. SKILL.md
+SKILL_MD="$SKILL_DIR/SKILL.md"
+[[ -f "$SKILL_MD" ]] || fail "SKILL.md file missing"
+
+LINE_COUNT=$(wc -l <"$SKILL_MD")
+[[ "$LINE_COUNT" -le 100 ]] || fail "SKILL.md exceeds 100 lines ($LINE_COUNT lines)"
+
+BYTE_COUNT=$(wc -c <"$SKILL_MD")
+[[ "$BYTE_COUNT" -le 6144 ]] || fail "SKILL.md exceeds 6 KB ($BYTE_COUNT bytes)"
+
+# Frontmatter checks
+grep -q "^name: flyingnobita-agent-profiles" "$SKILL_MD" || fail "SKILL.md missing name frontmatter"
+grep -q "^license: MIT" "$SKILL_MD" || fail "SKILL.md missing license: MIT"
+grep -q "Linux (bash, git, python3, mise, bubblewrap); macOS not qualified" "$SKILL_MD" || fail "SKILL.md missing compatibility statement"
+grep -q "version: $VERSION" "$SKILL_MD" || fail "SKILL.md version does not match VERSION file ($VERSION)"
+
+# Description length
+DESC_LEN=$(python3 -c '
+import sys, re
+with open(sys.argv[1]) as f:
+    c = f.read()
+m = re.search(r"^description:\s*(.*?)(?=\n[a-z]+:|\n---)", c, re.MULTILINE | re.DOTALL)
+if not m:
+    sys.exit(1)
+print(len(m.group(1).strip()))
+' "$SKILL_MD" 2>/dev/null || echo "0")
+[[ "$DESC_LEN" -gt 0 && "$DESC_LEN" -le 1024 ]] || fail "SKILL.md description length ($DESC_LEN) must be between 1 and 1024 characters"
+
+# 4. Scripts
+[[ -f "$SKILL_DIR/scripts/agent-profiles" ]] || fail "scripts/agent-profiles missing"
+[[ -f "$SKILL_DIR/scripts/lib/common.sh" ]] || fail "scripts/lib/common.sh missing"
+
+# 5. References
+REQUIRED_REFS=(
+  "references/questions.md"
+  "references/repository-operations.md"
+  "references/machine-setup.md"
+  "references/lifecycle.md"
+  "references/troubleshooting.md"
+  "references/compatibility.md"
+  "references/agents/claude-code.md"
+  "references/agents/codex.md"
+  "references/agents/antigravity.md"
+  "references/agents/opencode.md"
+)
+
+for ref in "${REQUIRED_REFS[@]}"; do
+  [[ -f "$SKILL_DIR/$ref" ]] || fail "Required reference missing: $ref"
+done
+
+# 6. Forbidden author and personal path checks in shipped content
+if grep -rnE "(/home/[a-zA-Z0-9_-]+|@users\.noreply\.github\.com|~/dotfiles|\.scratch)" "$SKILL_DIR" >/dev/null 2>&1; then
+  echo "Found forbidden personal paths or credentials in $SKILL_DIR:" >&2
+  grep -rnE "(/home/[a-zA-Z0-9_-]+|@users\.noreply\.github\.com|~/dotfiles|\.scratch)" "$SKILL_DIR" >&2
+  fail "Shipped skill package must not contain personal paths or author references"
+fi
+
+echo "check-package: all checks passed for $SKILL_DIR"
