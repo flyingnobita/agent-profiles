@@ -128,14 +128,17 @@ teardown() {
   assert_success
 }
 
-@test "routing: helper --help distinguishes implemented vs planned future commands and rejects unimplemented with actionable message" {
+@test "routing: helper --help summarizes every implemented command and no false planned list" {
   run bash "$AP_HELPER" --help
   assert_success
   assert_output_contains "Implemented commands:"
-  assert_output_contains "doctor"
-  assert_output_contains "Planned commands"
+  assert_output_not_contains "Planned"
 
-  # setup is implemented from ticket 03 and runs a read-only preview by default
+  for cmd in doctor init list run setup reset remove migrate recover; do
+    assert_output_contains "  $cmd"
+  done
+
+  # setup is implemented and runs a read-only preview by default
   run bash "$AP_HELPER" setup --preview
   assert_success
   assert_output_contains "No changes made"
@@ -146,4 +149,17 @@ teardown() {
   assert_equal "$status" 64
   assert_output_contains "unknown command"
   assert_output_contains "Available commands"
+}
+
+@test "routing: SKILL.md command summary documents every implemented command" {
+  local skill_md="$AP_SKILL_DIR/SKILL.md"
+  assert_file_exists "$skill_md"
+
+  run grep -F "Planned future commands" "$skill_md"
+  assert_failure
+
+  for cmd in doctor init list run setup reset remove migrate recover; do
+    run grep -F "bash \"\$AP_HELPER\" $cmd" "$skill_md"
+    assert_success
+  done
 }

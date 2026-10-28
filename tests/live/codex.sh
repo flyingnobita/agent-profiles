@@ -12,7 +12,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 AP_HELPER="$REPO_ROOT/skills/flyingnobita-agent-profiles/scripts/agent-profiles"
-EVIDENCE_DIR="${AP_EVIDENCE_DIR:-/home/omarchy/.local/state/flyingnobita-deliver/4efade3f099f42f991db984676edec70/evidence}"
+EVIDENCE_DIR="${AP_EVIDENCE_DIR:-$HOME/.local/state/flyingnobita-agent-profiles/evidence}"
 mkdir -p "$EVIDENCE_DIR"
 chmod 700 "$EVIDENCE_DIR"
 

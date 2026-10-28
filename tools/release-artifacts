@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Builds the versioned local release artifact set for
+# flyingnobita-agent-profiles: an installable skill tarball, its SHA-256
+# checksum and the release notes.
+#
+# Usage: tools/release-artifacts [<repo-root>] [--output-dir DIR]
+#
+# The output directory defaults to <repo-root>/dist, which is ignored by Git.
+# Nothing is published: no tag, remote, release or deployment is created.
+set -euo pipefail
+
+ROOT_DIR="$PWD"
+OUTPUT_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-dir)
+      [[ $# -ge 2 ]] || {
+        echo "release-artifacts: FAIL: --output-dir requires a directory" >&2
+        exit 1
+      }
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    --output-dir=*)
+      OUTPUT_DIR="${1#*=}"
+      shift
+      ;;
+    --*)
+      echo "release-artifacts: FAIL: unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      ROOT_DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+fail() {
+  echo "release-artifacts: FAIL: $*" >&2
+  exit 1
+}
+
+ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
+SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+NOTES="$ROOT_DIR/RELEASE_NOTES.md"
+
+[[ -d "$SKILL_DIR" ]] || fail "skill directory is missing: skills/flyingnobita-agent-profiles"
+[[ -f "$SKILL_DIR/VERSION" ]] || fail "VERSION file is missing"
+[[ -f "$NOTES" ]] || fail "RELEASE_NOTES.md is missing"
+[[ -f "$ROOT_DIR/LICENSE" ]] || fail "root LICENSE is missing"
+
+VERSION=$(tr -d '[:space:]' <"$SKILL_DIR/VERSION")
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] \
+  || fail "VERSION '$VERSION' is not valid semver"
+
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+# Stage the installable skill bundle; the tarball holds one top-level directory.
+mkdir -p "$WORK/flyingnobita-agent-profiles"
+cp -a "$SKILL_DIR/." "$WORK/flyingnobita-agent-profiles/"
+
+TARBALL="flyingnobita-agent-profiles-$VERSION.tar.gz"
+EPOCH="${SOURCE_DATE_EPOCH:-}"
+if [[ -z "$EPOCH" ]]; then
+  EPOCH=$(git -C "$ROOT_DIR" log -1 --format=%ct 2>/dev/null || true)
+fi
+[[ -n "$EPOCH" ]] || EPOCH=$(date +%s)
+
+tar -C "$WORK" \
+  --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
+  -czf "$OUTPUT_DIR/$TARBALL" flyingnobita-agent-profiles
+
+(
+  cd "$OUTPUT_DIR"
+  sha256sum "$TARBALL" >"$TARBALL.sha256"
+)
+
+cp "$NOTES" "$OUTPUT_DIR/RELEASE_NOTES.md"
+
+# The contract verifies the checksum, the bundle contents, the notes and an
+# extracted run before the artifact set is reported as built.
+bash "$ROOT_DIR/tests/tools/check-release" "$ROOT_DIR" --artifacts "$OUTPUT_DIR"
+
+CHECKSUM=$(cut -d' ' -f1 "$OUTPUT_DIR/$TARBALL.sha256")
+SIZE=$(stat -c %s "$OUTPUT_DIR/$TARBALL")
+
+echo "release-artifacts: version: $VERSION"
+echo "release-artifacts: tarball: $OUTPUT_DIR/$TARBALL ($SIZE bytes)"
+echo "release-artifacts: sha256: $CHECKSUM"
+echo "release-artifacts: notes: $OUTPUT_DIR/RELEASE_NOTES.md"
+echo "release-artifacts: local artifact set built and verified; nothing published"
