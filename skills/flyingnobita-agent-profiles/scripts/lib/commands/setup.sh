@@ -84,7 +84,7 @@ ap_cmd_setup() {
   ap_setup_print_detection
 
   if [[ "$mode" == "preview" ]]; then
-    ap_setup_print_plan "${requested_agents[@]:-}"
+    ap_setup_print_plan "$tasks_only" "$prepare_dir" "${requested_agents[@]:-}"
     printf "\nNo changes made (preview). Use --apply to configure global mise tasks.\n"
     return 0
   fi

@@ -192,6 +192,9 @@ ap_setup_print_detection() {
 # conflicts, missing prerequisites and requested agent installs. It writes
 # nothing and calls no installer.
 ap_setup_print_plan() {
+  local tasks_only="$1"
+  local prepare_dir="$2"
+  shift 2
   local version digest release config_dir reason task target dep agent path
   local -a requested_agents=("$@")
 
@@ -205,7 +208,9 @@ ap_setup_print_plan() {
   else
     release="unknown (VERSION or scripts manifest could not be read)"
   fi
+  local tasks_managed=0
   if reason="$(ap_setup_managed_config_reason "$config_dir")"; then
+    tasks_managed=1
     printf "  release: skipped because managed configuration was detected: %s\n" "$reason"
   else
     printf "  release: %s (created or verified on --apply)\n" "$release"
@@ -213,7 +218,13 @@ ap_setup_print_plan() {
 
   for task in "${AP_SETUP_TASKS[@]}"; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
-    if ap_setup_inline_conflict "$config_dir" "$task"; then
+    if [[ $tasks_managed -eq 1 ]]; then
+      if [[ -n "$prepare_dir" ]]; then
+        printf "  task: %s/tasks/%s (prepared source change; target left untouched)\n" "$prepare_dir" "$task"
+      else
+        printf "  task: %s (skipped: managed configuration; rerun with --prepare-dir DIR)\n" "$target"
+      fi
+    elif ap_setup_inline_conflict "$config_dir" "$task"; then
       printf "  task: %s (conflict: inline global mise task left untouched)\n" "$target"
     elif [[ -e "$target" ]] && ! ap_setup_is_managed_task "$target"; then
       printf "  task: %s (conflict: foreign task file left untouched)\n" "$target"
@@ -226,7 +237,19 @@ ap_setup_print_plan() {
     fi
   done
 
+  if [[ -n "$prepare_dir" && ! -f "$prepare_dir/INSTRUCTIONS.md" ]]; then
+    if [[ $tasks_managed -eq 1 ]] || ap_setup_config_file_managed_reason "$config_dir" >/dev/null; then
+      printf "  prepared: %s/INSTRUCTIONS.md (source-change instructions written on --apply)\n" "$prepare_dir"
+    fi
+  fi
+
+  if [[ "$tasks_only" -eq 1 ]]; then
+    printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
+  fi
   for dep in bash git python3 bwrap; do
+    if [[ "$tasks_only" -eq 1 ]]; then
+      break
+    fi
     if ap_setup_resolve "$dep" >/dev/null 2>&1; then
       continue
     fi
@@ -244,13 +267,23 @@ ap_setup_print_plan() {
 
   for agent in "${requested_agents[@]:-}"; do
     [[ -n "$agent" ]] || continue
+    if [[ "$tasks_only" -eq 1 ]]; then
+      printf "  agent: %s (skipped: --tasks-only requested; no installation)\n" "$agent"
+      continue
+    fi
+    if reason="$(ap_setup_config_file_managed_reason "$config_dir")"; then
+      if [[ -n "$prepare_dir" ]]; then
+        printf "  agent: %s (prepared source change in %s/mise/config.toml.fragment; target left untouched)\n" \
+          "$agent" "$prepare_dir"
+      else
+        printf "  agent: %s (skipped: managed configuration; rerun with --prepare-dir DIR)\n" "$agent"
+      fi
+      continue
+    fi
     if path="$(ap_setup_resolve "$agent")"; then
       printf "  agent: %s (already available at %s)\n" "$agent" "$path"
     elif ! ap_setup_mise_registry_has "$agent"; then
       printf "  agent: %s (unsupported automatic path: not in the mise registry)\n" "$agent"
-    elif reason="$(ap_setup_config_file_managed_reason "$config_dir")"; then
-      printf "  agent: %s (managed config detected: add '%s@latest' to your managed mise config)\n" \
-        "$agent" "$agent"
     else
       printf "  agent: %s (install through the mise registry on --apply; global mise config backed up first)\n" \
         "$agent"
@@ -455,15 +488,10 @@ ap_setup_backup_task() {
 ap_setup_config_file_managed_reason() {
   local config_dir="$1"
   local config_file="$config_dir/config.toml"
-  local resolved_dir
+  local dir_reason
 
-  if [[ -L "$config_dir" ]]; then
-    printf "global mise config directory '%s' is a symlink\n" "$config_dir"
-    return 0
-  fi
-  resolved_dir=$(readlink -f "$config_dir" 2>/dev/null || true)
-  if [[ -n "$resolved_dir" && "$resolved_dir" != "$config_dir" ]]; then
-    printf "global mise config directory '%s' resolves through a symlinked parent\n" "$config_dir"
+  if dir_reason="$(ap_setup_config_dir_managed_reason "$config_dir")"; then
+    printf "%s\n" "$dir_reason"
     return 0
   fi
   if [[ -d "$config_dir" && ! -w "$config_dir" ]]; then
@@ -486,11 +514,34 @@ ap_setup_config_file_managed_reason() {
   return 1
 }
 
+# Detects a global mise configuration directory that is itself a symlink or
+# resolves through a symlinked parent, which indicates dotfiles management.
+ap_setup_config_dir_managed_reason() {
+  local config_dir="$1"
+  local resolved_dir
+
+  if [[ -L "$config_dir" ]]; then
+    printf "global mise config directory '%s' is a symlink\n" "$config_dir"
+    return 0
+  fi
+  resolved_dir=$(readlink -f "$config_dir" 2>/dev/null || true)
+  if [[ -n "$resolved_dir" && "$resolved_dir" != "$config_dir" ]]; then
+    printf "global mise config directory '%s' resolves through a symlinked parent\n" "$config_dir"
+    return 0
+  fi
+  return 1
+}
+
 ap_setup_managed_config_reason() {
   local config_dir="$1"
   local tasks_dir="$config_dir/tasks"
   local task target
+  local dir_reason
 
+  if dir_reason="$(ap_setup_config_dir_managed_reason "$config_dir")"; then
+    printf "%s\n" "$dir_reason"
+    return 0
+  fi
   if [[ -L "$tasks_dir" ]]; then
     printf "tasks directory '%s' is a symlink\n" "$tasks_dir"
     return 0
@@ -585,7 +636,13 @@ ap_setup_install_package() {
 
 ap_setup_install_prerequisites() {
   local dep
+  if [[ "$tasks_only" -eq 1 ]]; then
+    printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
+  fi
   for dep in bash git python3 bwrap; do
+    if [[ "$tasks_only" -eq 1 ]]; then
+      break
+    fi
     if ap_setup_resolve "$dep" >/dev/null 2>&1; then
       continue
     fi
