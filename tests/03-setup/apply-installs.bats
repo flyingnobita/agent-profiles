@@ -83,3 +83,104 @@ MISE_WRAPPER
   run ! grep -Fq "sudo pacman" "$AP_SPY_LOG"
   run ! grep -Fq "mise use" "$AP_SPY_LOG"
 }
+
+@test "setup apply: backs up the global mise config before installing a requested agent" {
+  build_install_env
+
+  mkdir -p "$MISE_CONFIG_DIR"
+  printf '[tools]\nnode = "lts"\n' >"$MISE_CONFIG_DIR/config.toml"
+  local config_hash_before
+  config_hash_before=$(sha256sum "$MISE_CONFIG_DIR/config.toml" | cut -d' ' -f1)
+
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex
+  assert_success
+  assert_output_contains "backup:"
+
+  # The original global configuration is preserved in a private backup.
+  local backup
+  backup=$(find "${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups" \
+    -path '*mise*' -name config.toml | head -n 1)
+  [[ -n "$backup" ]]
+  assert_equal "$config_hash_before" "$(sha256sum "$backup" | cut -d' ' -f1)"
+}
+
+@test "setup apply: a managed global mise config is left untouched for a requested agent" {
+  build_install_env
+
+  mkdir -p "$MISE_CONFIG_DIR" "$TEST_TMPDIR/dotfiles"
+  printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/config.toml"
+  ln -s "$TEST_TMPDIR/dotfiles/config.toml" "$MISE_CONFIG_DIR/config.toml"
+  local config_hash_before
+  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/config.toml" | cut -d' ' -f1)
+
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex \
+    --prepare-dir "$TEST_TMPDIR/prepared"
+  assert_success
+  assert_output_contains "managed"
+  assert_output_contains "codex"
+
+  # The managed target and its symlink are untouched.
+  [[ -L "$MISE_CONFIG_DIR/config.toml" ]]
+  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/config.toml" | cut -d' ' -f1)"
+  run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
+}
+
+@test "setup apply: a managed mise config parent directory is not rewritten for a requested agent" {
+  build_install_env
+
+  mkdir -p "$TEST_TMPDIR/dotfiles/mise" "$TEST_TMPDIR/mise"
+  printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/mise/config.toml"
+  rmdir "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
+  local config_hash_before
+  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)
+
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex \
+    --prepare-dir "$TEST_TMPDIR/prepared"
+  assert_success
+  assert_output_contains "managed configuration detected"
+
+  [[ -L "$MISE_CONFIG_DIR" ]]
+  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)"
+  run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
+
+  # A real prepared source artifact is produced instead of an in-place edit.
+  assert_file_exists "$TEST_TMPDIR/prepared/mise/config.toml.fragment"
+  run grep -F -- 'codex = "latest"' "$TEST_TMPDIR/prepared/mise/config.toml.fragment"
+  assert_success
+  run grep -F -- "prepared/mise/config.toml.fragment" "$TEST_TMPDIR/prepared/INSTRUCTIONS.md"
+  assert_success
+}
+
+@test "setup apply: multiple requested agents keep the original config backup" {
+  build_install_env
+
+  mkdir -p "$MISE_CONFIG_DIR"
+  printf '[tools]\nnode = "lts"\n' >"$MISE_CONFIG_DIR/config.toml"
+  local original
+  original=$(sha256sum "$MISE_CONFIG_DIR/config.toml" | cut -d' ' -f1)
+
+  # Simulate mise rewriting the global config for each install.
+  cat >"$INSTALL_BIN/mise" <<MISE_WRAPPER
+#!/usr/bin/env bash
+printf '%s\n' "mise \$*" >>"\$AP_SPY_LOG"
+if [[ "\${1:-}" == "use" ]]; then
+  printf '%s = "latest"\n' "\${3%%@*}" >>"$MISE_CONFIG_DIR/config.toml"
+  exit 0
+fi
+if [[ "\${1:-}" == "install" ]]; then
+  exit 0
+fi
+exec "$REAL_MISE" "\$@"
+MISE_WRAPPER
+  chmod +x "$INSTALL_BIN/mise"
+
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex --agent claude
+  assert_success
+
+  local backups
+  backups=$(find "${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups" \
+    -path '*mise*' -name config.toml)
+  [[ "$(printf '%s\n' "$backups" | grep -c .)" -eq 1 ]]
+  assert_equal "$original" "$(sha256sum "$backups" | cut -d' ' -f1)"
+}

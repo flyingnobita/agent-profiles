@@ -113,3 +113,33 @@ teardown() {
   run bash "$AP_HELPER" setup unexpected-argument
   assert_failure 64
 }
+
+@test "setup preview: names proposed release, task, conflict and requested agent changes read-only" {
+  mkdir -p "$TEST_TMPDIR/work"
+  cd "$TEST_TMPDIR/work" || exit 1
+  export AP_SPY_LOG="$TEST_TMPDIR/spy.log"
+
+  # A foreign task file and a pre-existing managed task make the plan concrete.
+  mkdir -p "$MISE_CONFIG_DIR/tasks"
+  printf '#!/usr/bin/env bash\necho foreign\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  printf '# managed-by: flyingnobita-agent-profiles 0.0.0 sha256:%064d\n' 0 \
+    >"$MISE_CONFIG_DIR/tasks/agent-profiles"
+
+  local before
+  before=$(snapshot_tree "$MISE_CONFIG_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}")
+
+  run bash "$AP_HELPER" setup --preview --agent codex
+  assert_success
+  assert_output_contains "Planned changes"
+  assert_output_contains "release:"
+  assert_output_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  assert_output_contains "conflict"
+  assert_output_contains "agent: codex"
+  assert_output_contains "No changes made"
+
+  local after
+  after=$(snapshot_tree "$MISE_CONFIG_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}")
+  assert_equal "$before" "$after"
+  run ! grep -Fq "mise use" "$AP_SPY_LOG"
+  run ! grep -Fq "pacman" "$AP_SPY_LOG"
+}
