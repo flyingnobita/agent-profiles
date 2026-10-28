@@ -90,12 +90,43 @@ stop_background_session() {
   BG_ID=""
 }
 
+# A stopped background session can leave a transient Claude daemon running with
+# the disposable checkout as its cwd. Stop only daemons that name this run's
+# work directory, never another session's daemon.
+stop_test_daemons() {
+  local pid
+  local -a pids=()
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | grep -qF -- "$WORK"; then
+      pids+=("$pid")
+    fi
+  done < <(ps -eo pid=,args= | awk '/claude daemon run/ {print $1}')
+  if [[ ${#pids[@]} -gt 0 ]]; then
+    printf '%s\n' "${pids[*]}" >>"$OUT/daemons-stopped.txt" 2>/dev/null || true
+    kill -TERM "${pids[@]}" 2>/dev/null || true
+    sleep 1
+    kill -KILL "${pids[@]}" 2>/dev/null || true
+  fi
+}
+
+test_daemons_running() {
+  local pid
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | grep -qF -- "$WORK"; then
+      printf '%s\n' "$pid"
+    fi
+  done < <(ps -eo pid=,args= | awk '/claude daemon run/ {print $1}')
+}
+
 cleanup() {
   if [[ -n "$WATCH_PID" ]]; then
     kill "$WATCH_PID" 2>/dev/null || true
     WATCH_PID=""
   fi
   stop_background_session
+  stop_test_daemons
   rm -rf "$WORK" "$DENY_DIR"
 }
 trap cleanup EXIT
@@ -465,6 +496,7 @@ if [[ -n "$BG_ID" ]]; then
   fi
   stop_background_session
   ap_run_profile a claude agents --json >"$OUT/background-agents.json" 2>&1 || true
+  stop_test_daemons
 else
   fail_check sandbox-enforcement "could not start an idle background session for the shell-mode sandbox check"
 fi
@@ -494,7 +526,12 @@ if not isinstance(data, list):
 sys.exit(0 if all(s.get("state") == "stopped" for s in data) else 1)
 PY
 then
-  pass_check cleanup "test-owned background session was stopped"
+  DAEMONS_LEFT="$(test_daemons_running)"
+  if [[ -z "$DAEMONS_LEFT" ]]; then
+    pass_check cleanup "test-owned background session and transient daemon were stopped"
+  else
+    fail_check cleanup "test-owned daemon(s) remain: $DAEMONS_LEFT"
+  fi
 else
   fail_check cleanup "a test-owned background session may remain; inspect background-agents.json"
 fi
