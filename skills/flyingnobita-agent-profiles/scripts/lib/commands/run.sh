@@ -55,14 +55,12 @@ ap_cmd_run() {
   fi
 
   # Nested execution detection based on live bind evidence in /proc/self/mountinfo
-  local live_prof
-  live_prof=$(ap_detect_live_profile)
+  local live_context
+  live_context=$(ap_check_live_profile_context "$repo_root" "$profile")
 
-  if [[ -n "$live_prof" ]]; then
-    if [[ "$live_prof" != "$profile" ]]; then
-      ap_die "$EX_BUSY" "nested execution inside profile '$live_prof' cannot switch to profile '$profile'"
-    fi
-
+  if [[ "$live_context" == "DIFFERENT" ]]; then
+    ap_die "$EX_BUSY" "nested execution inside another profile or checkout is prohibited (active profile mount mismatch)"
+  elif [[ "$live_context" == "SAME" ]]; then
     # Same-profile nested execution: do not re-wrap with bwrap
     # Take an additional compatible shared lease
     ap_lease_profile_shared "$repo_root" "$profile"

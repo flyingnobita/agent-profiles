@@ -17,12 +17,68 @@ ap_validate_profile_name() {
   fi
 }
 
-ap_detect_live_profile() {
+ap_check_live_profile_context() {
+  local repo_root="$1"
+  local profile="$2"
+
   if [[ ! -r /proc/self/mountinfo ]]; then
+    printf "NONE\n"
     return 0
   fi
 
-  sed -n -E 's|.*\.agent-profiles/([a-z0-9_-]+)/.*|\1|p' /proc/self/mountinfo 2>/dev/null | head -n 1
+  python3 -c '
+import os, sys, re
+
+repo_root = sys.argv[1]
+profile = sys.argv[2]
+home = os.environ.get("HOME", "")
+
+def unescape(s):
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), s)
+
+live_mounts = []
+target_prof_dir = os.path.realpath(os.path.join(repo_root, ".agent-profiles", profile))
+
+try:
+    with open("/proc/self/mountinfo", "r") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) >= 5:
+                root = unescape(parts[3])
+                mp = unescape(parts[4])
+                if mp.startswith(home + "/.") and any(mp == os.path.join(home, d) for d in [".claude", ".codex", ".gemini", ".agents"]):
+                    if "/.agent-profiles/" in root or "/.agent-profiles/" in mp:
+                        live_mounts.append((root, mp))
+except Exception:
+    pass
+
+if not live_mounts:
+    print("NONE")
+    sys.exit(0)
+
+# Verify if all live mounts match the target profile and checkout
+for root, mp in live_mounts:
+    sub = os.path.basename(mp)
+    target_sub = os.path.join(target_prof_dir, sub)
+    if not os.path.exists(target_sub):
+        print("DIFFERENT")
+        sys.exit(0)
+    try:
+        st_mp = os.stat(mp)
+        st_target = os.stat(target_sub)
+        if (st_mp.st_dev, st_mp.st_ino) != (st_target.st_dev, st_target.st_ino):
+            print("DIFFERENT")
+            sys.exit(0)
+        expected_suffix = f"/.agent-profiles/{profile}/{sub}"
+        if not root.endswith(expected_suffix):
+            print("DIFFERENT")
+            sys.exit(0)
+    except OSError:
+        print("DIFFERENT")
+        sys.exit(0)
+
+print("SAME")
+' "$repo_root" "$profile" 2>/dev/null || echo "NONE"
 }
 
 ap_check_profile_aliasing() {
