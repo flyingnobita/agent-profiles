@@ -213,6 +213,8 @@ for source in sources:
 PY
 }
 
+# Returns 0 when a basename is a recognizable legacy agent entry. Used to
+# validate recorded migration source paths during recovery.
 ap_migrate_is_agent_entry() {
   case "$1" in
     .claude | .codex | .gemini | .agents | .opencode | .claude.json | home | bin | npm-global | uv-tools | cargo-global | python-user | .config | .local | .cache)
@@ -220,6 +222,46 @@ ap_migrate_is_agent_entry() {
       ;;
   esac
   return 1
+}
+
+# Lists the names under a profile storage directory that are genuine unnamed
+# legacy data: agent directory entries that do not have the layout of a named
+# profile. A named profile is a real directory with a home/ directory or an
+# .agent-profile marker, so previously valid profile names such as bin, home,
+# npm-global, uv-tools, cargo-global and python-user are never captured.
+ap_list_unnamed_legacy_entries() {
+  local storage_dir="$1"
+
+  python3 - "$storage_dir" <<'PY'
+import os, sys
+
+storage_dir = sys.argv[1]
+agent_subdirs = {
+    ".claude", ".codex", ".gemini", ".agents", ".opencode",
+    "home", "bin", "npm-global", "uv-tools", "cargo-global",
+    "python-user", ".config", ".local", ".cache", ".claude.json",
+}
+
+
+def is_named_profile(path):
+    return os.path.isdir(os.path.join(path, "home")) or os.path.isfile(
+        os.path.join(path, ".agent-profile")
+    )
+
+
+try:
+    entries = sorted(os.listdir(storage_dir))
+except OSError:
+    entries = []
+
+for entry in entries:
+    if entry not in agent_subdirs:
+        continue
+    path = os.path.join(storage_dir, entry)
+    if os.path.isdir(path) and not os.path.islink(path) and is_named_profile(path):
+        continue
+    print(entry)
+PY
 }
 
 ap_detect_legacy_layouts() {
@@ -237,6 +279,13 @@ agent_subdirs = {
     "home", "bin", "npm-global", "uv-tools", "cargo-global",
     "python-user", ".config", ".local", ".cache", ".claude.json",
 }
+
+
+def is_named_profile(path):
+    return os.path.isdir(os.path.join(path, "home")) or os.path.isfile(
+        os.path.join(path, ".agent-profile")
+    )
+
 
 layouts = []
 
@@ -282,7 +331,16 @@ if os.path.lexists(profiles_dir):
             entries = os.listdir(profiles_dir)
         except OSError:
             entries = []
-        if any(entry in agent_subdirs for entry in entries):
+        unnamed = False
+        for entry in entries:
+            if entry not in agent_subdirs:
+                continue
+            path = os.path.join(profiles_dir, entry)
+            if os.path.isdir(path) and not os.path.islink(path) and is_named_profile(path):
+                continue
+            unnamed = True
+            break
+        if unnamed:
             layouts.append("unnamed-profiles")
 
 print(",".join(layouts))

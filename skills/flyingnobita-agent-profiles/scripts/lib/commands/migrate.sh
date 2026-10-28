@@ -107,22 +107,18 @@ ap_migrate_compute_plan() {
     MIG_TARGETS+=("default")
 
     local entry base
-    for entry in "$storage_dir"/* "$storage_dir"/.*; do
-      [[ -e "$entry" || -L "$entry" ]] || continue
-      base=$(basename "$entry")
-      case "$base" in
-        . | ..) continue ;;
-      esac
-      if ap_migrate_is_agent_entry "$base"; then
-        MIG_UNNAMED+=("$base")
-      fi
+    mapfile -t MIG_UNNAMED < <(ap_list_unnamed_legacy_entries "$storage_dir")
+
+    for entry in "${MIG_UNNAMED[@]:-}"; do
+      [[ -n "$entry" ]] || continue
+      base="$entry"
+      ap_migrate_is_agent_entry "$base" \
+        || ap_die "$EX_REFUSED" "unrecognized legacy entry '$base' under '$storage_dir'"
     done
 
     if [[ ${#MIG_UNNAMED[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unnamed legacy layout under '$storage_dir' has no recognizable agent directories"
     fi
-
-    mapfile -t MIG_UNNAMED < <(printf "%s\n" "${MIG_UNNAMED[@]}" | sort -u)
   fi
 
   if [[ ${#MIG_TARGETS[@]} -eq 0 ]]; then
