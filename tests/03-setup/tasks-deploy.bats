@@ -11,7 +11,7 @@ setup() {
   setup_mise_env
   write_os_release arch arch "Arch Linux"
   mkdir -p "$TEST_TMPDIR/work"
-  cd "$TEST_TMPDIR/work"
+  cd "$TEST_TMPDIR/work" || exit 1
 }
 
 teardown() {
@@ -77,6 +77,7 @@ teardown() {
   assert_success
   assert_output_contains "a b"
 
+  # shellcheck disable=SC2016
   run mise run agent-profiles -- --profile demo sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
   assert_success
   assert_output_contains "demo"

@@ -53,10 +53,8 @@ make_restricted_bin() {
   local -a exclude=("$@")
   mkdir -p "$dest"
 
-  local old_ifs="$IFS"
-  IFS=':'
-  local -a dirs=($PATH)
-  IFS="$old_ifs"
+  local -a dirs
+  IFS=':' read -ra dirs <<<"$PATH"
 
   local dir tool name skip entry
   for dir in "${dirs[@]}"; do
