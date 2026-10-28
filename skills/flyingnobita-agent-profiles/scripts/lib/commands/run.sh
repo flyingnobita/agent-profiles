@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Command: run
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise.sh
 
 source "$LIB_DIR/runtime.sh"
+source "$LIB_DIR/mise.sh"
 
 ap_cmd_run() {
   local profile="default"
@@ -48,6 +50,10 @@ ap_cmd_run() {
   fi
 
   ap_check_bwrap_readiness
+
+  # Critical: capture effective mise directories BEFORE resetting managed environment variables
+  ap_capture_effective_mise_dirs
+
   ap_prepare_profile_env "$repo_root" "$profile"
   ap_build_bwrap_mounts "$repo_root" "$profile"
 
