@@ -3,6 +3,7 @@
 setup() {
   load '../helpers/common.bash'
   load '../helpers/assert.bash'
+  load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
   setup_isolation
 }
