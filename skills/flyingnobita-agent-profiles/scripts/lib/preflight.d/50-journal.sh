@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Preflight hook: Stale journal detection and enforcement
 # shellcheck disable=SC2154
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+
+source "$LIB_DIR/locks.sh"
+source "$LIB_DIR/lifecycle.sh"
 
 ap_preflight_check_journals() {
   local repo_root="$1"
@@ -16,58 +21,44 @@ ap_preflight_check_journals() {
   fi
 
   local current_cmd="${cmd:-}"
+  local journal_file
 
-  for jf in "$journal_dir"/*.json; do
-    [[ -f "$jf" ]] || continue
+  for journal_file in "$journal_dir"/*.json; do
+    [[ -f "$journal_file" ]] || continue
 
-    if [[ -L "$jf" ]]; then
-      ap_die "$EX_LAYOUT" "journal file '$jf' is a symbolic link"
+    if [[ -L "$journal_file" ]]; then
+      ap_die "$EX_LAYOUT" "journal file '$journal_file' is a symbolic link"
     fi
 
-    # Probe exclusive lock non-blocking to check if journal is stale
-    local is_stale=0
-    local ret=0
-    (
-      exec {probe_fd}<>"$jf"
-      if flock -x -n "$probe_fd"; then
-        exit 10
-      else
-        exit 20
-      fi
-    ) 2>/dev/null || ret=$?
+    ap_journal_is_stale "$journal_file" || continue
 
-    if [[ $ret -eq 10 ]]; then
-      is_stale=1
+    local fields=()
+    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    if [[ ${#fields[@]} -eq 0 ]]; then
+      ap_die "$EX_REFUSED" "unreadable journal '$journal_file'; run 'agent-profiles recover'"
+    fi
+    local journal_op="${fields[0]:-}"
+    local journal_profile="${fields[1]:-}"
+
+    case "$current_cmd" in
+      doctor)
+        continue
+        ;;
+      list)
+        printf "agent-profiles: notice: stale journal detected for profile '%s' (run 'agent-profiles recover')\n" "$journal_profile" >&2
+        continue
+        ;;
+      recover)
+        continue
+        ;;
+    esac
+
+    if [[ "$journal_op" == "migrate" ]]; then
+      ap_die "$EX_REFUSED" "interrupted migrate operation in checkout; run 'agent-profiles recover' to resolve"
     fi
 
-    if [[ $is_stale -eq 1 ]]; then
-      local j_op="" j_prof=""
-      # Read op and profile from JSON safely
-      j_op=$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get("op", ""))' "$jf" 2>/dev/null || true)
-      j_prof=$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get("profile", ""))' "$jf" 2>/dev/null || true)
-
-      if [[ "$current_cmd" == "doctor" ]]; then
-        # Doctor records stale journal in diagnostics; does not abort
-        continue
-      fi
-
-      if [[ "$current_cmd" == "list" ]]; then
-        printf "agent-profiles: notice: stale journal detected for profile '%s' (run 'agent-profiles recover')\n" "$j_prof" >&2
-        continue
-      fi
-
-      if [[ "$current_cmd" == "recover" ]]; then
-        # Recover command is meant to handle stale journals
-        continue
-      fi
-
-      if [[ "$j_op" == "migrate" ]]; then
-        ap_die "$EX_REFUSED" "interrupted migrate operation in checkout; run 'agent-profiles recover' to resolve"
-      fi
-
-      if [[ -n "$target_profile" && "$j_prof" == "$target_profile" ]]; then
-        ap_die "$EX_REFUSED" "interrupted $j_op for profile '$target_profile'; run 'agent-profiles recover' to resolve"
-      fi
+    if [[ -n "$target_profile" && "$journal_profile" == "$target_profile" ]]; then
+      ap_die "$EX_REFUSED" "interrupted $journal_op for profile '$target_profile'; run 'agent-profiles recover' to resolve"
     fi
   done
 }

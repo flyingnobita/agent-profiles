@@ -119,12 +119,95 @@ ap_unlock_profile() {
   fi
 }
 
+# Acquire exclusive locks for several profiles in name order.
+# Storage must already be locked by the caller. Used by migrate and recover,
+# which can affect more than one profile in a single operation.
+ap_lock_profiles_exclusive() {
+  local repo_root="$1"
+  shift
+  AP_PROFILE_EXCLUSIVE_FDS=()
+
+  [[ $# -gt 0 ]] || return 0
+
+  local names=()
+  mapfile -t names < <(printf "%s\n" "$@" | sort -u)
+
+  local name lock_file fd
+  for name in "${names[@]}"; do
+    ap_ensure_locks_dir "$repo_root"
+    lock_file="$repo_root/.agent-profiles/.locks/$name.lock"
+    if [[ -L "$lock_file" ]]; then
+      ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
+    fi
+    if [[ ! -f "$lock_file" ]]; then
+      (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
+    fi
+
+    exec {fd}<>"$lock_file"
+    if ! flock -x -n "$fd"; then
+      exec {fd}>&-
+      ap_die "$EX_BUSY" "cannot acquire exclusive lock for profile '$name' (profile is in use)"
+    fi
+    AP_PROFILE_EXCLUSIVE_FDS+=("$fd")
+  done
+}
+
+ap_unlock_profiles() {
+  local fd
+  for fd in "${AP_PROFILE_EXCLUSIVE_FDS[@]:-}"; do
+    [[ -n "$fd" ]] || continue
+    exec {fd}>&-
+  done
+  AP_PROFILE_EXCLUSIVE_FDS=()
+}
+
+# Journal lock files are persistent and separate from the JSON payload so an
+# atomic tmp+rename journal write never moves the inode that holds the lock.
+ap_journal_lock_path() {
+  local journal_file="$1"
+  printf "%s.lock\n" "${journal_file%.json}"
+}
+
+ap_ensure_journal_lock_file() {
+  local journal_file="$1"
+  local lock_file
+  lock_file=$(ap_journal_lock_path "$journal_file")
+
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "journal lock file '$lock_file' is a symbolic link"
+  fi
+  if [[ ! -f "$lock_file" ]]; then
+    (umask 077 && mkdir -p "$(dirname "$lock_file")" && touch "$lock_file" && chmod 600 "$lock_file")
+  fi
+  printf "%s\n" "$lock_file"
+}
+
+# Returns 0 when the journal is stale (no process holds its lock) and 1 when
+# a live operation still owns it. A missing lock file means stale.
+ap_journal_is_stale() {
+  local journal_file="$1"
+  local lock_file
+  lock_file=$(ap_journal_lock_path "$journal_file")
+
+  if [[ ! -e "$lock_file" ]]; then
+    return 0
+  fi
+
+  local rc=0
+  (
+    exec {probe_fd}<>"$lock_file"
+    flock -x -n "$probe_fd"
+  ) 2>/dev/null || rc=$?
+
+  [[ $rc -eq 0 ]]
+}
+
 ap_lock_journal() {
   local journal_file="$1"
-  if [[ -L "$journal_file" ]]; then
-    ap_die "$EX_LAYOUT" "journal file '$journal_file' is a symbolic link"
-  fi
-  exec {AP_JOURNAL_LOCK_FD}<>"$journal_file"
+  local lock_file
+  lock_file=$(ap_ensure_journal_lock_file "$journal_file")
+
+  exec {AP_JOURNAL_LOCK_FD}<>"$lock_file"
   if ! flock -x -n "$AP_JOURNAL_LOCK_FD"; then
     ap_die "$EX_BUSY" "cannot acquire exclusive lock for journal '$journal_file' (operation in progress)"
   fi

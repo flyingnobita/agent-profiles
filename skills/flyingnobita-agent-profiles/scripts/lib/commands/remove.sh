@@ -97,12 +97,18 @@ ap_cmd_remove() {
   (umask 077 && touch "$journal_file" && chmod 600 "$journal_file")
   ap_lock_journal "$journal_file"
 
-  ap_record_journal "$journal_file" "remove" "$profile" "planned" "$prof_dir" "" "$assume_unrelated"
-
   ap_ensure_trash_dir "$repo_root"
   local ts
   ts=$(date +%s%N 2>/dev/null || date +%s)
   local trash_path="$repo_root/.agent-profiles/.trash/$profile.$ts"
+  if [[ -e "$trash_path" || -L "$trash_path" ]]; then
+    ap_die "$EX_LAYOUT" "trash destination '$trash_path' already exists"
+  fi
+
+  # Record the intended trash path before moving anything so recovery can roll
+  # forward when the process dies between the rename and the next checkpoint.
+  ap_record_journal "$journal_file" "remove" "$profile" "planned" "$prof_dir" "$trash_path" "$assume_unrelated"
+
   mv "$prof_dir" "$trash_path"
 
   ap_record_journal "$journal_file" "remove" "$profile" "trashed" "$prof_dir" "$trash_path" "$assume_unrelated"

@@ -2,8 +2,10 @@
 # Doctor section: Lifecycle and journal diagnostics
 # shellcheck disable=SC2154
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/lifecycle.sh"
+source "$LIB_DIR/locks.sh"
 
 ap_doctor_check_lifecycle() {
   local repo_root
@@ -18,10 +20,9 @@ ap_doctor_check_lifecycle() {
   if [[ -d "$journal_dir" ]]; then
     for jf in "$journal_dir"/*.json; do
       [[ -f "$jf" ]] || continue
-      (
-        exec {probe_fd}<>"$jf"
-        flock -x -n "$probe_fd"
-      ) 2>/dev/null && stale_journals+=("$(basename "$jf")") || true
+      if ap_journal_is_stale "$jf"; then
+        stale_journals+=("$(basename "$jf")")
+      fi
     done
   fi
 
