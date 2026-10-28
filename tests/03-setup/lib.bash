@@ -34,6 +34,7 @@ make_spy() {
   local dir="$1"
   local name="$2"
   mkdir -p "$dir"
+  rm -f "$dir/$name"
   cat >"$dir/$name" <<'SPY'
 #!/usr/bin/env bash
 printf '%s\n' "$(basename "$0") $*" >>"${AP_SPY_LOG:?AP_SPY_LOG not set}"
