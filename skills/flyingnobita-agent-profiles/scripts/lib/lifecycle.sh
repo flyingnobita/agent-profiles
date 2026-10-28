@@ -145,3 +145,42 @@ os.chmod(tmp_file, 0o600)
     exit 137
   fi
 }
+
+ap_detect_legacy_layouts() {
+  local repo_root="$1"
+
+  python3 -c '
+import os, sys
+
+repo_root = sys.argv[1]
+sandbox_dir = os.path.join(repo_root, ".agent-sandbox")
+profiles_dir = os.path.join(repo_root, ".agent-profiles")
+
+legacy = []
+agent_subdirs = {".claude", ".codex", ".gemini", ".agents", ".opencode", "home", ".config", ".local", "npm-global", "uv-tools"}
+
+# 1. Check .agent-sandbox
+if os.path.exists(sandbox_dir):
+    if os.path.islink(sandbox_dir):
+        legacy.append("symlink-sandbox")
+    elif os.path.isdir(sandbox_dir):
+        entries = os.listdir(sandbox_dir)
+        has_direct_agent_dirs = any(e in agent_subdirs for e in entries)
+        if has_direct_agent_dirs:
+            legacy.append("unnamed-sandbox")
+        has_named_dirs = any(os.path.isdir(os.path.join(sandbox_dir, e)) and e not in agent_subdirs and not e.startswith(".") for e in entries)
+        if has_named_dirs:
+            legacy.append("named-sandbox")
+        if not has_direct_agent_dirs and not has_named_dirs and entries:
+            legacy.append("unnamed-sandbox")
+
+# 2. Check .agent-profiles for unnamed root entries
+if os.path.exists(profiles_dir) and os.path.isdir(profiles_dir) and not os.path.islink(profiles_dir):
+    entries = os.listdir(profiles_dir)
+    has_unnamed_in_profiles = any(e in agent_subdirs for e in entries)
+    if has_unnamed_in_profiles:
+        legacy.append("unnamed-profiles")
+
+print(",".join(legacy))
+' "$repo_root"
+}

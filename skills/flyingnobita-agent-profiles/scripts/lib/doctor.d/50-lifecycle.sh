@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Doctor section: Lifecycle and journal diagnostics
 # shellcheck disable=SC2154
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+
+source "$LIB_DIR/lifecycle.sh"
 
 ap_doctor_check_lifecycle() {
   local repo_root
@@ -43,6 +46,22 @@ checks.append({
 })
 print(json.dumps(checks))
 ' "$CHECKS_JSON" "$lc_status" "$lc_detail" "$lc_hint")
+
+  local legacy_layouts
+  legacy_layouts=$(ap_detect_legacy_layouts "$repo_root")
+  if [[ -n "$legacy_layouts" ]]; then
+    CHECKS_JSON=$(python3 -c '
+import json, sys
+checks = json.loads(sys.argv[1])
+checks.append({
+    "id": "legacy_storage",
+    "status": "warning",
+    "detail": f"legacy profile storage detected ({sys.argv[2]}); run agent-profiles migrate",
+    "hint": "Run '\''agent-profiles migrate'\'' to safely migrate legacy storage to current profile format."
+})
+print(json.dumps(checks))
+' "$CHECKS_JSON" "$legacy_layouts")
+  fi
 }
 
 ap_register_doctor_section "ap_doctor_check_lifecycle"
