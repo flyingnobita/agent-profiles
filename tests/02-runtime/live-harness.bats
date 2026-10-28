@@ -205,3 +205,26 @@ force_stop_group() {
 
   force_stop_group "$child_pgid"
 }
+
+@test "live harness: cleanup_pgid refuses a structured marker for a different group" {
+  local lib_sh="$AP_SUBJECT/tests/live/lib.sh"
+  assert_file_exists "$lib_sh"
+  # shellcheck source=/dev/null
+  source "$lib_sh"
+
+  local profile_dir="$TEST_TMPDIR/mismatched-profile"
+  mkdir -p "$profile_dir"
+
+  local marker_file="$TEST_TMPDIR/mismatched.marker"
+  local child_pgid
+  child_pgid=$(AGENT_PROFILES_DIR="$profile_dir" ap_live_spawn_test_process "$marker_file" sleep 30)
+
+  sed -i 's/^pgid=.*/pgid=999999/' "$marker_file"
+
+  run ap_live_cleanup_pgid "$child_pgid" "$marker_file" "$profile_dir"
+  assert_failure
+  assert_output_contains "does not match target"
+  kill -0 -"$child_pgid" 2>/dev/null
+
+  force_stop_group "$child_pgid"
+}
