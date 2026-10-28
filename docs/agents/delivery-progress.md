@@ -56,7 +56,7 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | 06 | Antigravity CLI integration | 02 | Verified and integrated | `e59a7ee` |
 | 07 | OpenCode integration | 02 | Verified and integrated | `bea878c` |
 | 08 | Lifecycle and migration | 02 | Verified and integrated | `8566f03` |
-| 09 | Public Linux release readiness | 03-08 | Claimed | - |
+| 09 | Public Linux release readiness | 03-08 | Verified and integrated | `d95d832` |
 
 ## Ownership
 
@@ -72,15 +72,17 @@ On October 29, 2026 the user authorized Pi for all new implementers and
 handoffs of tickets 04, 05, and 08 from quota-blocked Antigravity sessions.
 The effective default is `deepseek/deepseek-flash` with high thinking.
 The original worktrees, partial changes, reports, and independent evidence
-remain preserved. Tickets 05 and 08 passed their independent gates and serial
-integration CI; the combined integration suite has 165 tests with no skips.
+remain preserved. All tickets 01-09 are independently verified and integrated.
+The integration gate at `d95d832` passed 298 tests with no skips, lint, and both
+clean-install modes. Local v0.1.0 artifacts, checksums and release notes are retained.
 
-Claude integration passed the combined 191-test suite, lint and both installation
-modes at `376201d`. Antigravity is independently verified and merged; its combined
-integration gate remains in progress. OpenCode is claimed for the next Pi worker.
+## Whole-branch verification
 
-All tickets 01-08 are verified and integrated. The full integration gate at
-`bea878c` passed 278 tests with no skips, lint, and both clean-install modes.
-Final Docker QA will independently exercise setup installing a missing prerequisite
-through its real package-manager path; worker fixture and container evidence is
-retained until then. Release readiness is claimed for one Pi implementer.
+Whole-branch Standards and Spec review found lifecycle, setup and diagnostic gaps
+within the approved scope. One Pi implementer is repairing them test-first before
+focused review and a full Spec recheck against the original baseline.
+
+Final QA remains pending. It must independently exercise setup installing a missing
+prerequisite through the real package-manager path in the approved Arch and Ubuntu
+containers, verify the four installed CLIs offline, and audit persistent host state
+and cleanup. Local delivery is complete only after review repairs and QA pass.
