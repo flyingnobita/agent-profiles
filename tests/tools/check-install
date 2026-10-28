@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEV_MODE=0
+if [[ "${1:-}" == "--worktree" ]]; then
+  DEV_MODE=1
+  shift
+fi
+
+SRC="${1:-$PWD}"
+SRC=$(cd "$SRC" && pwd)
+
+fail() {
+  echo "check-install: FAIL: $*" >&2
+  exit 1
+}
+
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+
+mkdir -p "$T/src" "$T/home_default" "$T/home_copy" "$T/npm_cache"
+
+# Step 1: Populate disposable copy of source
+if [[ $DEV_MODE -eq 1 ]]; then
+  echo "check-install: copying uncommitted worktree files..."
+  git -C "$SRC" ls-files -co --exclude-standard | tar -cf - -C "$SRC" -T - | tar -xf - -C "$T/src"
+else
+  echo "check-install: extracting git archive HEAD..."
+  git -C "$SRC" archive HEAD | tar -x -C "$T/src"
+fi
+
+# Step 2: Test discovery via skills add --list
+echo "check-install: testing skills discovery in disposable source..."
+LIST_OUT=$(
+  MISE_YES=1 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}" \
+    env HOME="$T/home_default" \
+    XDG_CONFIG_HOME="$T/home_default/.config" \
+    XDG_DATA_HOME="$T/home_default/.local/share" \
+    XDG_STATE_HOME="$T/home_default/.local/state" \
+    XDG_CACHE_HOME="$T/home_default/.cache" \
+    DISABLE_TELEMETRY=1 \
+    npm_config_cache="$T/npm_cache" \
+    skills add "$T/src" --list 2>&1
+) || fail "skills add --list failed: $LIST_OUT"
+
+echo "$LIST_OUT" | grep -q "flyingnobita-agent-profiles" || fail "skills add --list did not find flyingnobita-agent-profiles:\n$LIST_OUT"
+
+# Step 3: Install in default mode into home_default
+echo "check-install: installing into home_default (symlink mode)..."
+INSTALL1_OUT=$(
+  MISE_YES=1 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}" \
+    env HOME="$T/home_default" \
+    XDG_CONFIG_HOME="$T/home_default/.config" \
+    XDG_DATA_HOME="$T/home_default/.local/share" \
+    XDG_STATE_HOME="$T/home_default/.local/state" \
+    XDG_CACHE_HOME="$T/home_default/.cache" \
+    DISABLE_TELEMETRY=1 \
+    npm_config_cache="$T/npm_cache" \
+    skills add "$T/src" -g -y --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
+) || fail "install default failed: $INSTALL1_OUT"
+
+# Step 4: Install in --copy mode into home_copy
+echo "check-install: installing into home_copy (--copy mode)..."
+INSTALL2_OUT=$(
+  MISE_YES=1 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}" \
+    env HOME="$T/home_copy" \
+    XDG_CONFIG_HOME="$T/home_copy/.config" \
+    XDG_DATA_HOME="$T/home_copy/.local/share" \
+    XDG_STATE_HOME="$T/home_copy/.local/state" \
+    XDG_CACHE_HOME="$T/home_copy/.cache" \
+    DISABLE_TELEMETRY=1 \
+    npm_config_cache="$T/npm_cache" \
+    skills add "$T/src" -g -y --copy --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
+) || fail "install --copy failed: $INSTALL2_OUT"
+
+# Step 5: Delete disposable source
+echo "check-install: removing disposable source copy..."
+rm -rf "$T/src"
+
+# Step 6: Verify installed instances
+for mode in "default" "copy"; do
+  home_dir="$T/home_$mode"
+  echo "check-install: verifying installed instance in home_$mode..."
+
+  # Find helper script in this home
+  helper=$(find "$home_dir" -type f -name "agent-profiles" | head -n 1)
+  [[ -n "$helper" ]] || fail "agent-profiles helper not found in $home_dir"
+
+  # Path safety check
+  real_helper=$(readlink -f "$helper")
+  if [[ "$real_helper" == "$T/src"* || "$real_helper" == "$SRC"* ]]; then
+    fail "installed helper ($real_helper) references disposable source or source checkout"
+  fi
+
+  # Version check
+  ver=$(
+    env HOME="$home_dir" \
+      XDG_CONFIG_HOME="$home_dir/.config" \
+      XDG_DATA_HOME="$home_dir/.local/share" \
+      XDG_STATE_HOME="$home_dir/.local/state" \
+      XDG_CACHE_HOME="$home_dir/.cache" \
+      bash "$helper" --version
+  )
+  [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || fail "invalid version from installed helper: $ver"
+
+  # Doctor check
+  doc_out=$(
+    env HOME="$home_dir" \
+      XDG_CONFIG_HOME="$home_dir/.config" \
+      XDG_DATA_HOME="$home_dir/.local/share" \
+      XDG_STATE_HOME="$home_dir/.local/state" \
+      XDG_CACHE_HOME="$home_dir/.cache" \
+      bash "$helper" doctor --json
+  )
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+assert "version" in data
+assert "checks" in data
+assert "agents" in data
+' "$doc_out" || fail "doctor --json failed on installed helper in $home_dir"
+
+  # Verify Q&A references exist and are readable in installed skill
+  skill_dir=$(dirname "$(dirname "$real_helper")")
+  [[ -f "$skill_dir/references/questions.md" ]] || fail "questions.md missing in installed skill at $skill_dir"
+  [[ -f "$skill_dir/references/troubleshooting.md" ]] || fail "troubleshooting.md missing in installed skill at $skill_dir"
+done
+
+echo "check-install: PASS - all clean installation checks verified"

@@ -8,3 +8,21 @@
 [tasks.test]
 description = "Run test suite"
 run = "bats -r tests/0*"
+
+[tasks.lint]
+description = "Run all linters"
+run = """
+shell_files=$(find skills tests -type f \\( -name '*.sh' -o -name '*.bash' -o -name 'agent-profiles' -o -name 'check-*' -o -name 'red-run' \\))
+shellcheck -x -S style $shell_files
+shfmt -d -i 2 -ci -bn $shell_files
+markdownlint-cli2 "**/*.md" "!.scratch"
+tests/tools/check-package "$PWD"
+"""
+
+[tasks.check-install]
+description = "Verify clean installation with npx skills"
+run = "tests/tools/check-install \"$PWD\""
+
+[tasks.ci]
+description = "Full CI verification gate"
+depends = ["lint", "test", "check-install"]
