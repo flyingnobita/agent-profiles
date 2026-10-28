@@ -30,24 +30,32 @@ For questions, conceptual guidance, or documentation requests, read only the sin
 
 ## Command Summary
 
-Execute profile operations by locating the helper script relative to this installed skill directory (e.g. `$SKILL_DIR/scripts/agent-profiles`), while keeping the current working directory in the target Git repository:
+Run the helper by resolving it relative to this installed skill directory (for
+example `$SKILL_DIR/scripts/agent-profiles`), while keeping the working directory
+in the target Git repository:
 
 ```bash
-# Locate helper relative to the installed skill directory
 AP_HELPER="<skill-directory>/scripts/agent-profiles"
 
-# Health check and environment diagnosis (implemented in ticket 01)
+# Diagnose the machine, global tasks, namespaces and agent integrations
 bash "$AP_HELPER" doctor [--json] [--agent claude|codex|agy|opencode] [--profile NAME]
 
-# Profile initialization, listing, and execution (implemented in ticket 02)
+# Create, inspect and use named profiles
 bash "$AP_HELPER" init [--profile NAME]
 bash "$AP_HELPER" list [--json]
 bash "$AP_HELPER" run [--profile NAME] -- COMMAND [ARGS...]
 
-# Planned future commands (reserved for subsequent delivery tickets):
-# bash "$AP_HELPER" setup [--preview | --apply]
-# bash "$AP_HELPER" reset --profile NAME [--yes]
-# bash "$AP_HELPER" remove --profile NAME [--yes]
-# bash "$AP_HELPER" migrate [--yes]
-# bash "$AP_HELPER" recover [--yes]
+# Deploy the versioned helper and the two global mise tasks (preview is default)
+bash "$AP_HELPER" setup [--preview | --apply] [--agent ID]... [--tasks-only] [--prepare-dir DIR]
+
+# Lifecycle: previews until --yes; run from a host shell, never inside a profile
+bash "$AP_HELPER" reset --profile NAME [--assume-unrelated PID,...] [--yes]
+bash "$AP_HELPER" remove --profile NAME [--assume-unrelated PID,...] [--yes]
+bash "$AP_HELPER" migrate [--backup-root DIR] [--assume-unrelated PID,...] [--yes]
+bash "$AP_HELPER" recover [--yes]
 ```
+
+All commands are implemented; `--help` lists the same set. Profile options are
+consumed before `COMMAND`, and everything after `--` is forwarded unchanged.
+Load `references/repository-operations.md`, `references/machine-setup.md` or
+`references/lifecycle.md` only for the task at hand.
