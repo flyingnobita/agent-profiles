@@ -682,7 +682,9 @@ ap_setup_prepare_agent_install() {
       printf 'Managed configuration was detected: %s\n\n' "$reason"
     } >"$instructions"
   fi
-  if ! grep -qF "prepared/mise/config.toml.fragment" "$instructions"; then
+  # Deduplicate by a stable section marker, never by the output directory name,
+  # so repeated runs and multiple agents stay byte-identical for any --prepare-dir.
+  if ! grep -qxF "## Managed global mise configuration" "$instructions"; then
     {
       printf '## Managed global mise configuration\n\n'
       printf 'Add the entries from %s/mise/config.toml.fragment under [tools] in\n' "$prepare_dir"
