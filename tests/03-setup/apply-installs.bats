@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2030,SC2031
 
+bats_require_minimum_version 1.5.0
+
 setup() {
   load '../helpers/common.bash'
   load '../helpers/assert.bash'
