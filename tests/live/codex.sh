@@ -29,129 +29,46 @@ INOTIFY_PIDS=()
 INOTIFY_LOG=""
 SYNTHETIC_ENV_KEY="sk-synthetic-live-probe-not-a-real-credential"
 
-codex_live_descendants() {
-  local pid="$1" child
-  printf '%s\n' "$pid"
-  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-    codex_live_descendants "$child"
-  done
-}
-
-codex_live_has_profile_env() {
-  local pid="$1" profile_dir="$2" env_dump=""
-  [[ -n "$pid" ]] || return 1
-  # The redirection itself can fail for other users' processes; suppress the
-  # shell-level error as well as tr's stderr.
-  env_dump=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || return 1
-  grep -Fqx "AGENT_PROFILES_DIR=$profile_dir" <<<"$env_dump"
-}
-
-codex_live_profile_pids() {
-  local profile_dir="$1" pid
-  for pid in $(ps -eo pid= 2>/dev/null); do
-    if codex_live_has_profile_env "$pid" "$profile_dir"; then
-      printf '%s\n' "$pid"
-    fi
-  done
-  return 0
-}
-
-# tests/live/lib.sh ap_live_cleanup_pgid currently concatenates UIDs from
-# multi-process groups (shared repair pending). Use this local variant for the
-# inner bwrap/codex group, keeping the same ownership checks, and use the shared
-# API for the single-process launcher group.
-codex_live_cleanup_owned_group() {
-  local pgid="$1" marker="$2" profile_dir="$3"
-  local recorded="" pids="" pid="" uid="" myuid="" own=0
-
-  [[ "$pgid" =~ ^[0-9]+$ && "$pgid" -gt 1 ]] || return 1
-  [[ -f "$marker" ]] || return 1
-  recorded=$(tr -d '[:space:]' <"$marker" 2>/dev/null || true)
-  [[ "$recorded" == "$pgid" ]] || return 1
-
-  pids=$(ps -o pid= -g "$pgid" 2>/dev/null || true)
-  if [[ -z "$pids" ]]; then
-    rm -f "$marker"
-    return 0
-  fi
-
-  myuid=$(id -u)
-  for pid in $pids; do
-    uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
-    [[ "$uid" == "$myuid" ]] || return 1
-    codex_live_has_profile_env "$pid" "$profile_dir" && own=1
-  done
-  [[ "$own" -eq 1 ]] || return 1
-
-  kill -TERM -"$pgid" 2>/dev/null || true
-  sleep 0.1
-  kill -KILL -"$pgid" 2>/dev/null || true
-  rm -f "$marker"
-  return 0
-}
-
 codex_live_stop_startup() {
   [[ -n "$STARTUP_ROOT_PID" ]] || return 0
 
   local root_pid="$STARTUP_ROOT_PID"
   local profile_dir="$STARTUP_PROFILE_DIR"
   local marker="$STARTUP_MARKER"
-  local -a owned=()
-  local pid pgid i=0
-  local -A pgids=()
+  local pgid="" child_marker="" i=0
 
   if [[ -n "$profile_dir" ]]; then
-    for pid in $(codex_live_descendants "$root_pid"); do
-      codex_live_has_profile_env "$pid" "$profile_dir" || continue
-      owned+=("$pid")
-      pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
-      if [[ -n "$pgid" && "$pgid" != "$root_pid" ]]; then
-        pgids["$pgid"]=1
+    while IFS= read -r pgid; do
+      [[ -n "$pgid" && "$pgid" != "$root_pid" ]] || continue
+      child_marker="$BASE_TMP/owned-pgid-$i.marker"
+      if ap_live_write_group_marker "$pgid" "$child_marker"; then
+        ap_live_cleanup_pgid "$pgid" "$child_marker" "$profile_dir" || true
+      else
+        printf 'WARNING: could not record identity for owned process group %s\n' "$pgid" >&2
+        rm -f "$child_marker"
       fi
-    done
-  fi
-
-  # A process group is only signalled when at least one process in this tree
-  # carries the QA profile environment marker; the launcher's own marker file
-  # covers the outer wrapper group.
-  if [[ ${#owned[@]} -gt 0 ]]; then
-    for pgid in "${!pgids[@]}"; do
-      local child_marker="$BASE_TMP/owned-pgid-$i.marker"
-      printf '%s\n' "$pgid" >"$child_marker"
-      chmod 600 "$child_marker"
-      codex_live_cleanup_owned_group "$pgid" "$child_marker" "$profile_dir" || true
       i=$((i + 1))
-    done
+    done < <(ap_live_owned_pgids "$root_pid" "$profile_dir")
   fi
 
   if [[ -n "$marker" && -f "$marker" ]]; then
-    ap_live_cleanup_pgid "$root_pid" "$marker" || true
+    ap_live_cleanup_pgid "$root_pid" "$marker" "$profile_dir" || true
   fi
 
-  # Final sweep for any verified profile-owned process that outlived its group
-  # (the group was already checked above; the marker path is profile-specific).
+  local survivors=""
   if [[ -n "$profile_dir" ]]; then
-    local survivors="" survivor_uid=""
-    local sweep_uid
-    sweep_uid=$(id -u)
-    survivors=$(codex_live_profile_pids "$profile_dir")
-    if [[ -n "$survivors" ]]; then
-      for pid in $survivors; do
-        survivor_uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
-        [[ "$survivor_uid" == "$sweep_uid" ]] && kill -TERM "$pid" 2>/dev/null || true
-      done
-      sleep 0.2
-      survivors=$(codex_live_profile_pids "$profile_dir")
-      for pid in $survivors; do
-        survivor_uid=$(ps -o uid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
-        [[ "$survivor_uid" == "$sweep_uid" ]] && kill -KILL "$pid" 2>/dev/null || true
-      done
-    fi
+    survivors=$(ap_live_profile_pids "$profile_dir")
+  fi
+  if [[ -n "$survivors" ]]; then
+    printf 'ERROR: profile processes survived owned cleanup: %s\n' "$survivors" >&2
+    # Keep the state so the EXIT trap can retry once.
+    return 1
   fi
 
   STARTUP_ROOT_PID=""
   STARTUP_MARKER=""
   STARTUP_PROFILE_DIR=""
+  return 0
 }
 
 codex_live_start_inotify() {
@@ -296,11 +213,15 @@ chmod 700 "$STARTUP_INNER"
 
 (
   cd "$FIXTURE_REPO"
+  export AGENT_PROFILES_DIR="$STARTUP_PROFILE_DIR"
   exec setsid script -qfc "stty rows 40 cols 120; bash '$STARTUP_INNER'" /dev/null
 ) >"$STARTUP_LOG" 2>&1 </dev/null &
 STARTUP_ROOT_PID=$!
-printf '%s\n' "$STARTUP_ROOT_PID" >"$STARTUP_MARKER"
-chmod 600 "$STARTUP_MARKER"
+if ! ap_live_write_group_marker "$STARTUP_ROOT_PID" "$STARTUP_MARKER"; then
+  printf 'ERROR: could not record the startup process identity\n' >&2
+  kill -TERM -"$STARTUP_ROOT_PID" 2>/dev/null || true
+  exit 1
+fi
 
 STARTUP_READY=0
 STARTUP_SANITIZED="$BASE_TMP/codex-startup.sanitized"
@@ -330,11 +251,10 @@ else
 fi
 
 STARTUP_OWNED_PIDS=""
-for pid in $(codex_live_descendants "$STARTUP_ROOT_PID"); do
-  if codex_live_has_profile_env "$pid" "$STARTUP_PROFILE_DIR"; then
-    STARTUP_OWNED_PIDS+="$pid:$(ps -o comm= -p "$pid" 2>/dev/null || echo unknown) "
-  fi
-done
+while IFS= read -r pid; do
+  [[ -n "$pid" ]] || continue
+  STARTUP_OWNED_PIDS+="$pid:$(ps -o comm= -p "$pid" 2>/dev/null || echo unknown) "
+done < <(ap_live_profile_pids "$STARTUP_PROFILE_DIR")
 [[ -n "$STARTUP_OWNED_PIDS" ]] || {
   printf 'ERROR: no descendant carried AGENT_PROFILES_DIR for the QA profile\n' >&2
   exit 1
@@ -343,7 +263,7 @@ printf 'Profile-owned startup processes: %s\n' "$STARTUP_OWNED_PIDS"
 printf 'Startup ran offline under bwrap --unshare-net through the profile wrapper.\n'
 
 codex_live_stop_startup
-STARTUP_SURVIVORS=$(codex_live_profile_pids "$STARTUP_PROFILE_DIR")
+STARTUP_SURVIVORS=$(ap_live_profile_pids "$STARTUP_PROFILE_DIR")
 [[ -z "$STARTUP_SURVIVORS" ]] || {
   printf 'ERROR: profile processes survived owned cleanup: %s\n' "$STARTUP_SURVIVORS" >&2
   exit 1
@@ -595,7 +515,7 @@ printf '\n%s\n' '--- Class 5: Sandbox Probe (offline) ---'
 cd "$FIXTURE_REPO"
 bash "$AP_HELPER" init --profile qa-sandbox
 SANDBOX_PROFILE_DIR="$FIXTURE_REPO/.agent-profiles/qa-sandbox"
-SANDBOX_PIDS_BEFORE=$(codex_live_profile_pids "$SANDBOX_PROFILE_DIR")
+SANDBOX_PIDS_BEFORE=$(ap_live_profile_pids "$SANDBOX_PROFILE_DIR")
 
 SANDBOX_TARGET="$BASE_TMP/sandbox-denied-$$.txt"
 rm -f "$SANDBOX_TARGET"
@@ -622,7 +542,7 @@ printf 'Sandbox output:\n%s\n' "$SANDBOX_OUT"
   printf 'ERROR: sandboxed command wrote the controlled file\n' >&2
   exit 1
 }
-SANDBOX_PIDS_AFTER=$(codex_live_profile_pids "$SANDBOX_PROFILE_DIR")
+SANDBOX_PIDS_AFTER=$(ap_live_profile_pids "$SANDBOX_PROFILE_DIR")
 [[ -z "$SANDBOX_PIDS_AFTER" ]] || {
   printf 'ERROR: sandbox left profile processes behind: %s\n' "$SANDBOX_PIDS_AFTER" >&2
   exit 1
@@ -645,7 +565,7 @@ printf 'Synthetic host sha256 snapshot unchanged.\n'
 
 for profile_dir in "$STARTUP_PROFILE_DIR" "$PROFILE_A_DIR" "$PROFILE_B_DIR" "$AUTH_PROFILE_DIR" "$SANDBOX_PROFILE_DIR"; do
   [[ -n "$profile_dir" ]] || continue
-  leftovers=$(codex_live_profile_pids "$profile_dir")
+  leftovers=$(ap_live_profile_pids "$profile_dir")
   [[ -z "$leftovers" ]] || {
     printf 'ERROR: processes remain for %s: %s\n' "$profile_dir" "$leftovers" >&2
     exit 1
