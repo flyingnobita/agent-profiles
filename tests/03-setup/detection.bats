@@ -166,9 +166,13 @@ teardown() {
   local before
   before=$(snapshot_tree "$TEST_TMPDIR/dotfiles" "$TEST_TMPDIR/prepared")
 
-  run bash "$AP_HELPER" setup --preview --agent codex --prepare-dir "$TEST_TMPDIR/prepared"
+  local bin="$TEST_TMPDIR/no-agents-bin"
+  make_restricted_bin "$bin" codex claude agy opencode
+
+  run env PATH="$bin" bash "$AP_HELPER" setup --preview --agent codex --prepare-dir "$TEST_TMPDIR/prepared"
   assert_success
-  assert_output_contains "release: skipped"
+  assert_output_contains "release: "
+  assert_output_not_contains "release: skipped"
   assert_output_contains "prepared/tasks/agent-profiles-init"
   assert_output_contains "prepared/INSTRUCTIONS.md"
   assert_output_contains "prepared/mise/config.toml.fragment"

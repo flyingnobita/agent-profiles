@@ -289,6 +289,7 @@ if [[ "\$last" =~ ^[0-9]+\$ ]]; then
   target=\$(readlink "/proc/self/fd/\$last" 2>/dev/null || true)
   if [[ -n "\${RACE_TRIGGER:-}" && "\$target" == *"/.locks/\${RACE_PROFILE}.lock" && ! -e "\$RACE_TRIGGER" ]]; then
     : >"\$RACE_TRIGGER"
+    mkdir -p "\$RACE_REPO/.agent-profiles/.journal"
     cat >"\$RACE_REPO/.agent-profiles/.journal/reset-\$RACE_PROFILE.json" <<JOURNAL
 {"op":"reset","profile":"\$RACE_PROFILE","state":"planned","profile_dir":"\$RACE_REPO/.agent-profiles/\$RACE_PROFILE","trash_path":"","assume_unrelated":[],"boot_id":"00000000-0000-0000-0000-000000000000"}
 JOURNAL
