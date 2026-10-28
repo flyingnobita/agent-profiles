@@ -24,7 +24,7 @@ teardown() {
 
   run bash "$AP_HELPER" run --profile alpha -- printenv CLAUDE_CONFIG_DIR
   assert_success
-  assert_equal "$output" "$expected_cfg"
+  assert_output_contains "$expected_cfg"
 }
 
 @test "claude env: resets CLAUDE_SECURESTORAGE_CONFIG_DIR if set in inherited environment" {

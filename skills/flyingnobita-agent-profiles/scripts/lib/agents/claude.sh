@@ -13,3 +13,15 @@ ap_agent_claude_info() {
 ap_agent_claude_detect() {
   command -v "claude" 2>/dev/null || true
 }
+
+ap_agent_env_claude() {
+  local prof_dir="$1"
+  local claude_dir="$prof_dir/.claude"
+
+  if [[ ! -d "$claude_dir" ]]; then
+    (umask 077 && mkdir -p "$claude_dir")
+  fi
+
+  export CLAUDE_CONFIG_DIR="$claude_dir"
+  unset CLAUDE_SECURESTORAGE_CONFIG_DIR
+}
