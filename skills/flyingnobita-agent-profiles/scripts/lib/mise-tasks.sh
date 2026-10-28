@@ -308,8 +308,65 @@ ap_setup_write_task() {
   mv "$tmp" "$target"
 }
 
-# Apply the default machine setup: deploy the release and install both global
-# task files. Conflict, backup and managed-config rules are layered on later.
+ap_setup_is_managed_task() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  grep -Eq '^# managed-by: flyingnobita-agent-profiles [0-9]+\.[0-9]+\.[0-9]+ sha256:[0-9a-f]{64}$' "$file"
+}
+
+ap_setup_inline_conflict() {
+  local config_dir="$1"
+  local task="$2"
+  local file
+  for file in "$config_dir/config.toml" "$config_dir"/conf.d/*.toml; do
+    [[ -f "$file" ]] || continue
+    if grep -Eq "^\[tasks\.(\"?${task}\"?|'${task}')\][[:space:]]*$" "$file"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Returns 0 when mise reports a global task with this name from a source other
+# than our task file, which indicates a conflict elsewhere in the global config.
+ap_setup_listing_conflict() {
+  local config_dir="$1"
+  local task="$2"
+  command -v mise >/dev/null 2>&1 || return 1
+  local json
+  json="$(mise tasks ls --global --json 2>/dev/null)" || return 1
+  [[ -n "$json" ]] || return 1
+  printf "%s" "$json" | python3 -c '
+import json, sys
+task = sys.argv[1]
+target = sys.argv[2]
+try:
+    tasks = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for entry in tasks:
+    if entry.get("name") != task:
+        continue
+    source = entry.get("source") or entry.get("file") or ""
+    if source and source != target:
+        sys.exit(0)
+sys.exit(1)
+' "$task" "$(ap_setup_task_path "$config_dir" "$task")"
+}
+
+ap_setup_backup_task() {
+  local file="$1"
+  local backup_root timestamp backup_dir
+  backup_root="${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  backup_dir="$backup_root/$timestamp/tasks"
+  (umask 077 && mkdir -p "$backup_dir") || return 1
+  cp -a "$file" "$backup_dir/"
+  printf "%s\n" "$backup_dir/$(basename "$file")"
+}
+
+# Apply the machine setup: deploy the release and install both global task
+# files, preserving foreign tasks and backing up managed files before changes.
 ap_setup_apply_tasks() {
   local config_dir
   config_dir="$(ap_mise_config_dir)"
@@ -323,11 +380,47 @@ ap_setup_apply_tasks() {
   fi
 
   (umask 022 && mkdir -p "$config_dir/tasks")
-  local task
+  local task target content conflicts=0 backup
   for task in "${AP_SETUP_TASKS[@]}"; do
+    target="$(ap_setup_task_path "$config_dir" "$task")"
+
+    if ap_setup_inline_conflict "$config_dir" "$task"; then
+      printf "conflict: inline mise task '%s' in the global config was left untouched\n" "$task"
+      conflicts=$((conflicts + 1))
+      continue
+    fi
+
+    if [[ -e "$target" ]] && ! ap_setup_is_managed_task "$target"; then
+      printf "conflict: foreign task file '%s' was left untouched\n" "$target"
+      conflicts=$((conflicts + 1))
+      continue
+    fi
+
+    if [[ ! -e "$target" ]] && ap_setup_listing_conflict "$config_dir" "$task"; then
+      printf "conflict: global mise task '%s' from another source was left untouched\n" "$task"
+      conflicts=$((conflicts + 1))
+      continue
+    fi
+
+    content="$(ap_setup_task_content "$task" "$AP_SETUP_RELEASE_DIR" \
+      "$AP_SETUP_VERSION" "$AP_SETUP_MANIFEST_DIGEST")" || {
+      ap_die "$EX_BROKEN" "failed to render global mise task: $target"
+    }
+
+    if [[ -f "$target" ]] && printf "%s\n" "$content" | cmp -s - "$target"; then
+      continue
+    fi
+
+    if [[ -f "$target" ]]; then
+      if ! backup="$(ap_setup_backup_task "$target")"; then
+        ap_die "$EX_BROKEN" "failed to back up the previous task file: $target"
+      fi
+      printf "backup: %s\n" "$backup"
+    fi
+
     if ! ap_setup_write_task "$config_dir" "$task" "$AP_SETUP_RELEASE_DIR" \
       "$AP_SETUP_VERSION" "$AP_SETUP_MANIFEST_DIGEST"; then
-      ap_die "$EX_BROKEN" "failed to write global mise task: $(ap_setup_task_path "$config_dir" "$task")"
+      ap_die "$EX_BROKEN" "failed to write global mise task: $target"
     fi
   done
 
@@ -336,4 +429,7 @@ ap_setup_apply_tasks() {
   for task in "${AP_SETUP_TASKS[@]}"; do
     printf "  task: %s\n" "$(ap_setup_task_path "$config_dir" "$task")"
   done
+  if [[ $conflicts -gt 0 ]]; then
+    printf "  conflicts: %s (existing tasks preserved)\n" "$conflicts"
+  fi
 }
