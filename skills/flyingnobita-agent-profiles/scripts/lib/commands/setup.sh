@@ -88,5 +88,5 @@ ap_cmd_setup() {
     return 0
   fi
 
-  ap_setup_apply_tasks
+  ap_setup_apply_tasks "$prepare_dir"
 }

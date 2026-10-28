@@ -210,6 +210,13 @@ ap_setup_manifest_content() {
   )
 }
 
+ap_setup_current_digest() {
+  local content
+  content="$(ap_setup_manifest_content "$(ap_setup_skill_dir)")" || return 1
+  [[ -n "$content" ]] || return 1
+  printf "%s\n" "$content" | sha256sum | cut -d' ' -f1
+}
+
 ap_setup_release_root() {
   printf "%s\n" "${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases"
 }
@@ -365,14 +372,97 @@ ap_setup_backup_task() {
   printf "%s\n" "$backup_dir/$(basename "$file")"
 }
 
+ap_setup_managed_config_reason() {
+  local config_dir="$1"
+  local tasks_dir="$config_dir/tasks"
+  local task target
+
+  if [[ -L "$tasks_dir" ]]; then
+    printf "tasks directory '%s' is a symlink\n" "$tasks_dir"
+    return 0
+  fi
+  for task in "${AP_SETUP_TASKS[@]}"; do
+    target="$(ap_setup_task_path "$config_dir" "$task")"
+    if [[ -L "$target" ]]; then
+      printf "task file '%s' is a symlink\n" "$target"
+      return 0
+    fi
+    if [[ -e "$target" && ! -w "$target" ]]; then
+      printf "task file '%s' is read-only\n" "$target"
+      return 0
+    fi
+  done
+  if [[ -d "$tasks_dir" && ! -w "$tasks_dir" ]]; then
+    printf "tasks directory '%s' is read-only\n" "$tasks_dir"
+    return 0
+  fi
+  if command -v chezmoi >/dev/null 2>&1 && chezmoi source-path "$tasks_dir" >/dev/null 2>&1; then
+    printf "chezmoi manages the tasks directory\n"
+    return 0
+  fi
+  return 1
+}
+
+ap_setup_prepare_managed() {
+  local config_dir="$1"
+  local reason="$2"
+  local prepare_dir="$3"
+  local version digest release task
+
+  printf "managed configuration detected: %s\n" "$reason"
+  if [[ -z "$prepare_dir" ]]; then
+    printf "The target was left untouched. Rerun with --prepare-dir DIR to prepare source changes for your configuration manager.\n"
+    return 0
+  fi
+
+  version="$(ap_setup_version)" || return 1
+  digest="$(ap_setup_current_digest)" || return 1
+  release="$(ap_setup_release_root)/$version-${digest:0:8}"
+
+  (umask 022 && mkdir -p "$prepare_dir/tasks") || return 1
+  for task in "${AP_SETUP_TASKS[@]}"; do
+    if ! ap_setup_task_content "$task" "$release" "$version" "$digest" \
+      >"$prepare_dir/tasks/$task"; then
+      return 1
+    fi
+    chmod 755 "$prepare_dir/tasks/$task"
+  done
+
+  cat >"$prepare_dir/INSTRUCTIONS.md" <<EOF
+# Prepared agent-profiles mise tasks
+
+Managed configuration was detected: $reason
+
+The target task files were not modified. Copy the prepared task files into your managed source:
+
+- $prepare_dir/tasks/agent-profiles-init -> $config_dir/tasks/agent-profiles-init
+- $prepare_dir/tasks/agent-profiles -> $config_dir/tasks/agent-profiles
+
+Then rerun:
+
+    bash $(ap_setup_skill_dir)/scripts/agent-profiles setup --apply
+
+This deploys the helper release at $release and installs the two global tasks.
+EOF
+
+  printf "prepared: %s\n" "$prepare_dir"
+}
+
 # Apply the machine setup: deploy the release and install both global task
 # files, preserving foreign tasks and backing up managed files before changes.
 ap_setup_apply_tasks() {
-  local config_dir
+  local prepare_dir="${1:-}"
+  local config_dir reason
   config_dir="$(ap_mise_config_dir)"
 
   if ! command -v mise >/dev/null 2>&1 && [[ -z "${MISE_CONFIG_DIR:-}" ]]; then
     ap_die "$EX_UNAVAILABLE" "mise is required for global task integration; install mise manually (no curl installation)"
+  fi
+
+  if reason="$(ap_setup_managed_config_reason "$config_dir")"; then
+    ap_setup_prepare_managed "$config_dir" "$reason" "$prepare_dir" \
+      || ap_die "$EX_BROKEN" "failed to prepare managed configuration files"
+    return 0
   fi
 
   if ! ap_setup_deploy_release >/dev/null; then
