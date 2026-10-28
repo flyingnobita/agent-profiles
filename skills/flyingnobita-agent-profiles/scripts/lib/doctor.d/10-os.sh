@@ -20,3 +20,5 @@ ap_doctor_check_os() {
     OS_HINT=""
   fi
 }
+
+ap_register_doctor_section "ap_doctor_check_os"
