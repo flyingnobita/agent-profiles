@@ -135,10 +135,15 @@ teardown() {
   assert_output_contains "doctor"
   assert_output_contains "Planned commands"
 
-  # Calling future command like setup must exit 64 and say not yet implemented
-  run bash "$AP_HELPER" setup
+  # setup is implemented from ticket 03 and runs a read-only preview by default
+  run bash "$AP_HELPER" setup --preview
+  assert_success
+  assert_output_contains "No changes made"
+
+  # Unknown commands still reject with an actionable message
+  run bash "$AP_HELPER" definitely-unknown
   assert_failure
   assert_equal "$status" 64
-  assert_output_contains "not yet implemented"
-  assert_output_contains "Available commands: doctor"
+  assert_output_contains "unknown command"
+  assert_output_contains "Available commands"
 }
