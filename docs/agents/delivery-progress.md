@@ -50,13 +50,13 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | --- | --- | --- | --- | --- |
 | 01 | Installable skill and readiness | None | Verified and integrated | `6776906` |
 | 02 | Named Linux profile runtime | 01 | Verified and integrated | `c6817cb` |
-| 03 | Machine setup and mise tasks | 02 | Claimed | - |
+| 03 | Machine setup and mise tasks | 02 | Verified and integrated | `1fbd78f` |
 | 04 | Claude Code integration | 02 | Verified and integrated | `376201d` |
 | 05 | Codex CLI integration | 02 | Verified and integrated | `5eed95d` |
-| 06 | Antigravity CLI integration | 02 | Claimed | - |
-| 07 | OpenCode integration | 02 | Claimed | - |
+| 06 | Antigravity CLI integration | 02 | Verified and integrated | `e59a7ee` |
+| 07 | OpenCode integration | 02 | Verified and integrated | `bea878c` |
 | 08 | Lifecycle and migration | 02 | Verified and integrated | `8566f03` |
-| 09 | Public Linux release readiness | 03-08 | Blocked | - |
+| 09 | Public Linux release readiness | 03-08 | Claimed | - |
 
 ## Ownership
 
@@ -78,3 +78,9 @@ integration CI; the combined integration suite has 165 tests with no skips.
 Claude integration passed the combined 191-test suite, lint and both installation
 modes at `376201d`. Antigravity is independently verified and merged; its combined
 integration gate remains in progress. OpenCode is claimed for the next Pi worker.
+
+All tickets 01-08 are verified and integrated. The full integration gate at
+`bea878c` passed 278 tests with no skips, lint, and both clean-install modes.
+Final Docker QA will independently exercise setup installing a missing prerequisite
+through its real package-manager path; worker fixture and container evidence is
+retained until then. Release readiness is claimed for one Pi implementer.
