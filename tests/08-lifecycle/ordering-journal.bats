@@ -1,0 +1,144 @@
+#!/usr/bin/env bats
+
+setup() {
+  load '../helpers/common.bash'
+  load '../helpers/assert.bash'
+  load '../helpers/fixtures.bash'
+  load '../helpers/isolation.bash'
+  setup_isolation
+}
+
+teardown() {
+  teardown_isolation
+}
+
+@test "ordering: stale journal recovery refusal takes priority over a missing profile" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile gone
+  assert_success
+
+  # An interrupted operation already moved the profile away, and its journal is
+  # stale (no live lock). Recovery must be the actionable answer, not exit 66.
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  cat >"$fixture_repo/.agent-profiles/.journal/remove-gone.json" <<'JOURNAL'
+{
+  "op": "remove",
+  "profile": "gone",
+  "state": "trashed",
+  "profile_dir": "/tmp/placeholder/gone",
+  "trash_path": "/tmp/placeholder/trash",
+  "assume_unrelated": [],
+  "boot_id": "00000000-0000-0000-0000-000000000000"
+}
+JOURNAL
+  rm -rf "$fixture_repo/.agent-profiles/gone"
+
+  run bash "$AP_HELPER" remove --profile gone --yes
+  assert_failure 77
+  assert_output_contains "recover"
+
+  run bash "$AP_HELPER" reset --profile gone --yes
+  assert_failure 77
+  assert_output_contains "recover"
+
+  run bash "$AP_HELPER" run --profile gone -- echo ok
+  assert_failure 77
+  assert_output_contains "recover"
+}
+
+@test "ordering: an incomplete journal is refused, then cleared by recover without touching data" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile intp
+  assert_success
+  echo "keep me" >"$fixture_repo/.agent-profiles/intp/home/keep.txt"
+
+  # Simulate the crash window between journal creation and the first atomic
+  # write: an empty journal file with no live lock.
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  : >"$fixture_repo/.agent-profiles/.journal/reset-intp.json"
+
+  run bash "$AP_HELPER" run --profile intp -- true
+  assert_failure 77
+  assert_output_contains "recover"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  assert_output_contains "incomplete journal"
+
+  # Original data is intact and the checkout works again.
+  assert_file_exists "$fixture_repo/.agent-profiles/intp/home/keep.txt"
+  run bash "$AP_HELPER" run --profile intp -- sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
+  assert_success
+  assert_output_contains "intp"
+}
+
+@test "ordering: init refuses legacy layouts before creating storage or lock directories" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+
+  run bash "$AP_HELPER" init --profile other
+  assert_failure 77
+  assert_output_contains "legacy profile storage"
+
+  [[ ! -e "$fixture_repo/.agent-profiles" ]]
+}
+
+@test "ordering: lifecycle journal creation is atomic and never leaves an empty journal" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile atomic
+  assert_success
+  echo "data" >"$fixture_repo/.agent-profiles/atomic/home/data.txt"
+
+  # Fault exactly after the journal lock is held and before the first atomic
+  # write: no journal record may exist afterwards.
+  run env AP_FAULT_AFTER=journal-locked bash "$AP_HELPER" reset --profile atomic --yes
+  assert_failure 137
+  assert_dir_exists "$fixture_repo/.agent-profiles/atomic/home"
+  run bash -c 'find "$1" -name "*.json" | grep .' _ "$fixture_repo/.agent-profiles/.journal"
+  assert_failure
+
+  # The next operation succeeds without a recovery step.
+  run bash "$AP_HELPER" reset --profile atomic --yes
+  assert_success
+  assert_dir_exists "$fixture_repo/.agent-profiles/atomic/home"
+}
+
+@test "ordering: the exclude lock is acquired without blocking indefinitely" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile first
+  assert_success
+
+  local lock_file="$fixture_repo/.agent-profiles/.locks/.exclude.lock"
+  assert_file_exists "$lock_file"
+
+  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$lock_file" &
+  local holder_pid=$!
+  local i=0
+  while flock -n "$lock_file" true 2>/dev/null; do
+    sleep 0.1
+    i=$((i + 1))
+    [[ $i -lt 100 ]] || break
+  done
+
+  run timeout 40 bash "$AP_HELPER" init --profile second
+  assert_failure 75
+  assert_output_contains "lock"
+
+  kill -TERM -"$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+}
