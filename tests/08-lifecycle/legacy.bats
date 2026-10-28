@@ -26,6 +26,8 @@ teardown() {
   assert_output_contains "legacy profile storage detected"
   assert_output_contains "migrate"
 
+  # Even if default profile directory exists, run must refuse with exit 77 due to legacy storage
+  mkdir -p "$fixture_repo/.agent-profiles/default/home"
   run bash "$AP_HELPER" run -- true
   assert_failure 77
   assert_output_contains "legacy profile storage detected"
@@ -43,6 +45,7 @@ teardown() {
   assert_failure 77
   assert_output_contains "legacy profile storage detected"
 
+  mkdir -p "$fixture_repo/.agent-profiles/worker1/home"
   run bash "$AP_HELPER" run --profile worker1 -- true
   assert_failure 77
   assert_output_contains "legacy profile storage detected"
@@ -61,7 +64,9 @@ teardown() {
   assert_failure 77
   assert_output_contains "legacy profile storage detected"
 
-  run bash "$AP_HELPER" run -- true
+  # If a named profile also exists, run on that profile still refuses due to root unnamed legacy layout
+  mkdir -p "$fixture_repo/.agent-profiles/myprof/home"
+  run bash "$AP_HELPER" run --profile myprof -- true
   assert_failure 77
   assert_output_contains "legacy profile storage detected"
 }

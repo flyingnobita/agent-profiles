@@ -170,3 +170,45 @@ EOF
   assert_file_exists "$prof_dir/home/keep.txt"
   [[ ! -f "$fixture_repo/.agent-profiles/.journal/reset-plannedprof.json" ]]
 }
+
+@test "recovery: recover rolls forward interrupted remove from trashed state" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile victim
+  run bash "$AP_HELPER" init --profile survivor
+  assert_success
+
+  local victim_dir="$fixture_repo/.agent-profiles/victim"
+  local survivor_dir="$fixture_repo/.agent-profiles/survivor"
+  echo "victim data" >"$victim_dir/home/data.txt"
+  echo "survivor data" >"$survivor_dir/home/data.txt"
+
+  local trash_dir="$fixture_repo/.agent-profiles/.trash/victim.98765"
+  mkdir -p "$fixture_repo/.agent-profiles/.trash"
+  mv "$victim_dir" "$trash_dir"
+
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  cat >"$fixture_repo/.agent-profiles/.journal/remove-victim.json" <<EOF
+{
+  "op": "remove",
+  "profile": "victim",
+  "state": "trashed",
+  "profile_dir": "$victim_dir",
+  "trash_path": "$trash_dir",
+  "assume_unrelated": [],
+  "boot_id": "00000000-0000-0000-0000-000000000000"
+}
+EOF
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  assert_output_contains "interrupted 'remove'"
+
+  # The remove is completed and the survivor is untouched.
+  [[ ! -d "$victim_dir" ]]
+  [[ ! -d "$trash_dir" ]]
+  assert_file_exists "$survivor_dir/home/data.txt"
+  [[ ! -f "$fixture_repo/.agent-profiles/.journal/remove-victim.json" ]]
+}
