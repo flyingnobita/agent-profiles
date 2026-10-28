@@ -13,7 +13,7 @@ Agent profiles separate agent configuration, credentials storage, and user-insta
 
 ## Reference Routing
 
-Consult only the reference document relevant to the user's specific request:
+For questions, conceptual guidance, or documentation requests, read only the single focused reference document without mutating the repository, environment, or profile configurations:
 
 | Request Topic | Target Reference |
 | ------------- | ---------------- |
@@ -30,25 +30,22 @@ Consult only the reference document relevant to the user's specific request:
 
 ## Command Summary
 
-Execute profile operations using the bundled helper script:
+Execute profile operations by locating the helper script relative to this installed skill directory (e.g. `$SKILL_DIR/scripts/agent-profiles`), while keeping the current working directory in the target Git repository:
 
 ```bash
-# Health check and environment diagnosis
-bash scripts/agent-profiles doctor [--json]
+# Locate helper relative to the installed skill directory
+AP_HELPER="<skill-directory>/scripts/agent-profiles"
 
-# Initialize or list profiles in the current checkout
-bash scripts/agent-profiles init [--profile NAME]
-bash scripts/agent-profiles list [--json]
+# Health check and environment diagnosis (implemented in ticket 01)
+bash "$AP_HELPER" doctor [--json] [--agent claude|codex|agy|opencode] [--profile NAME]
 
-# Execute commands within a profile (defaults to "default")
-bash scripts/agent-profiles run [--profile NAME] -- COMMAND [ARGS...]
-
-# Machine setup and global mise task configuration
-bash scripts/agent-profiles setup [--preview | --apply]
-
-# Profile lifecycle management
-bash scripts/agent-profiles reset --profile NAME [--yes]
-bash scripts/agent-profiles remove --profile NAME [--yes]
-bash scripts/agent-profiles migrate [--yes]
-bash scripts/agent-profiles recover [--yes]
+# Planned future commands (reserved for subsequent delivery tickets):
+# bash "$AP_HELPER" init [--profile NAME]
+# bash "$AP_HELPER" list [--json]
+# bash "$AP_HELPER" run [--profile NAME] -- COMMAND [ARGS...]
+# bash "$AP_HELPER" setup [--preview | --apply]
+# bash "$AP_HELPER" reset --profile NAME [--yes]
+# bash "$AP_HELPER" remove --profile NAME [--yes]
+# bash "$AP_HELPER" migrate [--yes]
+# bash "$AP_HELPER" recover [--yes]
 ```
