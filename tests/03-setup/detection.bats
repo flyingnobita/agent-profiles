@@ -113,3 +113,68 @@ teardown() {
   run bash "$AP_HELPER" setup unexpected-argument
   assert_failure 64
 }
+
+@test "setup preview: names proposed release, task, conflict and requested agent changes read-only" {
+  mkdir -p "$TEST_TMPDIR/work"
+  cd "$TEST_TMPDIR/work" || exit 1
+  export AP_SPY_LOG="$TEST_TMPDIR/spy.log"
+
+  # A foreign task file and a pre-existing managed task make the plan concrete.
+  mkdir -p "$MISE_CONFIG_DIR/tasks"
+  printf '#!/usr/bin/env bash\necho foreign\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  printf '# managed-by: flyingnobita-agent-profiles 0.0.0 sha256:%064d\n' 0 \
+    >"$MISE_CONFIG_DIR/tasks/agent-profiles"
+
+  local before
+  before=$(snapshot_tree "$MISE_CONFIG_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}")
+
+  run bash "$AP_HELPER" setup --preview --agent codex
+  assert_success
+  assert_output_contains "Planned changes"
+  assert_output_contains "release:"
+  assert_output_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  assert_output_contains "conflict"
+  assert_output_contains "agent: codex"
+  assert_output_contains "No changes made"
+
+  local after
+  after=$(snapshot_tree "$MISE_CONFIG_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}")
+  assert_equal "$before" "$after"
+  run ! grep -Fq "mise use" "$AP_SPY_LOG"
+  run ! grep -Fq "pacman" "$AP_SPY_LOG"
+}
+
+@test "setup preview: --tasks-only marks prerequisite and agent installation as skipped" {
+  mkdir -p "$TEST_TMPDIR/work"
+  cd "$TEST_TMPDIR/work" || exit 1
+
+  run bash "$AP_HELPER" setup --preview --tasks-only --agent codex
+  assert_success
+  assert_output_contains "tasks-only"
+  assert_output_contains "skipped"
+  assert_output_not_contains "install through the mise registry on --apply"
+  assert_output_not_contains "install:"
+}
+
+@test "setup preview: managed configuration with --prepare-dir names prepared destinations" {
+  mkdir -p "$TEST_TMPDIR/work" "$TEST_TMPDIR/dotfiles/mise"
+  cd "$TEST_TMPDIR/work" || exit 1
+  printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/mise/config.toml"
+  rm -rf "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
+
+  local before
+  before=$(snapshot_tree "$TEST_TMPDIR/dotfiles" "$TEST_TMPDIR/prepared")
+
+  run bash "$AP_HELPER" setup --preview --agent codex --prepare-dir "$TEST_TMPDIR/prepared"
+  assert_success
+  assert_output_contains "release: skipped"
+  assert_output_contains "prepared/tasks/agent-profiles-init"
+  assert_output_contains "prepared/INSTRUCTIONS.md"
+  assert_output_contains "prepared/mise/config.toml.fragment"
+
+  # A preview writes nothing, including no prepared files.
+  local after
+  after=$(snapshot_tree "$TEST_TMPDIR/dotfiles" "$TEST_TMPDIR/prepared")
+  assert_equal "$before" "$after"
+}

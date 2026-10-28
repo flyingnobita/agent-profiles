@@ -40,12 +40,12 @@ marker skill in every candidate directory):
 
 | Location | Read by `agy` |
 | --- | --- |
-| `~/.gemini/config/skills/<name>/SKILL.md` | yes — global customization root |
-| `~/.gemini/skills/<name>/SKILL.md` | yes — legacy user skill root, still scanned |
-| `~/.gemini/antigravity-cli/skills/<name>/SKILL.md` | yes — per-app skill root |
-| `~/.gemini/antigravity/skills/<name>/SKILL.md` | no — not scanned |
-| `~/.agents/skills/<name>/SKILL.md` in the profile home | no — not scanned |
-| built-in skills under `.gemini/antigravity-cli/builtin/skills/` | yes — materialized per profile |
+| `~/.gemini/config/skills/<name>/SKILL.md` | yes - global customization root |
+| `~/.gemini/skills/<name>/SKILL.md` | yes - legacy user skill root, still scanned |
+| `~/.gemini/antigravity-cli/skills/<name>/SKILL.md` | yes - per-app skill root |
+| `~/.gemini/antigravity/skills/<name>/SKILL.md` | no - not scanned |
+| `~/.agents/skills/<name>/SKILL.md` in the profile home | no - not scanned |
+| built-in skills under `.gemini/antigravity-cli/builtin/skills/` | yes - materialized per profile |
 
 Consequences:
 

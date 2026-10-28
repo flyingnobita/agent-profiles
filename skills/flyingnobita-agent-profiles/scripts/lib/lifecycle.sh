@@ -6,7 +6,7 @@ ap_preview_profile_categories() {
   local prof_dir="$1"
 
   python3 -c '
-import os, sys
+import os, re, sys
 
 prof_dir = os.path.realpath(sys.argv[1])
 
@@ -18,7 +18,43 @@ categories = {
     "other": {"count": 0, "bytes": 0}
 }
 
-cred_names = {"auth.json", "credentials.json", ".credentials.json", "token", "secret", "key"}
+cred_names = {"auth.json", "credentials.json", ".credentials.json", "oauth_creds.json", "plugin-secrets.json"}
+cred_word = re.compile(r"(^|[._-])(credentials?|auth|token|secret)s?([._-]|$)", re.IGNORECASE)
+
+transcript_dirs = (
+    ".claude/projects/",
+    ".claude/sessions/",
+    ".claude/history/",
+    ".codex/sessions/",
+    ".gemini/antigravity-cli/conversations/",
+    ".gemini/antigravity/conversations/",
+    ".local/share/opencode/",
+    ".local/state/opencode/",
+    ".local/share/",
+    ".local/state/",
+)
+transcript_word = re.compile(r"transcript|history|sessions?|conversations?|rollout|chat", re.IGNORECASE)
+transcript_exts = (".jsonl", ".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3", ".pb")
+
+tool_dirs = ("npm-global/", "uv-tools/", "cargo-global/", "python-user/", "bin/", ".cache/")
+settings_exact = {".agent-profile", ".claude.json"}
+settings_exts = (".toml", ".json", ".jsonc", ".yaml", ".yml", ".ini")
+
+
+def classify(rel, name):
+    low = name.lower()
+    if low in cred_names or cred_word.search(name) or "oauth" in low or "plugin-secrets" in low:
+        return "credentials"
+    if rel.startswith(transcript_dirs) or transcript_word.search(rel) or low.endswith(transcript_exts):
+        return "transcripts"
+    if rel in settings_exact or rel.startswith(".config/"):
+        return "settings"
+    if rel.startswith(tool_dirs) or rel.startswith((".npm", ".cargo", ".rustup")):
+        return "tools"
+    if low.endswith(settings_exts) or low in ("config", "settings") or low.startswith(("config.", "settings.")):
+        return "settings"
+    return "other"
+
 
 for root, dirs, files in os.walk(prof_dir):
     for f in files:
@@ -30,17 +66,7 @@ for root, dirs, files in os.walk(prof_dir):
         except OSError:
             continue
 
-        low_f = f.lower()
-        if low_f in cred_names or "auth" in low_f or "token" in low_f or "credential" in low_f or "secret" in low_f:
-            cat = "credentials"
-        elif rel.startswith(".config") or rel == ".agent-profile" or "settings" in rel or "config" in rel:
-            cat = "settings"
-        elif rel.startswith(".local/share") or rel.startswith(".local/state") or "transcript" in rel or "history" in rel or "session" in rel:
-            cat = "transcripts"
-        elif rel.startswith("npm-global") or rel.startswith("uv-tools") or rel.startswith("cargo-global") or rel.startswith("python-user") or rel.startswith("bin") or rel.startswith(".cache"):
-            cat = "tools"
-        else:
-            cat = "other"
+        cat = classify(rel, f)
 
         categories[cat]["count"] += 1
         categories[cat]["bytes"] += size
@@ -56,7 +82,20 @@ for cat_key, label in items:
     cnt = categories[cat_key]["count"]
     sz = categories[cat_key]["bytes"]
     print(f"  {label}: {cnt} file(s), {sz} bytes")
+
+other = categories["other"]
+if other["count"] > 0:
+    print("  Other files: " + str(other["count"]) + " file(s), " + str(other["bytes"]) + " bytes")
 ' "$prof_dir"
+}
+
+# Test-only fault injection point. Documented in references/lifecycle.md as an
+# internal test hook, not a user option.
+ap_maybe_fault() {
+  local point="$1"
+  if [[ -n "${AP_FAULT_AFTER:-}" && "${AP_FAULT_AFTER:-}" == "$point" ]]; then
+    exit 137
+  fi
 }
 
 ap_ensure_journal_dir() {
@@ -213,6 +252,8 @@ for source in sources:
 PY
 }
 
+# Returns 0 when a basename is a recognizable legacy agent entry. Used to
+# validate recorded migration source paths during recovery.
 ap_migrate_is_agent_entry() {
   case "$1" in
     .claude | .codex | .gemini | .agents | .opencode | .claude.json | home | bin | npm-global | uv-tools | cargo-global | python-user | .config | .local | .cache)
@@ -220,6 +261,46 @@ ap_migrate_is_agent_entry() {
       ;;
   esac
   return 1
+}
+
+# Lists the names under a profile storage directory that are genuine unnamed
+# legacy data: agent directory entries that do not have the layout of a named
+# profile. A named profile is a real directory with a home/ directory or an
+# .agent-profile marker, so previously valid profile names such as bin, home,
+# npm-global, uv-tools, cargo-global and python-user are never captured.
+ap_list_unnamed_legacy_entries() {
+  local storage_dir="$1"
+
+  python3 - "$storage_dir" <<'PY'
+import os, sys
+
+storage_dir = sys.argv[1]
+agent_subdirs = {
+    ".claude", ".codex", ".gemini", ".agents", ".opencode",
+    "home", "bin", "npm-global", "uv-tools", "cargo-global",
+    "python-user", ".config", ".local", ".cache", ".claude.json",
+}
+
+
+def is_named_profile(path):
+    return os.path.isdir(os.path.join(path, "home")) or os.path.isfile(
+        os.path.join(path, ".agent-profile")
+    )
+
+
+try:
+    entries = sorted(os.listdir(storage_dir))
+except OSError:
+    entries = []
+
+for entry in entries:
+    if entry not in agent_subdirs:
+        continue
+    path = os.path.join(storage_dir, entry)
+    if os.path.isdir(path) and not os.path.islink(path) and is_named_profile(path):
+        continue
+    print(entry)
+PY
 }
 
 ap_detect_legacy_layouts() {
@@ -237,6 +318,13 @@ agent_subdirs = {
     "home", "bin", "npm-global", "uv-tools", "cargo-global",
     "python-user", ".config", ".local", ".cache", ".claude.json",
 }
+
+
+def is_named_profile(path):
+    return os.path.isdir(os.path.join(path, "home")) or os.path.isfile(
+        os.path.join(path, ".agent-profile")
+    )
+
 
 layouts = []
 
@@ -282,7 +370,16 @@ if os.path.lexists(profiles_dir):
             entries = os.listdir(profiles_dir)
         except OSError:
             entries = []
-        if any(entry in agent_subdirs for entry in entries):
+        unnamed = False
+        for entry in entries:
+            if entry not in agent_subdirs:
+                continue
+            path = os.path.join(profiles_dir, entry)
+            if os.path.isdir(path) and not os.path.islink(path) and is_named_profile(path):
+                continue
+            unnamed = True
+            break
+        if unnamed:
             layouts.append("unnamed-profiles")
 
 print(",".join(layouts))

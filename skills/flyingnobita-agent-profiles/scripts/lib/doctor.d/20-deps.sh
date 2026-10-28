@@ -3,13 +3,12 @@
 # shellcheck disable=SC2034
 
 ap_doctor_check_deps() {
+  # Dependency probes run in a temporary directory when one is available. When
+  # mktemp fails, probes run in place: no predictable path is created or deleted.
   local safe_dep_dir
-  if command -v mktemp >/dev/null 2>&1; then
-    safe_dep_dir=$(mktemp -d 2>/dev/null || echo "/tmp/ap-deps-$$")
-  else
-    safe_dep_dir="/tmp/ap-deps-$$"
+  if ! safe_dep_dir=$(mktemp -d 2>/dev/null); then
+    safe_dep_dir=""
   fi
-  mkdir -p "$safe_dep_dir" 2>/dev/null || true
   CHECKS_JSON="[]"
 
   # 1. bash
@@ -17,7 +16,7 @@ ap_doctor_check_deps() {
   bash_path=$(command -v bash 2>/dev/null || true)
   if [[ -n "$bash_path" ]]; then
     bash_path=$(readlink -f "$bash_path" 2>/dev/null || echo "$bash_path")
-    bash_ver=$( (cd "$safe_dep_dir" && bash --version 2>/dev/null) | head -n 1 | cut -d' ' -f4 || echo "unknown")
+    bash_ver=$( (cd "${safe_dep_dir:-/}" && bash --version 2>/dev/null) | head -n 1 | cut -d' ' -f4 || echo "unknown")
     bash_status="available"
     bash_hint=""
   else
@@ -42,7 +41,7 @@ print(json.dumps(checks))
   git_path=$(command -v git 2>/dev/null || true)
   if [[ -n "$git_path" ]]; then
     git_path=$(readlink -f "$git_path" 2>/dev/null || echo "$git_path")
-    git_ver=$( (cd "$safe_dep_dir" && git --version 2>/dev/null) | cut -d' ' -f3 || echo "unknown")
+    git_ver=$( (cd "${safe_dep_dir:-/}" && git --version 2>/dev/null) | cut -d' ' -f3 || echo "unknown")
     git_status="available"
     git_hint=""
   else
@@ -67,7 +66,7 @@ print(json.dumps(checks))
   py_path=$(command -v python3 2>/dev/null || true)
   if [[ -n "$py_path" ]]; then
     py_path=$(readlink -f "$py_path" 2>/dev/null || echo "$py_path")
-    py_ver=$( (cd "$safe_dep_dir" && python3 --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
+    py_ver=$( (cd "${safe_dep_dir:-/}" && python3 --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
     py_status="available"
     py_hint=""
   else
@@ -92,7 +91,7 @@ print(json.dumps(checks))
   mise_path=$(command -v mise 2>/dev/null || true)
   if [[ -n "$mise_path" ]]; then
     mise_path=$(readlink -f "$mise_path" 2>/dev/null || echo "$mise_path")
-    mise_ver=$( (cd "$safe_dep_dir" && mise --version 2>/dev/null) | grep -E '^[0-9]' | head -n 1 | cut -d' ' -f1 || echo "installed")
+    mise_ver=$( (cd "${safe_dep_dir:-/}" && mise --version 2>/dev/null) | grep -E '^[0-9]' | head -n 1 | cut -d' ' -f1 || echo "installed")
     mise_status="available"
     mise_hint=""
   else
@@ -117,7 +116,7 @@ print(json.dumps(checks))
   bwrap_path=$(command -v bwrap 2>/dev/null || true)
   if [[ -n "$bwrap_path" ]]; then
     bwrap_path=$(readlink -f "$bwrap_path" 2>/dev/null || echo "$bwrap_path")
-    bwrap_ver=$( (cd "$safe_dep_dir" && bwrap --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
+    bwrap_ver=$( (cd "${safe_dep_dir:-/}" && bwrap --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
     bwrap_status="available"
     bwrap_hint=""
   else
@@ -140,7 +139,7 @@ print(json.dumps(checks))
   # 6. userns (user namespaces)
   local userns_status userns_detail userns_hint
   if [[ "$bwrap_status" == "available" ]]; then
-    if (cd "$safe_dep_dir" && bwrap --dev-bind / / true 2>/dev/null); then
+    if (cd "${safe_dep_dir:-/}" && bwrap --dev-bind / / true 2>/dev/null); then
       userns_status="available"
       userns_detail="unprivileged user namespaces working with bubblewrap"
       userns_hint=""
@@ -166,7 +165,9 @@ checks.append({
 print(json.dumps(checks))
 ' "$CHECKS_JSON" "$userns_status" "$userns_detail" "$userns_hint")
 
-  rm -rf "$safe_dep_dir"
+  if [[ -n "$safe_dep_dir" ]]; then
+    rm -rf "$safe_dep_dir"
+  fi
 }
 
 ap_register_doctor_section "ap_doctor_check_deps"

@@ -39,12 +39,14 @@ ap_cmd_init() {
   repo_root=$(ap_find_repo_root)
 
   ap_validate_profile_name "$profile"
-  ap_ensure_storage_dir "$repo_root"
-  ap_check_profile_aliasing "$repo_root" "$profile"
-  ap_ensure_locks_dir "$repo_root"
 
-  # Preflight check before acquiring locks or mutating profile
+  # Preflight first: legacy layouts and stale journals are refused before any
+  # storage or lock directory is created.
   ap_run_preflight "$repo_root" "$profile"
+
+  ap_ensure_storage_dir "$repo_root"
+  ap_ensure_locks_dir "$repo_root"
+  ap_check_profile_aliasing "$repo_root" "$profile"
 
   # Short storage lock and profile lease during initialization
   local prof_dir="$repo_root/.agent-profiles/$profile"

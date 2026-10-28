@@ -113,3 +113,54 @@ legacy_check = any("legacy" in str(c).lower() for c in data["checks"])
 assert legacy_check
 ' "$output"
 }
+
+@test "legacy: valid profile names that match agent directory names stay usable named profiles" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  # bin, home, npm-global, uv-tools, cargo-global and python-user are valid
+  # profile names under the approved grammar; they are not unnamed legacy data.
+  local name
+  for name in bin home npm-global uv-tools cargo-global python-user; do
+    run bash "$AP_HELPER" init --profile "$name"
+    assert_success
+    assert_dir_exists "$fixture_repo/.agent-profiles/$name/home"
+  done
+
+  # A new unrelated profile must not be blocked by the existing named profiles.
+  run bash "$AP_HELPER" init --profile other
+  assert_success
+
+  run bash "$AP_HELPER" list
+  assert_success
+  assert_output_contains "bin"
+  assert_output_contains "other"
+  assert_output_not_contains "legacy profile storage"
+
+  # The same-named profile stays runnable and is not treated as legacy storage.
+  run bash "$AP_HELPER" run --profile bin -- sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
+  assert_success
+  assert_output_contains "bin"
+}
+
+@test "legacy: mixed named profiles and genuine unnamed agent dirs still refuse init until migrate" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  # A real named profile named bin plus genuine unnamed legacy data.
+  run bash "$AP_HELPER" init --profile bin
+  assert_success
+  mkdir -p "$fixture_repo/.agent-profiles/.claude/projects/p1"
+  printf '{"legacy":true}\n' >"$fixture_repo/.agent-profiles/.claude/projects/p1/session.jsonl"
+
+  run bash "$AP_HELPER" init --profile other
+  assert_failure 77
+  assert_output_contains "legacy profile storage detected"
+
+  # The named profile itself is still recognizable to list.
+  run bash "$AP_HELPER" list
+  assert_success
+  assert_output_contains "bin"
+}

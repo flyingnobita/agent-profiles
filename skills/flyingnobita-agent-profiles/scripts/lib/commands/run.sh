@@ -46,6 +46,10 @@ ap_cmd_run() {
   local repo_root
   repo_root=$(ap_find_repo_root)
 
+  # 1. Preflight first: an interrupted operation must answer with "run recover"
+  # instead of "not initialized" after the data was moved away.
+  ap_run_preflight "$repo_root" "$profile"
+
   ap_check_profile_aliasing "$repo_root" "$profile"
 
   local prof_dir="$repo_root/.agent-profiles/$profile"
@@ -53,9 +57,6 @@ ap_cmd_run() {
   if [[ ! -d "$prof_dir/home" ]]; then
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout (run 'agent-profiles init --profile $profile' first)"
   fi
-
-  # 1. Preflight
-  ap_run_preflight "$repo_root" "$profile"
 
   # Nested execution detection based on live bind evidence in /proc/self/mountinfo
   local live_context

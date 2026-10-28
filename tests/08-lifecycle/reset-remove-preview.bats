@@ -144,3 +144,61 @@ teardown() {
   hash_after_remove_preview=$(find "$prof_dir" -type f -exec sha256sum {} + | sort | sha256sum)
   assert_equal "$hash_before" "$hash_after_remove_preview"
 }
+
+@test "preview: counts real per-agent conversation stores as transcripts" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile convprof
+  assert_success
+  local prof_dir="$fixture_repo/.agent-profiles/convprof"
+
+  # Claude Code transcripts: <uuid>.jsonl under .claude/projects/<project>/
+  mkdir -p "$prof_dir/.claude/projects/-tmp-repo"
+  printf '{"type":"user","message":"PRIVATE_CLAUDE_TRANSCRIPT"}\n' \
+    >"$prof_dir/.claude/projects/-tmp-repo/6f1c2b7e-1111-4222-8333-944455556666.jsonl"
+  # Antigravity CLI conversations and an opaque conversation store.
+  mkdir -p "$prof_dir/.gemini/antigravity-cli/conversations"
+  printf 'PRIVATE_AGY_CONVERSATION\n' >"$prof_dir/.gemini/antigravity-cli/conversations/conv-1"
+  mkdir -p "$prof_dir/.gemini/antigravity/conversations"
+  printf 'PRIVATE_AGY_OPAQUE\n' >"$prof_dir/.gemini/antigravity/conversations/c1.pb"
+  # Codex sessions.
+  mkdir -p "$prof_dir/.codex/sessions/2026/10/28"
+  printf '{"type":"session"}\n' >"$prof_dir/.codex/sessions/2026/10/28/rollout-1.jsonl"
+  # OpenCode session database.
+  mkdir -p "$prof_dir/.local/share/opencode"
+  printf 'sqlite-bytes\n' >"$prof_dir/.local/share/opencode/opencode.db"
+
+  run bash "$AP_HELPER" reset --profile convprof
+  assert_success
+
+  # Five conversation stores must be reported as transcripts, never zero.
+  local transcripts_line
+  transcripts_line=$(printf '%s\n' "$output" | grep -E '^  Transcripts:')
+  [[ -n "$transcripts_line" ]]
+  local count
+  count=$(printf '%s\n' "$transcripts_line" | sed -E 's/.*: ([0-9]+) file\(s\).*/\1/')
+  [[ "$count" -ge 5 ]]
+
+  # Never print conversation contents.
+  assert_output_not_contains "PRIVATE_CLAUDE_TRANSCRIPT"
+  assert_output_not_contains "PRIVATE_AGY_CONVERSATION"
+  assert_output_not_contains "PRIVATE_AGY_OPAQUE"
+}
+
+@test "preview: reports uncategorized profile state instead of hiding it" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile otherprof
+  assert_success
+  local prof_dir="$fixture_repo/.agent-profiles/otherprof"
+  mkdir -p "$prof_dir/.weird-agent-state"
+  printf 'opaque\n' >"$prof_dir/.weird-agent-state/blob.bin"
+
+  run bash "$AP_HELPER" remove --profile otherprof
+  assert_success
+  assert_output_contains "Other files:"
+}

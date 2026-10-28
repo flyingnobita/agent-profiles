@@ -107,22 +107,18 @@ ap_migrate_compute_plan() {
     MIG_TARGETS+=("default")
 
     local entry base
-    for entry in "$storage_dir"/* "$storage_dir"/.*; do
-      [[ -e "$entry" || -L "$entry" ]] || continue
-      base=$(basename "$entry")
-      case "$base" in
-        . | ..) continue ;;
-      esac
-      if ap_migrate_is_agent_entry "$base"; then
-        MIG_UNNAMED+=("$base")
-      fi
+    mapfile -t MIG_UNNAMED < <(ap_list_unnamed_legacy_entries "$storage_dir")
+
+    for entry in "${MIG_UNNAMED[@]:-}"; do
+      [[ -n "$entry" ]] || continue
+      base="$entry"
+      ap_migrate_is_agent_entry "$base" \
+        || ap_die "$EX_REFUSED" "unrecognized legacy entry '$base' under '$storage_dir'"
     done
 
     if [[ ${#MIG_UNNAMED[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unnamed legacy layout under '$storage_dir' has no recognizable agent directories"
     fi
-
-    mapfile -t MIG_UNNAMED < <(printf "%s\n" "${MIG_UNNAMED[@]}" | sort -u)
   fi
 
   if [[ ${#MIG_TARGETS[@]} -eq 0 ]]; then
@@ -273,11 +269,6 @@ ap_cmd_migrate() {
   ap_lock_storage_exclusive "$repo_root"
   ap_lock_profiles_exclusive "$repo_root" "${MIG_TARGETS[@]}"
 
-  local target
-  for target in "${MIG_TARGETS[@]}"; do
-    ap_scan_processes "$repo_root" "$target" "$assume_unrelated"
-  done
-
   # Re-validate while holding the locks: layout and targets may have changed.
   ap_migrate_compute_plan "$repo_root"
   if [[ -z "$MIG_LAYOUTS" ]]; then
@@ -289,7 +280,16 @@ ap_cmd_migrate() {
 
   ap_migrate_build_sources "$repo_root"
 
+  # Refuse while any owned process still uses an actual legacy source, such as
+  # cwd, open files, exe or environment markers under .agent-sandbox or unnamed
+  # storage. Target-profile storage is scanned as well.
   local index
+  ap_scan_legacy_processes "$repo_root" "legacy storage" "$assume_unrelated" \
+    "${MIG_SOURCE_PATHS[@]}"
+  for index in "${!MIG_TARGETS[@]}"; do
+    ap_scan_processes "$repo_root" "${MIG_TARGETS[index]}" "$assume_unrelated"
+  done
+
   for index in "${!MIG_SOURCE_PATHS[@]}"; do
     ap_assert_tree_has_no_special_files "${MIG_SOURCE_PATHS[index]}" \
       || ap_die "$EX_LAYOUT" "refusing to migrate legacy data containing sockets, device nodes, or FIFOs"

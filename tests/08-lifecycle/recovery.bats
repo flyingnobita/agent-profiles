@@ -212,3 +212,53 @@ EOF
   assert_file_exists "$survivor_dir/home/data.txt"
   [[ ! -f "$fixture_repo/.agent-profiles/.journal/remove-victim.json" ]]
 }
+
+@test "recovery: refuses while a process uses the trash path of an interrupted operation" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  run bash "$AP_HELPER" init --profile movedprof
+  assert_success
+
+  # Simulate an interrupted remove that already moved the profile into trash.
+  mkdir -p "$fixture_repo/.agent-profiles/.trash"
+  local trash_path="$fixture_repo/.agent-profiles/.trash/movedprof.12345"
+  mv "$fixture_repo/.agent-profiles/movedprof" "$trash_path"
+  mkdir -p "$fixture_repo/.agent-profiles/.journal"
+  python3 - "$fixture_repo/.agent-profiles/.journal/remove-movedprof.json" "$trash_path" <<'PY'
+import json, sys
+path, trash = sys.argv[1], sys.argv[2]
+with open(path, "w") as handle:
+    json.dump({
+        "op": "remove",
+        "profile": "movedprof",
+        "state": "trashed",
+        "profile_dir": path.replace("/.journal/remove-movedprof.json", "/movedprof"),
+        "trash_path": trash,
+        "assume_unrelated": [],
+        "boot_id": "00000000-0000-0000-0000-000000000000",
+    }, handle)
+PY
+
+  setsid bash -c 'cd "$1" && exec sleep 60' _ "$trash_path/home" &
+  local live_pid=$!
+  local i=0
+  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$trash_path/home" && $i -lt 50 ]]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [[ "$(readlink "/proc/$live_pid/cwd")" == "$trash_path/home" ]]
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 75
+  assert_output_contains "PID $live_pid"
+  assert_dir_exists "$trash_path"
+
+  kill -TERM -"$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  [[ ! -e "$trash_path" ]]
+}

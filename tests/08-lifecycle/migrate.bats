@@ -240,3 +240,43 @@ teardown() {
   assert_file_exists "$run_backup/legacy/unnamed-profiles/.codex/auth.json"
   assert_file_exists "$run_backup/manifest.json"
 }
+
+@test "migrate: unnamed legacy entries do not capture valid named profiles with agent directory names" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  # Named profiles whose names match legacy agent directory names.
+  run bash "$AP_HELPER" init --profile bin
+  assert_success
+  run bash "$AP_HELPER" init --profile home
+  assert_success
+  echo "bin data" >"$fixture_repo/.agent-profiles/bin/home/keep.txt"
+  echo "home data" >"$fixture_repo/.agent-profiles/home/home/keep.txt"
+
+  # Genuine unnamed legacy data next to them.
+  mkdir -p "$fixture_repo/.agent-profiles/.claude/projects/p1"
+  printf '{"legacy":true}\n' >"$fixture_repo/.agent-profiles/.claude/projects/p1/session.jsonl"
+
+  local bin_hash home_hash
+  bin_hash=$(find "$fixture_repo/.agent-profiles/bin" -type f -exec sha256sum {} + | sort | sha256sum)
+  home_hash=$(find "$fixture_repo/.agent-profiles/home" -type f -exec sha256sum {} + | sort | sha256sum)
+
+  run bash "$AP_HELPER" migrate --yes
+  assert_success
+
+  local bin_hash_after home_hash_after
+  bin_hash_after=$(find "$fixture_repo/.agent-profiles/bin" -type f -exec sha256sum {} + | sort | sha256sum)
+  home_hash_after=$(find "$fixture_repo/.agent-profiles/home" -type f -exec sha256sum {} + | sort | sha256sum)
+  assert_equal "$bin_hash" "$bin_hash_after"
+  assert_equal "$home_hash" "$home_hash_after"
+
+  # The unnamed legacy data became the default profile, and the backups keep it.
+  assert_dir_exists "$fixture_repo/.agent-profiles/default/home"
+  [[ ! -e "$fixture_repo/.agent-profiles/.claude" ]]
+  grep -q "legacy" "$(find "${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups" -path '*legacy*' -name 'session.jsonl' | head -1)"
+
+  # No legacy notice remains and new profiles can be created.
+  run bash "$AP_HELPER" init --profile later
+  assert_success
+}

@@ -7,12 +7,14 @@ ap_probe_agent_synthetic() {
   shift
   local agent_args=("$@")
   local temp_dir
-  if command -v mktemp >/dev/null 2>&1; then
-    temp_dir=$(mktemp -d 2>/dev/null || echo "/tmp/ap-probe-$$")
-  else
-    temp_dir="/tmp/ap-probe-$$"
+  if ! temp_dir=$(mktemp -d 2>/dev/null) || [[ -z "$temp_dir" ]]; then
+    # Never fall back to a predictable path, and never delete a path we did not
+    # create. The probe is reported as unverified instead.
+    PROBE_EXIT=125
+    PROBE_PARSED_VERSION=""
+    PROBE_FAILURE="temporary directory unavailable"
+    return 0
   fi
-  mkdir -p "$temp_dir" 2>/dev/null || true
   local probe_raw=""
   local probe_exit=0
 
@@ -113,7 +115,12 @@ ap_doctor_check_agents() {
       PROBE_PARSED_VERSION=""
       ap_probe_agent_synthetic "$agent_path" "${probe_args[@]}"
 
-      if [[ "$PROBE_EXIT" -eq 124 ]]; then
+      if [[ "$PROBE_EXIT" -eq 125 ]]; then
+        agent_status="unverified"
+        agent_ver=""
+        agent_probe="probe_environment"
+        agent_hint="temporary directory unavailable; version probe skipped"
+      elif [[ "$PROBE_EXIT" -eq 124 ]]; then
         agent_status="unverified"
         agent_ver=""
         agent_probe="timeout"
