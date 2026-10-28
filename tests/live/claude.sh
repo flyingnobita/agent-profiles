@@ -52,9 +52,6 @@ mkdir -m 700 "$OUT"
 HOST_HOME="$HOME"
 HOST_CLAUDE_DIR="$HOST_HOME/.local/share/claude"
 QA_KEY="placeholder-not-a-real-key"
-DENY_DIR="$HOST_HOME/.cache/flyingnobita-ap04-live"
-mkdir -p "$DENY_DIR"
-chmod 700 "$DENY_DIR" 2>/dev/null || true
 WORK="$(mktemp -d /tmp/ap-claude-live-XXXXXX)"
 BG_ID=""
 WATCH_PID=""
@@ -127,7 +124,8 @@ cleanup() {
   fi
   stop_background_session
   stop_test_daemons
-  rm -rf "$WORK" "$DENY_DIR"
+  rm -rf "$WORK"
+  rm -f "${DENIED:-}"
 }
 trap cleanup EXIT
 
@@ -470,25 +468,93 @@ else
   fail_check sandbox-status "sandbox status did not report enabled strict mode"
 fi
 
-DENIED="$DENY_DIR/deny.txt"
+DENIED="$HOST_HOME/.cache/ap04-claude-live-deny.txt"
 ALLOWED="$REPO/sandbox-allowed.txt"
 rm -f "$DENIED" "$ALLOWED"
+cat >"$WORK/sandbox-driver.py" <<'PY'
+import fcntl
+import json
+import os
+import pty
+import select
+import struct
+import subprocess
+import sys
+import termios
+import time
+
+exec_script, bg_id, denied, allowed, log_path = sys.argv[1:6]
+master, slave = pty.openpty()
+fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 200, 0, 0))
+proc = subprocess.Popen(
+    [
+        exec_script,
+        "a",
+        "env",
+        "ANTHROPIC_API_KEY=placeholder-not-a-real-key",
+        "claude",
+        "attach",
+        bg_id,
+    ],
+    stdin=slave,
+    stdout=slave,
+    stderr=slave,
+    start_new_session=True,
+    close_fds=True,
+)
+os.close(slave)
+data = bytearray()
+log = open(log_path, "wb", buffering=0)
+
+
+def pump(seconds, patterns):
+    end = time.time() + seconds
+    while time.time() < end:
+        ready, _, _ = select.select([master], [], [], 0.2)
+        if ready:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                return False
+            if not chunk:
+                return False
+            data.extend(chunk)
+            log.write(chunk)
+        for pattern in patterns:
+            if pattern in bytes(data):
+                return True
+    return False
+
+
+ready = pump(40, [b"mode on", "\u276f".encode()])
+time.sleep(1.5)
+os.write(master, ("! touch %s\r" % denied).encode())
+denied_seen = pump(25, [b"Read-only file system", b"Operation not permitted"])
+time.sleep(1.5)
+os.write(master, ("! touch %s\r" % allowed).encode())
+time.sleep(8)
+os.write(master, b"\x03")
+time.sleep(0.7)
+os.write(master, b"\x03")
+time.sleep(0.7)
+try:
+    proc.wait(timeout=5)
+except subprocess.TimeoutExpired:
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+os.close(master)
+log.close()
+print(json.dumps({"ready": ready, "denied_seen": denied_seen}))
+PY
 BG_OUT=$(ap_run_profile a env ANTHROPIC_API_KEY="$QA_KEY" claude --bg 2>&1)
 printf '%s\n' "$BG_OUT" >"$OUT/background-start.txt"
 BG_ID=$(printf '%s' "$BG_OUT" | grep -oE 'backgrounded · [0-9a-f]+' | awk '{print $3}')
 if [[ -n "$BG_ID" ]]; then
-  {
-    sleep 6
-    printf '!touch %s\r' "$DENIED"
-    sleep 6
-    printf '!touch %s\r' "$ALLOWED"
-    sleep 8
-    printf '\003'
-    sleep 1
-    printf '\003'
-  } \
-    | timeout 40 script -qfc "$EXEC a env ANTHROPIC_API_KEY=$QA_KEY claude attach $BG_ID" /dev/null \
-      >"$OUT/sandbox-attach.txt" 2>&1 || true
+  timeout 90 python3 "$WORK/sandbox-driver.py" "$EXEC" "$BG_ID" "$DENIED" "$ALLOWED" \
+    "$OUT/sandbox-attach.txt" >"$OUT/sandbox-driver.json" 2>&1 || true
   if [[ ! -e "$DENIED" ]] && [[ -e "$ALLOWED" ]] && grep -q "Read-only file system" "$OUT/sandbox-attach.txt"; then
     pass_check sandbox-enforcement "strict background shell-mode command was denied a controlled write outside the workspace and allowed one inside"
   else
