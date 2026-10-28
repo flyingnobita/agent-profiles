@@ -49,13 +49,13 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | Ticket | Outcome | Blocked by | State | Integrated commit |
 | --- | --- | --- | --- | --- |
 | 01 | Installable skill and readiness | None | Verified and integrated | `6776906` |
-| 02 | Named Linux profile runtime | 01 | Claimed | - |
-| 03 | Machine setup and mise tasks | 02 | Blocked | - |
-| 04 | Claude Code integration | 02 | Blocked | - |
-| 05 | Codex CLI integration | 02 | Blocked | - |
-| 06 | Antigravity CLI integration | 02 | Blocked | - |
-| 07 | OpenCode integration | 02 | Blocked | - |
-| 08 | Lifecycle and migration | 02 | Blocked | - |
+| 02 | Named Linux profile runtime | 01 | Verified and integrated | `c6817cb` |
+| 03 | Machine setup and mise tasks | 02 | Ready | - |
+| 04 | Claude Code integration | 02 | Claimed | - |
+| 05 | Codex CLI integration | 02 | Claimed | - |
+| 06 | Antigravity CLI integration | 02 | Ready | - |
+| 07 | OpenCode integration | 02 | Ready | - |
+| 08 | Lifecycle and migration | 02 | Claimed | - |
 | 09 | Public Linux release readiness | 03-08 | Blocked | - |
 
 ## Ownership
