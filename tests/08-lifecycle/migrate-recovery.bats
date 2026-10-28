@@ -310,3 +310,41 @@ EOF
   run cat "$run_backup/legacy/agent-sandbox/home/file.txt"
   assert_output_contains "corrupted destination"
 }
+
+@test "migrate recovery: refuses while a process uses a recorded legacy source" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  mkdir -p "$fixture_repo/.agent-sandbox/.claude"
+  echo "legacy content" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  local backup_root="$TEST_TMPDIR/safe_backups"
+  mkdir -m 0700 -p "$backup_root"
+
+  run env AP_FORCE_COPY=1 AP_FAULT_AFTER=staged bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
+  assert_failure 137
+  assert_file_exists "$fixture_repo/.agent-profiles/.journal/migrate-all.json"
+
+  setsid bash -c 'cd "$1" && exec sleep 60' _ "$fixture_repo/.agent-sandbox/.claude" &
+  local live_pid=$!
+  local i=0
+  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$fixture_repo/.agent-sandbox/.claude" && $i -lt 50 ]]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [[ "$(readlink "/proc/$live_pid/cwd")" == "$fixture_repo/.agent-sandbox/.claude" ]]
+
+  run bash "$AP_HELPER" recover --yes
+  assert_failure 75
+  assert_output_contains "PID $live_pid"
+  assert_file_exists "$fixture_repo/.agent-sandbox/home/file.txt"
+
+  kill -TERM -"$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  assert_file_exists "$fixture_repo/.agent-sandbox/home/file.txt"
+}

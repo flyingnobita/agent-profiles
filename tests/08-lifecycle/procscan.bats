@@ -198,3 +198,40 @@ teardown() {
   run env AP_PROC_ROOT="$fake_proc" bash "$AP_HELPER" reset --profile targetprof --assume-unrelated 99999
   assert_success
 }
+
+@test "procscan: migrate refuses while a live process uses a legacy source directory" {
+  local fixture_repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$fixture_repo"
+  cd "$fixture_repo"
+
+  mkdir -p "$fixture_repo/.agent-sandbox/home"
+  mkdir -p "$fixture_repo/.agent-sandbox/.claude"
+  echo "legacy content" >"$fixture_repo/.agent-sandbox/home/file.txt"
+
+  # Old inline-layout usage: a process with its working directory inside the
+  # legacy source, not the new profile storage.
+  setsid bash -c 'cd "$1" && exec sleep 60' _ "$fixture_repo/.agent-sandbox/.claude" &
+  local live_pid=$!
+  local i=0
+  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$fixture_repo/.agent-sandbox/.claude" && $i -lt 50 ]]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [[ "$(readlink "/proc/$live_pid/cwd")" == "$fixture_repo/.agent-sandbox/.claude" ]]
+
+  run bash "$AP_HELPER" migrate --yes
+  assert_failure 75
+  assert_output_contains "PID $live_pid"
+  assert_output_contains "legacy storage"
+
+  # The live legacy data was not moved.
+  assert_file_exists "$fixture_repo/.agent-sandbox/home/file.txt"
+  [[ ! -e "$fixture_repo/.agent-profiles/default" ]]
+
+  kill -TERM -"$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  run bash "$AP_HELPER" migrate --yes
+  assert_success
+  [[ ! -e "$fixture_repo/.agent-sandbox" ]]
+}
