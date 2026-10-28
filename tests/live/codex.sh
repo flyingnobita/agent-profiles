@@ -263,7 +263,11 @@ printf 'Codex resolved binary (doctor/mise): %s\n' "$CODEX_PATH"
   exit 1
 }
 [[ "$CODEX_PATH" != "unknown" ]] || {
-  printf 'ERROR: could not resolve a non-mise Codex binary\n' >&2
+  printf 'ERROR: could not resolve a Codex binary\n' >&2
+  exit 1
+}
+[[ "$CODEX_PATH" != *"/bin/mise" && "$CODEX_PATH" != "/usr/bin/mise" ]] || {
+  printf 'ERROR: doctor resolved the mise launcher instead of the Codex binary\n' >&2
   exit 1
 }
 
