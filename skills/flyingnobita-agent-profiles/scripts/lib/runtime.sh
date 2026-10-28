@@ -275,13 +275,25 @@ ap_list_profiles() {
   local json_mode="${2:-0}"
   local storage_dir="$repo_root/.agent-profiles"
 
+  if [[ -L "$storage_dir" ]]; then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' is a symbolic link (must be a real directory)"
+  fi
+
+  if [[ -d "$storage_dir" ]]; then
+    local real_st
+    real_st=$(readlink -f "$storage_dir" 2>/dev/null || true)
+    if [[ "$real_st" != "$storage_dir" ]]; then
+      ap_die "$EX_LAYOUT" "profile storage directory path mismatch with realpath ($storage_dir -> $real_st)"
+    fi
+  fi
+
   local profiles=()
   if [[ -d "$storage_dir" ]]; then
     for entry in "$storage_dir"/*; do
       if [[ -d "$entry" && ! -L "$entry" ]]; then
         local b
         b="$(basename "$entry")"
-        if [[ "$b" != .* && -d "$entry/home" ]]; then
+        if [[ "$b" =~ ^[a-z0-9][a-z0-9_-]*$ && -d "$entry/home" ]]; then
           profiles+=("$b")
         fi
       fi
@@ -294,18 +306,11 @@ ap_list_profiles() {
   fi
 
   if [[ "$json_mode" -eq 1 ]]; then
-    local json="["
-    local first=1
-    for p in "${profiles[@]}"; do
-      if [[ $first -eq 1 ]]; then
-        first=0
-      else
-        json+=","
-      fi
-      json+="\"$p\""
-    done
-    json+="]"
-    printf '{\n  "profiles": %s\n}\n' "$json"
+    python3 -c '
+import json, sys
+profiles = sys.argv[1:]
+print(json.dumps({"profiles": profiles}, indent=2))
+' "${profiles[@]}"
   else
     for p in "${profiles[@]}"; do
       printf "%s\n" "$p"
@@ -369,7 +374,7 @@ ap_prepare_profile_env() {
   export NPM_CONFIG_PREFIX="$prof_dir/npm-global"
   export NPM_CONFIG_CACHE="$prof_dir/.cache/npm"
   export UV_TOOL_DIR="$prof_dir/uv-tools"
-  export UV_TOOL_BIN_DIR="$prof_dir/uv-tools/bin"
+  export UV_TOOL_BIN_DIR="$prof_dir/bin"
   export UV_CACHE_DIR="$prof_dir/.cache/uv"
   export CARGO_INSTALL_ROOT="$prof_dir/cargo-global"
   export GOBIN="$prof_dir/bin"
