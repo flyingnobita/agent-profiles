@@ -18,8 +18,9 @@ Codex discovers skills across distinct scopes using its local discovery mechanis
 - User-scope skills: Located in `$HOME/.codex/skills` and `$HOME/.agents/skills`. Because `$HOME/.codex` and `$HOME/.agents` are redirected to the active Agent profile, each profile maintains its own user-scope skills without cross-profile marker leakage.
 - Repository-scope skills: Discovered in `<repo>/.agents/skills` and `<repo>/.codex/skills` within the current project checkout.
 - Exclusion: Skills defined exclusively in profile A remain invisible to profile B.
-- Bundled and admin sources: System-wide or built-in plugin skill sources remain accessible if provided by the host environment or extension packages.
-- Verification: The discovery surface can be inspected offline without model calls using `codex debug prompt-input`.
+- Bundled system skills: The installed Codex build materializes its system skills under `$CODEX_HOME/skills/.system`. They are available in every profile, separately from user and repository markers.
+- Admin/managed sources: Managed configuration and admin skill roots supplied by the host remain readable. Record any that appear in the skill-roots table instead of assuming they are absent.
+- Verification: The discovery surface can be inspected offline without model calls using `codex debug prompt-input`. Treat skill bodies as model-loaded only when a skill is selected; the prompt input lists metadata and file paths.
 
 ## Instruction Discovery
 
@@ -34,15 +35,15 @@ Codex discovers instructions according to repository boundaries:
 Authentication credentials and state are kept strictly isolated from host profiles:
 
 - Fresh profile state: A freshly initialized profile contains no imported host credentials.
-- Diagnosis: Running `codex login status` in a fresh profile reports `Not logged in` with exit code 1.
+- Diagnosis: Running `codex login status` in a fresh profile reports `Not logged in` with exit code 1. This command reports file-based login only.
 - Credential isolation: Host authentication tokens in host directories are never copied or symlinked into the profile.
-- Inherited environment: If API credentials (such as `OPENAI_API_KEY`) are present in the host environment, they are inherited by the running shell unless explicitly unset. Profile-based file authentication remains separate from host files.
+- Inherited environment: If API credentials (such as `OPENAI_API_KEY`) are present in the host environment, they are inherited by the running shell unless explicitly unset. `codex doctor --json` reports this separately as `auth is provided by environment` and lists the variable name, never the value. Profile-based file authentication remains separate from host files.
 
 ## Sandbox Execution
 
 Codex provides its own process sandbox for executing commands:
 
-- Read-only sandbox: Executing `codex sandbox -- <command>` runs commands under a read-only filesystem policy where write attempts outside designated temporary roots are denied.
+- Read-only sandbox: Executing `codex sandbox -- <command>` applies Codex's default read-only policy, where write attempts are denied.
 - Enforced denial: Running `codex sandbox -- sh -c 'echo ok; touch /tmp/denied'` outputs `ok` and reports a read-only filesystem error on the write attempt.
 - Background services: Codex may start helper processes or an app-server daemon under `$CODEX_HOME`. Test runners and automations must isolate and terminate these processes using owned process group IDs (PGID) to avoid leaving orphaned background services or disturbing unrelated sessions.
 
@@ -50,6 +51,7 @@ Codex provides its own process sandbox for executing commands:
 
 Common diagnostic procedures and known boundaries:
 
-- Local health: Run `codex doctor --json` to inspect configuration loading, socket paths, and authentication status.
+- Local health: Run `codex doctor --json` to inspect configuration loading, app-server socket paths, and authentication status. The app server is ephemeral by default and normally reports as not running.
+- Verified version: The discovery, login-status, and sandbox behavior above was verified with `codex-cli 0.165.0`. Re-run `codex doctor --json` after upgrades because flags and skill sources can change.
 - Credential gaps: Live model turns and authenticated skill execution require valid API credentials; when testing without credentials, model responses remain explicit unverified gaps.
 - Process cleanup: Always terminate test app-servers and helper processes using `kill -TERM -$PGID` and `kill -KILL -$PGID` against recorded test markers.
