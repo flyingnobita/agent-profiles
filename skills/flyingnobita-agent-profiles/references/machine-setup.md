@@ -67,7 +67,13 @@ mise run agent-profiles -- --profile demo sh -c 'printf "%s\n" "$AGENT_PROFILES_
 `--tasks-only` configures the tasks without installing prerequisites or agents.
 `--agent claude|codex|agy|opencode` installs only the named agent, and only when
 it is missing and available through the mise registry. The other agents remain
-optional and untouched.
+optional and untouched. Task deployment never edits `config.toml`; a requested
+agent install does add its tool entry to the global mise configuration, and the
+previous configuration is copied to the backups directory first. A managed
+configuration (symlink, chezmoi, read-only, or a symlinked config directory) is
+never rewritten: with `--prepare-dir` setup writes
+`mise/config.toml.fragment` and `INSTRUCTIONS.md` there for you to commit, and
+without it the install is skipped with a message.
 
 ## Task Conflicts and Backups
 

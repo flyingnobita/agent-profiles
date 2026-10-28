@@ -104,8 +104,10 @@ mise run agent-profiles-init -- --profile demo
 mise run agent-profiles -- --profile demo claude
 ```
 
-The tasks forward arguments verbatim and point at the versioned release, so a
-moved or updated installation cannot silently run stale code. Missing
+The tasks forward arguments verbatim and stay pinned to that versioned release.
+After a skill update, `doctor` reports the deployment as `stale` and
+`setup --apply` refreshes it; if the release directory is removed the tasks exit
+78 and name the missing path. Missing
 prerequisites and agent CLIs are installed only with `--apply`, only when they
 are actually missing, and only through the detected package manager or the
 `mise` registry; `--agent claude|codex|agy|opencode` limits which agent is
@@ -175,11 +177,22 @@ bash "$AP_HELPER" doctor
 #    helper is gone after this step, so no helper command can run below.
 npx skills remove -g -y --skill flyingnobita-agent-profiles
 
-# 4. Delete the two global mise task files by absolute path. Neither command
-#    above removes them. Setup resolves the tasks directory as $MISE_CONFIG_DIR,
-#    or ${XDG_CONFIG_HOME:-$HOME/.config}/mise when MISE_CONFIG_DIR is unset.
-MISE_TASKS_DIR="${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}/tasks"
-rm -f "$MISE_TASKS_DIR/agent-profiles" "$MISE_TASKS_DIR/agent-profiles-init"
+# 4. Delete the two global mise task files by absolute path, but only when this
+#    tool owns them. Setup resolves the config directory as $MISE_CONFIG_DIR, or
+#    from `mise doctor --json` dirs.config, or ${XDG_CONFIG_HOME:-$HOME/.config}/mise.
+MISE_CONFIG="${MISE_CONFIG_DIR:-$(mise doctor --json 2>/dev/null |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["dirs"]["config"])' 2>/dev/null)}"
+MISE_CONFIG="${MISE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+for task in agent-profiles agent-profiles-init; do
+  target="$MISE_CONFIG/tasks/$task"
+  # Never delete a foreign or dotfiles-managed task: only files carrying this
+  # tool's managed-by marker are ours.
+  if [ -f "$target" ] && grep -q '^# managed-by: flyingnobita-agent-profiles ' "$target"; then
+    rm -f "$target"
+  elif [ -e "$target" ]; then
+    echo "left $target untouched (not managed by flyingnobita-agent-profiles)"
+  fi
+done
 
 # 5. Optional: delete the versioned deployment after the task files are gone.
 rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles"

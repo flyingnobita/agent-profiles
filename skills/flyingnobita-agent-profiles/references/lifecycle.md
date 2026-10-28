@@ -22,7 +22,7 @@ The preview prints the exact absolute profile path and counts and sizes for thes
 - Credentials
 - Installed tools
 
-The preview never prints file contents, never changes the profile, and exits 0. Omitting `--profile`, an invalid name, an uninitialized profile, and a symlinked profile root exit 64, 65, 66, and 73 respectively.
+The preview never prints file contents and never changes the profile. It exits 0 for a usable profile; while the profile is in use it exits 75 like the mutating form, because the same exclusive lock and process scan apply. Omitting `--profile`, an invalid name, an uninitialized profile, and a symlinked profile root exit 64, 65, 66, and 73 respectively, and an interrupted operation for that profile is refused with 77 until `agent-profiles recover` runs.
 
 ## Resetting a Profile
 
@@ -121,6 +121,7 @@ Persistent lock files live under `.agent-profiles/.locks/` and stay in place acr
 These environment variables exist only for the automated lifecycle tests. They are not supported user options and may change without notice:
 
 - `AP_FAULT_AFTER=<state>` exits 137 after recording a journal state, simulating a crash.
+- `AP_FAULT_AFTER=journal-locked` exits 137 after the journal lock is held and before the first atomic journal write, proving that no empty journal is created.
 - `AP_PROC_ROOT=<dir>` substitutes a fixture for `/proc` in the process scan.
 - `AP_FORCE_COPY=1` forces the cross-device copy and verification path.
 - `AP_CORRUPT_STAGED=1` corrupts staged data to prove mismatch handling.

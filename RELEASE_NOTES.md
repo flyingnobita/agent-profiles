@@ -67,10 +67,10 @@ OpenCode model commands).
 
 ## Artifact Contents
 
-- `flyingnobita-agent-profiles-0.1.0.tar.gz` — the installable skill bundle
+- `flyingnobita-agent-profiles-0.1.0.tar.gz` - the installable skill bundle
   (`SKILL.md`, `VERSION`, `LICENSE`, `scripts/`, `references/`).
-- `flyingnobita-agent-profiles-0.1.0.tar.gz.sha256` — SHA-256 checksum.
-- `RELEASE_NOTES.md` — this file.
+- `flyingnobita-agent-profiles-0.1.0.tar.gz.sha256` - SHA-256 checksum.
+- `RELEASE_NOTES.md` - this file.
 
 Verify a downloaded artifact set with `sha256sum -c`, or rebuild and verify it
 with `mise run release-artifacts`.
