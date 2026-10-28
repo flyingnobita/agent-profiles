@@ -2,9 +2,11 @@
 # Command: run
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/mise.sh"
+source "$LIB_DIR/locks.sh"
 
 ap_cmd_run() {
   local profile="default"
@@ -49,9 +51,26 @@ ap_cmd_run() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout (run 'agent-profiles init --profile $profile' first)"
   fi
 
+  ap_ensure_locks_dir "$repo_root"
+
+  # 1. Preflight
+  ap_run_preflight "$repo_root" "$profile"
+
+  # 2. Shared storage lock
+  ap_lock_storage_shared "$repo_root"
+
+  # 3. Shared profile lease (held across command lifetime and descendants)
+  ap_lease_profile_shared "$repo_root" "$profile"
+
+  # 4. Append boot_id and start_ticks to .locks/<profile>.runs
+  ap_record_run "$repo_root" "$profile"
+
+  # 5. Release storage lock before exec (profile lease fd stays open)
+  ap_unlock_storage
+
   ap_check_bwrap_readiness
 
-  # Critical: capture effective mise directories BEFORE resetting managed environment variables
+  # Capture effective mise directories BEFORE resetting managed environment variables
   ap_capture_effective_mise_dirs
 
   ap_prepare_profile_env "$repo_root" "$profile"

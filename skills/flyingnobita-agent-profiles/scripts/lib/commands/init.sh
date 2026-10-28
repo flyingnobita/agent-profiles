@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Command: init
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/runtime.sh"
+source "$LIB_DIR/locks.sh"
 
 ap_cmd_init() {
   local profile=""
@@ -36,5 +38,21 @@ ap_cmd_init() {
   local repo_root
   repo_root=$(ap_find_repo_root)
 
+  ap_validate_profile_name "$profile"
+  ap_ensure_storage_dir "$repo_root"
+  ap_ensure_locks_dir "$repo_root"
+
+  # Short storage lock and profile lease during initialization
+  local prof_dir="$repo_root/.agent-profiles/$profile"
+  if [[ -d "$prof_dir" ]]; then
+    ap_lock_storage_shared "$repo_root"
+  else
+    ap_lock_storage_exclusive "$repo_root"
+  fi
+
+  ap_lease_profile_shared "$repo_root" "$profile"
+
   ap_init_profile "$repo_root" "$profile"
+
+  ap_unlock_storage
 }
