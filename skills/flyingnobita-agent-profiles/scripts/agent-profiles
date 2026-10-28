@@ -14,16 +14,18 @@ usage() {
   cat <<'EOF'
 Usage: agent-profiles [--help | --version] <command> [options] [arguments...]
 
-Commands:
+Implemented commands:
   doctor   Diagnose host, OS, dependencies, and agent integrations
-  init     Initialize a named agent profile for this checkout
-  list     List existing agent profiles in this checkout
-  run      Execute a command within an agent profile
-  setup    Configure machine dependencies and mise tasks
-  reset    Reset a profile to an empty initial state
-  remove   Delete an existing profile
-  migrate  Migrate legacy profile storage to current format
-  recover  Recover interrupted lifecycle operations
+
+Planned commands (reserved for subsequent delivery tickets):
+  init     Initialize a named agent profile for this checkout (ticket 02)
+  list     List existing agent profiles in this checkout (ticket 02)
+  run      Execute a command within an agent profile (ticket 02)
+  setup    Configure machine dependencies and mise tasks (ticket 03)
+  reset    Reset a profile to an empty initial state (ticket 08)
+  remove   Delete an existing profile (ticket 08)
+  migrate  Migrate legacy profile storage to current format (ticket 08)
+  recover  Recover interrupted lifecycle operations (ticket 08)
 EOF
 }
 
@@ -57,7 +59,14 @@ fi
 
 cmd_file="$COMMANDS_DIR/$cmd.sh"
 if [[ ! -f "$cmd_file" ]]; then
-  ap_die "$EX_USAGE" "unknown command: $cmd"
+  case "$cmd" in
+    init | list | run | setup | reset | remove | migrate | recover)
+      ap_die "$EX_USAGE" "command '$cmd' is not yet implemented (planned for subsequent tickets). Available commands: doctor"
+      ;;
+    *)
+      ap_die "$EX_USAGE" "unknown command: $cmd. Available commands: doctor"
+      ;;
+  esac
 fi
 
 # shellcheck source=/dev/null
