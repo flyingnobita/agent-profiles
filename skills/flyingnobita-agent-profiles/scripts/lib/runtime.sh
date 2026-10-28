@@ -156,3 +156,82 @@ ap_list_profiles() {
     done
   fi
 }
+
+ap_prepare_profile_env() {
+  local repo_root="$1"
+  local profile="$2"
+  local prof_dir="$repo_root/.agent-profiles/$profile"
+
+  # 1. Calculate AGENT_PROFILES_BASE_PATH by purging any profile directories from PATH
+  local raw_path="${PATH:-}"
+  local filtered_paths=()
+  local IFS=':'
+  read -ra path_entries <<<"$raw_path"
+  unset IFS
+
+  for entry in "${path_entries[@]}"; do
+    [[ -z "$entry" ]] && continue
+    if [[ "$entry" != */.agent-profiles/* ]]; then
+      filtered_paths+=("$entry")
+    fi
+  done
+
+  local base_path=""
+  if [[ ${#filtered_paths[@]} -gt 0 ]]; then
+    local old_ifs="${IFS:-}"
+    IFS=':'
+    base_path="${filtered_paths[*]}"
+    IFS="$old_ifs"
+  fi
+
+  # 2. Reset managed variables
+  unset AGENT_PROFILES_NAME AGENT_PROFILES_DIR AGENT_PROFILES_ROOT AGENT_PROFILES_BASE_PATH
+  unset AGENT_SANDBOX_DIR AGENT_SANDBOX_PROFILE
+  unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+  unset NPM_CONFIG_PREFIX NPM_CONFIG_CACHE
+  unset UV_TOOL_DIR UV_TOOL_BIN_DIR UV_CACHE_DIR
+  unset CARGO_INSTALL_ROOT GOBIN PYTHONUSERBASE
+  unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG_DIR
+
+  # 3. Export profile variables
+  export AGENT_PROFILES_NAME="$profile"
+  export AGENT_PROFILES_DIR="$prof_dir"
+  export AGENT_PROFILES_ROOT="$repo_root/.agent-profiles"
+  export AGENT_PROFILES_BASE_PATH="$base_path"
+
+  # Legacy output-only aliases
+  export AGENT_SANDBOX_PROFILE="$profile"
+  export AGENT_SANDBOX_DIR="$prof_dir"
+
+  # XDG directories
+  export XDG_CONFIG_HOME="$prof_dir/.config"
+  export XDG_DATA_HOME="$prof_dir/.local/share"
+  export XDG_STATE_HOME="$prof_dir/.local/state"
+  export XDG_CACHE_HOME="$prof_dir/.cache"
+
+  # Package managers
+  export NPM_CONFIG_PREFIX="$prof_dir/npm-global"
+  export NPM_CONFIG_CACHE="$prof_dir/.cache/npm"
+  export UV_TOOL_DIR="$prof_dir/uv-tools"
+  export UV_TOOL_BIN_DIR="$prof_dir/uv-tools/bin"
+  export UV_CACHE_DIR="$prof_dir/.cache/uv"
+  export CARGO_INSTALL_ROOT="$prof_dir/cargo-global"
+  export GOBIN="$prof_dir/bin"
+  export PYTHONUSERBASE="$prof_dir/python-user"
+
+  # Profile binaries prepended to PATH
+  local prof_bins="$prof_dir/npm-global/bin:$prof_dir/bin:$prof_dir/cargo-global/bin:$prof_dir/python-user/bin"
+  if [[ -n "$base_path" ]]; then
+    export PATH="$prof_bins:$base_path"
+  else
+    export PATH="$prof_bins"
+  fi
+
+  # Call agent environment hooks if defined
+  for ag in claude codex agy opencode; do
+    local hook="ap_agent_env_$ag"
+    if declare -F "$hook" >/dev/null 2>&1; then
+      "$hook" "$prof_dir"
+    fi
+  done
+}

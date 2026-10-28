@@ -18,9 +18,9 @@ Implemented commands:
   doctor   Diagnose host, OS, dependencies, and agent integrations
   init     Initialize a named agent profile for this checkout
   list     List existing agent profiles in this checkout
+  run      Execute a command within an agent profile
 
 Planned commands (reserved for subsequent delivery tickets):
-  run      Execute a command within an agent profile (ticket 02)
   setup    Configure machine dependencies and mise tasks (ticket 03)
   reset    Reset a profile to an empty initial state (ticket 08)
   remove   Delete an existing profile (ticket 08)
@@ -60,11 +60,11 @@ fi
 cmd_file="$COMMANDS_DIR/$cmd.sh"
 if [[ ! -f "$cmd_file" ]]; then
   case "$cmd" in
-    run | setup | reset | remove | migrate | recover)
-      ap_die "$EX_USAGE" "command '$cmd' is not yet implemented (planned for subsequent tickets). Available commands: doctor, init, list"
+    setup | reset | remove | migrate | recover)
+      ap_die "$EX_USAGE" "command '$cmd' is not yet implemented (planned for subsequent tickets). Available commands: doctor, init, list, run"
       ;;
     *)
-      ap_die "$EX_USAGE" "unknown command: $cmd. Available commands: doctor, init, list"
+      ap_die "$EX_USAGE" "unknown command: $cmd. Available commands: doctor, init, list, run"
       ;;
   esac
 fi
