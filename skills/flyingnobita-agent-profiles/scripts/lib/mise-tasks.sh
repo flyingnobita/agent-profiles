@@ -557,7 +557,7 @@ ap_setup_apply_tasks() {
       ap_die "$EX_BROKEN" "failed to render global mise task: $target"
     }
 
-    if [[ -f "$target" ]] && printf "%s\n" "$content" | cmp -s - "$target"; then
+    if [[ -f "$target" && "$(cat "$target")" == "$content" ]]; then
       continue
     fi
 
