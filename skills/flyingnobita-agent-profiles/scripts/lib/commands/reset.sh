@@ -56,9 +56,17 @@ ap_cmd_reset() {
   repo_root=$(ap_find_repo_root)
 
   ap_validate_profile_name "$profile"
+
+  # 1. Preflight (stale journal recovery refusal wins over a missing profile)
+  ap_run_preflight "$repo_root" "$profile"
+
+  # 2. Acquire shared storage lock and exclusive profile lock in lock order
+  ap_lock_storage_shared "$repo_root"
+  ap_lock_profile_exclusive "$repo_root" "$profile"
+
+  # 3. Re-validate the selected profile while holding the locks
   ap_check_profile_aliasing "$repo_root" "$profile"
 
-  # Refuse if executed from inside a live profile context
   local live_context
   live_context=$(ap_check_live_profile_context "$repo_root" "$profile")
   if [[ "$live_context" != "NONE" ]]; then
@@ -70,14 +78,7 @@ ap_cmd_reset() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout"
   fi
 
-  # 1. Preflight
-  ap_run_preflight "$repo_root" "$profile"
-
-  # 2. Acquire shared storage lock and exclusive profile lock in lock order
-  ap_lock_storage_shared "$repo_root"
-  ap_lock_profile_exclusive "$repo_root" "$profile"
-
-  # 3. Process scan check
+  # 4. Process scan check
   ap_scan_processes "$repo_root" "$profile" "$assume_unrelated"
 
   if [[ $yes_flag -eq 0 ]]; then
@@ -94,8 +95,10 @@ ap_cmd_reset() {
   # 4. Mutating state machine with atomic journal
   ap_ensure_journal_dir "$repo_root"
   local journal_file="$repo_root/.agent-profiles/.journal/reset-$profile.json"
-  (umask 077 && touch "$journal_file" && chmod 600 "$journal_file")
   ap_lock_journal "$journal_file"
+  # The journal is created only by the first atomic write below, so a crash in
+  # this window leaves no unparseable journal behind.
+  ap_maybe_fault journal-locked
 
   ap_ensure_trash_dir "$repo_root"
   local ts

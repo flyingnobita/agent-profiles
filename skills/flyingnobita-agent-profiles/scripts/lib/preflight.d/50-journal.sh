@@ -35,7 +35,10 @@ ap_preflight_check_journals() {
     local fields=()
     mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
     if [[ ${#fields[@]} -eq 0 ]]; then
-      ap_die "$EX_REFUSED" "unreadable journal '$journal_file'; run 'agent-profiles recover'"
+      if [[ ! -s "$journal_file" ]]; then
+        ap_die "$EX_REFUSED" "incomplete journal '$(basename "$journal_file")' (no operation state was recorded); run 'agent-profiles recover'"
+      fi
+      ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually, then run 'agent-profiles recover'"
     fi
     local journal_op="${fields[0]:-}"
     local journal_profile="${fields[1]:-}"

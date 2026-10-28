@@ -434,11 +434,23 @@ ap_cmd_recover() {
   local all_targets=()
   local fields=()
   local journal_op journal_profile migrated_profiles
+  local cleared_journals=()
   for journal_file in "${stale_journals[@]}"; do
     fields=()
     mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
     if [[ ${#fields[@]} -eq 0 ]]; then
-      ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
+      if [[ ! -s "$journal_file" ]]; then
+        # No operation state was ever recorded, so nothing was moved or
+        # deleted. Clear the incomplete journal; never trust or act on it.
+        ap_lock_journal "$journal_file"
+        rm -f "$journal_file"
+        ap_unlock_journal
+        cleared_journals+=("$(basename "$journal_file")")
+        printf "Cleared incomplete journal '%s' (no operation state was recorded; profile data untouched).\n" \
+          "${cleared_journals[${#cleared_journals[@]} - 1]}"
+        continue
+      fi
+      ap_die "$EX_LAYOUT" "malformed journal '$(basename "$journal_file")'; inspect it manually instead of deleting data"
     fi
     journal_op="${fields[0]:-}"
     journal_profile="${fields[1]:-}"
@@ -462,6 +474,24 @@ ap_cmd_recover() {
         ;;
     esac
   done
+
+  if [[ ${#cleared_journals[@]} -gt 0 ]]; then
+    local remaining=()
+    local candidate
+    for candidate in "${stale_journals[@]}"; do
+      [[ -e "$candidate" ]] && remaining+=("$candidate")
+    done
+    stale_journals=()
+    if [[ ${#remaining[@]} -gt 0 ]]; then
+      stale_journals=("${remaining[@]}")
+    fi
+    unset remaining candidate
+  fi
+
+  if [[ ${#stale_journals[@]} -eq 0 ]]; then
+    printf "No recoverable interrupted operations remained after clearing incomplete journals.\n"
+    return 0
+  fi
 
   if [[ $needs_exclusive_storage -eq 1 ]]; then
     ap_lock_storage_exclusive "$repo_root"

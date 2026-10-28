@@ -213,7 +213,17 @@ ap_ensure_exclude() {
   fi
   (
     exec 9>>"$lock_file"
-    flock -x 9
+    # The approved policy is non-blocking acquisition: retry briefly, then
+    # report the lock as busy instead of waiting indefinitely.
+    local attempt=0
+    until flock -x -n 9; do
+      attempt=$((attempt + 1))
+      [[ $attempt -lt 50 ]] || {
+        echo "agent-profiles: error: busy: exclude lock '$lock_file' is held by another operation" >&2
+        exit "$EX_BUSY"
+      }
+      sleep 0.1
+    done
     if [[ ! -f "$exclude_path" ]] || ! grep -Fxq '/.agent-profiles/' "$exclude_path"; then
       printf "%s\n" "/.agent-profiles/" >>"$exclude_path"
     fi

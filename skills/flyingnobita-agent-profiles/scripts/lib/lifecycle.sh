@@ -89,6 +89,15 @@ if other["count"] > 0:
 ' "$prof_dir"
 }
 
+# Test-only fault injection point. Documented in references/lifecycle.md as an
+# internal test hook, not a user option.
+ap_maybe_fault() {
+  local point="$1"
+  if [[ -n "${AP_FAULT_AFTER:-}" && "${AP_FAULT_AFTER:-}" == "$point" ]]; then
+    exit 137
+  fi
+}
+
 ap_ensure_journal_dir() {
   local repo_root="$1"
   local storage_dir="$repo_root/.agent-profiles"
