@@ -48,7 +48,7 @@ Only the orchestrator updates this table. Completion requires verified integrati
 
 | Ticket | Outcome | Blocked by | State | Integrated commit |
 | --- | --- | --- | --- | --- |
-| 01 | Installable skill and readiness | None | Ready | - |
+| 01 | Installable skill and readiness | None | Claimed | - |
 | 02 | Named Linux profile runtime | 01 | Blocked | - |
 | 03 | Machine setup and mise tasks | 02 | Blocked | - |
 | 04 | Claude Code integration | 02 | Blocked | - |
