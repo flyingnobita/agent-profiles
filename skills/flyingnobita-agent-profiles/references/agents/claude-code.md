@@ -18,7 +18,7 @@ sandboxing work.
   but Claude Code may attempt a connection to `api.anthropic.com` and report a
   network error before showing an interactive screen.
 
-## Configuration Redirection
+## Directory Redirection
 
 `agent-profiles run --profile NAME -- claude` exports:
 
