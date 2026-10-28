@@ -106,11 +106,16 @@ sys.exit(2)
 @test "doctor: task and namespace checks are read-only" {
   run bash "$AP_HELPER" setup --apply
   assert_success
+  # Exclude the host agent shims and mise from PATH so this assertion isolates
+  # the ticket 03 task/namespace sections from informational version probes.
+  local bin="$TEST_TMPDIR/ro-bin"
+  make_restricted_bin "$bin" mise claude codex agy opencode
+
   local before after
   before=$(snapshot_tree "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" \
     "$XDG_CACHE_HOME" "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR")
 
-  run bash "$AP_HELPER" doctor --json
+  run env PATH="$bin" bash "$AP_HELPER" doctor --json
   assert_success
 
   after=$(snapshot_tree "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" \
