@@ -24,7 +24,7 @@ assert_ref_contains() {
 @test "opencode reference: documents the required profile sections" {
   assert_file_exists "$REF"
 
-  assert_ref_contains "## Directory and Path Redirection"
+  assert_ref_contains "## Directory Redirection"
   assert_ref_contains "## Configuration Diagnostics"
   assert_ref_contains "## Skill Discovery"
   assert_ref_contains "## Authentication Diagnostics"

@@ -4,7 +4,7 @@ Guidance for using OpenCode (`opencode`) inside an Agent profile. The behavior
 below was verified against the installed CLI; re-check it after upgrades because
 path resolution, skill sources and server modes change between versions.
 
-## Directory and Path Redirection
+## Directory Redirection
 
 When launched through `agent-profiles run`, the Agent integration configures
 dedicated profile storage:
