@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# Release readiness contract for flyingnobita-agent-profiles.
+#
+# Usage: tests/tools/check-release <repo-root>
+#
+# Verifies the documented release surface: the public README, the MIT license,
+# the dated compatibility matrix, the sanitized evidence summary and the absence
+# of author-specific paths or private delivery identifiers. It reads only
+# tracked release files, never private QA logs, and writes nothing.
+set -euo pipefail
+
+ROOT_DIR="${1:-$PWD}"
+shift || true
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    *)
+      echo "check-release: FAIL: unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
+SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+README="$ROOT_DIR/README.md"
+COMPAT="$SKILL_DIR/references/compatibility.md"
+EVIDENCE="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+
+AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
+VERSIONS=("2.1.312" "0.165.0" "1.4.9" "2.2.0")
+
+fail() {
+  echo "check-release: FAIL: $*" >&2
+  exit 1
+}
+
+pass() {
+  echo "check-release: PASS: $*"
+}
+
+require_file() {
+  [[ -f "$1" ]] || fail "required release file is missing: ${1#"$ROOT_DIR"/}"
+}
+
+require_term() {
+  local file="$1" term="$2" label="$3"
+  grep -qF -- "$term" "$file" \
+    || fail "${file#"$ROOT_DIR"/} does not state: $label (expected text: $term)"
+}
+
+# Prints the table rows of one markdown section (heading line to the next "## ").
+section_rows() {
+  local file="$1" heading="$2"
+  awk -v heading="$heading" '
+    $0 == heading { inside = 1; next }
+    inside && /^## / { exit }
+    inside && /^\|/ { print }
+  ' "$file"
+}
+
+# Verifies a table section holds exactly four data rows and names each agent.
+check_matrix() {
+  local file="$1" heading="$2" rows total data agent
+  require_file "$file"
+  rows=$(section_rows "$file" "$heading")
+  [[ -n "$rows" ]] || fail "${file#"$ROOT_DIR"/} has no table under '$heading'"
+  total=$(printf '%s\n' "$rows" | grep -c '^|')
+  data=$((total - 2))
+  [[ "$data" -eq 4 ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly 4"
+  for agent in "${AGENTS[@]}"; do
+    printf '%s\n' "$rows" | grep -qF -- "$agent" \
+      || fail "${file#"$ROOT_DIR"/} '$heading' table does not name $agent"
+  done
+}
+
+# --- 1. Version and MIT license --------------------------------------------
+require_file "$SKILL_DIR/VERSION"
+VERSION=$(tr -d '[:space:]' <"$SKILL_DIR/VERSION")
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] \
+  || fail "VERSION '$VERSION' is not valid semver"
+pass "VERSION is $VERSION"
+
+require_file "$SKILL_DIR/LICENSE"
+require_file "$ROOT_DIR/LICENSE"
+cmp -s "$ROOT_DIR/LICENSE" "$SKILL_DIR/LICENSE" \
+  || fail "root LICENSE differs from the bundled skill LICENSE"
+require_term "$ROOT_DIR/LICENSE" "MIT License" "an MIT license"
+pass "root LICENSE is the bundled MIT license"
+
+# --- 2. Public README -------------------------------------------------------
+require_file "$README"
+
+for term in \
+  "--skill flyingnobita-agent-profiles" \
+  "npx skills add"; do
+  require_term "$README" "$term" "the explicit skill selection install command"
+done
+for heading in "## Install" "## Update" "## Remove" "## Maintenance" "## Compatibility"; do
+  grep -qxF -- "$heading" "$README" \
+    || fail "README.md has no '$heading' section"
+done
+pass "README.md documents install, update, remove, maintenance and compatibility"
+
+require_term "$README" "flyingnobita/flyingnobita-agent-profiles" \
+  "the repository-source install command"
+require_term "$README" "proposed, after publication" \
+  "that repository-source installation is proposed after publication"
+pass "README.md marks repository-source installation as proposed after publication"
+
+require_term "$README" "not a security sandbox" \
+  "that profiles are not a security sandbox"
+require_term "$README" "inherited environment credentials" \
+  "that host environment credentials are inherited"
+require_term "$README" "shared host resources" \
+  "that host resources remain shared"
+require_term "$README" "macOS" "the macOS platform status"
+require_term "$README" "not qualified" "that macOS is not qualified"
+pass "README.md states the security and shared-resource boundaries"
+
+# --- 3. Dated compatibility matrix -----------------------------------------
+check_matrix "$README" "## Compatibility"
+section_rows "$README" "## Compatibility" | grep -qF -- "2026-10-28" \
+  || fail "README.md compatibility matrix has no verification date (2026-10-28)"
+for version in "${VERSIONS[@]}"; do
+  section_rows "$README" "## Compatibility" | grep -qF -- "$version" \
+    || fail "README.md compatibility matrix does not record tested version $version"
+done
+pass "README.md compatibility matrix is dated and names the four tested integrations"
+
+require_file "$COMPAT"
+check_matrix "$COMPAT" "## Agent CLI Integration Matrix"
+for version in "${VERSIONS[@]}"; do
+  section_rows "$COMPAT" "## Agent CLI Integration Matrix" | grep -qF -- "$version" \
+    || fail "compatibility.md does not record tested version $version"
+done
+require_term "$COMPAT" "Linux (x86_64)" "the qualified Linux platform"
+require_term "$COMPAT" "Not Qualified" "that macOS is not qualified"
+require_term "$COMPAT" "2026-10-28" "the compatibility verification date"
+pass "references/compatibility.md is dated and matches the tested matrix"
+
+# --- 4. Sanitized evidence summary ----------------------------------------
+require_file "$EVIDENCE"
+for agent in "${AGENTS[@]}"; do
+  require_term "$EVIDENCE" "$agent" "evidence for $agent"
+done
+for class in "Version" "Startup" "Discovery" "Auth" "Sandbox"; do
+  require_term "$EVIDENCE" "$class" "the separate $class evidence class"
+done
+require_term "$EVIDENCE" "credential-dependent gap" \
+  "the approved credential-dependent gaps"
+require_term "$EVIDENCE" "sanitized" "that only sanitized evidence is published"
+pass "docs/evidence release summary is sanitized and separates the evidence classes"
+
+# --- 5. No author paths or private delivery identifiers -------------------
+FORBIDDEN='(/home/[a-zA-Z0-9_-]+|@users\.noreply\.github\.com|~/dotfiles|flyingnobita-deliver|4efade3f099f42f991db984676edec70|\.scratch/)'
+
+release_files() {
+  local path
+  while IFS= read -r path; do
+    [[ -f "$path" ]] || continue
+    case "$path" in
+      # The contract tools must be able to name the patterns they forbid.
+      */tests/tools/check-release | */tests/tools/check-package) continue ;;
+    esac
+    printf '%s\n' "$path"
+  done < <(
+    find "$ROOT_DIR/skills" "$ROOT_DIR/tests" "$ROOT_DIR/tools" \
+      "$ROOT_DIR/docs/evidence" -type f 2>/dev/null
+    printf '%s\n' "$README" "$ROOT_DIR/CHANGELOG.md" \
+      "$ROOT_DIR/RELEASE_NOTES.md" "$ROOT_DIR/mise.toml"
+  )
+}
+
+violations=0
+while IFS= read -r file; do
+  if grep -nE -- "$FORBIDDEN" "$file" >/dev/null 2>&1; then
+    grep -nE -- "$FORBIDDEN" "$file" | cut -d: -f1 \
+      | while IFS= read -r line; do
+        echo "check-release: FAIL: author path or private identifier at ${file#"$ROOT_DIR"/}:$line" >&2
+      done
+    violations=$((violations + 1))
+  fi
+done < <(release_files)
+[[ "$violations" -eq 0 ]] \
+  || fail "the release surface contains author paths or private delivery identifiers"
+pass "the release surface contains no author paths or private delivery identifiers"
+
+echo "check-release: all release readiness checks passed"
