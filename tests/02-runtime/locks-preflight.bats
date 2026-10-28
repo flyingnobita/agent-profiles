@@ -9,6 +9,7 @@ setup() {
 }
 
 teardown() {
+  rm -f "$AP_SKILL_DIR/scripts/lib/preflight.d/99-test-fail.sh"
   teardown_isolation
 }
 
@@ -170,4 +171,78 @@ EOF
   assert_failure
   assert_equal "$status" 77
   assert_output_contains "preflight test hook failed"
+}
+
+@test "preflight: executes preflight hooks during init and list and nested run" {
+  local repo="$TEST_TMPDIR/repo-preflight-lifecycle"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  local hook_dir="$AP_SKILL_DIR/scripts/lib/preflight.d"
+  mkdir -p "$hook_dir"
+  cat <<'EOF' > "$hook_dir/99-test-fail.sh"
+#!/usr/bin/env bash
+ap_die 77 "preflight test hook failed"
+EOF
+  chmod +x "$hook_dir/99-test-fail.sh"
+
+  # 1. init must fail due to preflight
+  run bash "$AP_HELPER" init
+  assert_failure
+  assert_equal "$status" 77
+  assert_output_contains "preflight test hook failed"
+
+  # 2. list must fail due to preflight
+  run bash "$AP_HELPER" list
+  assert_failure
+  assert_equal "$status" 77
+  assert_output_contains "preflight test hook failed"
+
+  # Remove hook, init profile cleanly
+  rm -f "$hook_dir/99-test-fail.sh"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  # Re-inject hook; nested run must also execute preflight
+  cat <<'EOF' > "$hook_dir/99-test-fail.sh"
+#!/usr/bin/env bash
+ap_die 77 "preflight test hook failed"
+EOF
+  chmod +x "$hook_dir/99-test-fail.sh"
+
+  run bash "$AP_HELPER" run -- bash "$AP_HELPER" run -- true
+  rm -f "$hook_dir/99-test-fail.sh"
+  assert_failure
+  assert_equal "$status" 77
+  assert_output_contains "preflight test hook failed"
+}
+
+@test "modular: sources shipped agent modules and executes declared ap_agent_env hook in disposable package copy" {
+  local repo="$TEST_TMPDIR/repo-agent-env"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  # Create disposable copy of skill package
+  local disp_skill="$TEST_TMPDIR/disp_skill"
+  mkdir -p "$disp_skill"
+  cp -a "$AP_SKILL_DIR"/* "$disp_skill/"
+
+  # Add synthetic agent env hook to lib/agents/claude.sh in disposable copy
+  cat <<'EOF' >> "$disp_skill/scripts/lib/agents/claude.sh"
+
+ap_agent_env_claude() {
+  local prof_dir="$1"
+  export SYNTHETIC_CLAUDE_LOADED="active:$prof_dir"
+}
+EOF
+
+  local disp_helper="$disp_skill/scripts/agent-profiles"
+  chmod +x "$disp_helper"
+
+  run bash "$disp_helper" init
+  assert_success
+
+  run bash "$disp_helper" run -- sh -c 'echo "$SYNTHETIC_CLAUDE_LOADED"'
+  assert_success
+  assert_output_contains "active:$repo/.agent-profiles/default"
 }
