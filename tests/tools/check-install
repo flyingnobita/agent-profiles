@@ -141,6 +141,15 @@ assert "checks" in data, "missing checks"
 assert "agents" in data, "missing agents"
 assert all(a in data["agents"] for a in ["claude", "codex", "agy", "opencode"]), "missing agent in doctor output"
 ' "$doc_out" || fail "doctor --json failed on $helper from separate cwd"
+
+    # Verify init and run in separate fixture repo with isolated HOME
+    (
+      cd "$separate_cwd" && run_in_home "$home_dir" bash "$helper" init --profile check-prof
+    ) || fail "init --profile check-prof failed on $helper from separate cwd"
+
+    (
+      cd "$separate_cwd" && run_in_home "$home_dir" bash "$helper" run --profile check-prof -- true
+    ) || fail "run --profile check-prof -- true failed on $helper from separate cwd"
   done
 done
 
