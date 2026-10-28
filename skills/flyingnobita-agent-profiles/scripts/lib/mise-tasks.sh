@@ -211,9 +211,11 @@ ap_setup_print_plan() {
   local tasks_managed=0
   if reason="$(ap_setup_managed_config_reason "$config_dir")"; then
     tasks_managed=1
-    printf "  release: skipped because managed configuration was detected: %s\n" "$reason"
-  else
-    printf "  release: %s (created or verified on --apply)\n" "$release"
+  fi
+  # The owned XDG release is always deployed on --apply, managed config or not.
+  printf "  release: %s (created or verified on --apply)\n" "$release"
+  if [[ $tasks_managed -eq 1 ]]; then
+    printf "  tasks: managed configuration detected: %s\n" "$reason"
   fi
 
   for task in "${AP_SETUP_TASKS[@]}"; do
@@ -271,6 +273,10 @@ ap_setup_print_plan() {
       printf "  agent: %s (skipped: --tasks-only requested; no installation)\n" "$agent"
       continue
     fi
+    if path="$(ap_setup_resolve "$agent")"; then
+      printf "  agent: %s (already available at %s)\n" "$agent" "$path"
+      continue
+    fi
     if reason="$(ap_setup_config_file_managed_reason "$config_dir")"; then
       if [[ -n "$prepare_dir" ]]; then
         printf "  agent: %s (prepared source change in %s/mise/config.toml.fragment; target left untouched)\n" \
@@ -280,9 +286,7 @@ ap_setup_print_plan() {
       fi
       continue
     fi
-    if path="$(ap_setup_resolve "$agent")"; then
-      printf "  agent: %s (already available at %s)\n" "$agent" "$path"
-    elif ! ap_setup_mise_registry_has "$agent"; then
+    if ! ap_setup_mise_registry_has "$agent"; then
       printf "  agent: %s (unsupported automatic path: not in the mise registry)\n" "$agent"
     else
       printf "  agent: %s (install through the mise registry on --apply; global mise config backed up first)\n" \
@@ -751,14 +755,17 @@ ap_setup_apply_tasks() {
     ap_die "$EX_UNAVAILABLE" "mise is required for global task integration; install mise manually (no curl installation)"
   fi
 
+  # The versioned release lives in owned XDG data and is always deployed on an
+  # explicit apply, including when the mise configuration is managed: prepared
+  # task shims reference it and must not point at a missing helper.
+  if ! ap_setup_deploy_release >/dev/null; then
+    ap_die "$EX_BROKEN" "failed to deploy the versioned helper release"
+  fi
+
   if reason="$(ap_setup_managed_config_reason "$config_dir")"; then
     managed=1
     ap_setup_prepare_managed "$config_dir" "$reason" "$prepare_dir" \
       || ap_die "$EX_BROKEN" "failed to prepare managed configuration files"
-  fi
-
-  if [[ $managed -eq 0 ]] && ! ap_setup_deploy_release >/dev/null; then
-    ap_die "$EX_BROKEN" "failed to deploy the versioned helper release"
   fi
 
   local task target content conflicts=0 backup
@@ -815,11 +822,18 @@ ap_setup_apply_tasks() {
   fi
 
   printf "\nApplied:\n"
-  if [[ $managed -eq 0 ]]; then
-    printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
-  fi
+  printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
   for task in "${AP_SETUP_TASKS[@]}"; do
-    printf "  task: %s\n" "$(ap_setup_task_path "$config_dir" "$task")"
+    if [[ $managed -eq 1 ]]; then
+      if [[ -n "$prepare_dir" ]]; then
+        printf "  prepared: %s/tasks/%s\n" "$prepare_dir" "$task"
+      else
+        printf "  left untouched: %s (managed configuration; rerun with --prepare-dir DIR)\n" \
+          "$(ap_setup_task_path "$config_dir" "$task")"
+      fi
+    else
+      printf "  task: %s\n" "$(ap_setup_task_path "$config_dir" "$task")"
+    fi
   done
   if [[ $conflicts -gt 0 ]]; then
     printf "  conflicts: %s (existing tasks preserved)\n" "$conflicts"
