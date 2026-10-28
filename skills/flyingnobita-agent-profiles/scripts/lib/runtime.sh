@@ -413,16 +413,23 @@ ap_build_bwrap_mounts() {
   local storage_dir="$repo_root/.agent-profiles"
 
   local redirect_dirs=(.claude .codex .gemini .agents)
-  local seen_targets=()
-  BWRAP_MOUNT_ARGS=()
+  local validated_sources=()
+  local validated_targets=()
 
+  local real_storage
+  real_storage=$(realpath -m "$storage_dir" 2>/dev/null || echo "$storage_dir")
+  local real_repo
+  real_repo=$(realpath -m "$repo_root" 2>/dev/null || echo "$repo_root")
+  local real_prof
+  real_prof=$(realpath -m "$prof_dir" 2>/dev/null || echo "$prof_dir")
+  local real_home
+  real_home=$(realpath -m "$HOME" 2>/dev/null || echo "$HOME")
+
+  # Pass 1: Validate entire mount table before any host modifications
   for d in "${redirect_dirs[@]}"; do
     local src="$prof_dir/$d"
     if [[ -L "$src" ]]; then
       ap_die "$EX_LAYOUT" "profile source path '$src' is a symbolic link (symlinks inside profile storage are prohibited)"
-    fi
-    if [[ ! -d "$src" ]]; then
-      mkdir -p "$src"
     fi
 
     local target="$HOME/$d"
@@ -432,40 +439,61 @@ ap_build_bwrap_mounts() {
       ap_die "$EX_LAYOUT" "mount target '$target' is a dangling symlink"
     fi
 
-    # Follow valid directory symlinks to their physical host target
-    if [[ -L "$target" ]]; then
-      local phys_target
-      phys_target=$(readlink -f "$target" 2>/dev/null || true)
-      if [[ ! -d "$phys_target" ]]; then
-        ap_die "$EX_LAYOUT" "mount target '$target' resolves to '$phys_target' which is not a directory"
-      fi
-      target="$phys_target"
+    # Canonicalize physical target including resolving ancestors of missing targets
+    local phys_target
+    phys_target=$(realpath -m "$target" 2>/dev/null || true)
+    if [[ -z "$phys_target" ]]; then
+      ap_die "$EX_LAYOUT" "unable to resolve physical path for mount target '$target'"
     fi
 
     # Check if target is a regular file or other non-directory
-    if [[ -e "$target" && ! -d "$target" ]]; then
-      ap_die "$EX_LAYOUT" "mount target '$target' exists but is not a directory"
+    if [[ -e "$phys_target" && ! -d "$phys_target" ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' resolves to '$phys_target' which is not a directory"
     fi
 
     # Check root target
-    if [[ "$target" == "/" ]]; then
+    if [[ "$phys_target" == "/" ]]; then
       ap_die "$EX_LAYOUT" "mount target cannot be '/'"
     fi
 
-    # Check if target overlaps profile storage
-    if [[ "$target" == "$storage_dir"* || "$storage_dir" == "$target"* ]]; then
+    # Check if target hides or overlaps repository, profile storage, or HOME
+    if [[ "$phys_target" == "$real_repo" || "$real_repo" == "$phys_target"/* ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' cannot hide or overlap repository root '$repo_root'"
+    fi
+
+    if [[ "$phys_target" == "$real_storage" || "$phys_target" == "$real_storage"/* || "$real_storage" == "$phys_target"/* ]]; then
       ap_die "$EX_LAYOUT" "mount target '$target' cannot overlap with profile storage directory '$storage_dir'"
     fi
 
-    # Check for target duplicate / overlap
-    for seen in "${seen_targets[@]}"; do
-      if [[ "$target" == "$seen" ]]; then
-        ap_die "$EX_LAYOUT" "duplicate mount target '$target'"
+    if [[ "$phys_target" == "$real_prof" || "$phys_target" == "$real_prof"/* || "$real_prof" == "$phys_target"/* ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' cannot overlap with profile directory '$prof_dir'"
+    fi
+
+    if [[ "$phys_target" == "$real_home" || "$real_home" == "$phys_target"/* ]]; then
+      ap_die "$EX_LAYOUT" "mount target '$target' cannot hide or overlap user home directory '$HOME'"
+    fi
+
+    # Check pairwise for duplicates and ancestor/descendant overlaps
+    for seen in "${validated_targets[@]}"; do
+      if [[ "$phys_target" == "$seen" || "$phys_target" == "$seen"/* || "$seen" == "$phys_target"/* ]]; then
+        ap_die "$EX_LAYOUT" "mount target overlap: '$target' ($phys_target) overlaps with previously registered target '$seen'"
       fi
     done
-    seen_targets+=("$target")
 
-    # If missing, create as empty host directory with stderr notice
+    validated_sources+=("$src")
+    validated_targets+=("$phys_target")
+  done
+
+  # Pass 2: Create required directories and build bwrap arguments
+  BWRAP_MOUNT_ARGS=()
+  for i in "${!validated_sources[@]}"; do
+    local src="${validated_sources[i]}"
+    local target="${validated_targets[i]}"
+
+    if [[ ! -d "$src" ]]; then
+      mkdir -p "$src"
+    fi
+
     if [[ ! -e "$target" ]]; then
       mkdir -p "$target"
       printf "agent-profiles: notice: created empty host mountpoint %s\n" "$target" >&2
