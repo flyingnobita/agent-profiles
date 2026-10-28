@@ -40,6 +40,7 @@ ap_cmd_init() {
 
   ap_validate_profile_name "$profile"
   ap_ensure_storage_dir "$repo_root"
+  ap_check_profile_aliasing "$repo_root" "$profile"
   ap_ensure_locks_dir "$repo_root"
 
   # Short storage lock and profile lease during initialization

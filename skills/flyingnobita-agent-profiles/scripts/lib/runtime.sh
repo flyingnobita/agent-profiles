@@ -17,6 +17,48 @@ ap_validate_profile_name() {
   fi
 }
 
+ap_detect_live_profile() {
+  if [[ ! -r /proc/self/mountinfo ]]; then
+    return 0
+  fi
+
+  sed -n -E 's|.*\.agent-profiles/([a-z0-9_-]+)/.*|\1|p' /proc/self/mountinfo 2>/dev/null | head -n 1
+}
+
+ap_check_profile_aliasing() {
+  local repo_root="$1"
+  local profile="$2"
+  local storage_dir="$repo_root/.agent-profiles"
+  local prof_dir="$storage_dir/$profile"
+
+  if [[ -L "$prof_dir" ]]; then
+    ap_die "$EX_LAYOUT" "profile directory '$prof_dir' is a symbolic link (must be a real directory)"
+  fi
+
+  if [[ -d "$prof_dir" ]]; then
+    local real_pd
+    real_pd=$(readlink -f "$prof_dir" 2>/dev/null || true)
+    if [[ "$real_pd" != "$prof_dir" ]]; then
+      ap_die "$EX_LAYOUT" "profile directory '$prof_dir' realpath mismatch ($real_pd)"
+    fi
+
+    local target_ino
+    target_ino=$(stat -c "%d:%i" "$prof_dir" 2>/dev/null || true)
+
+    for entry in "$storage_dir"/*; do
+      [[ -d "$entry" ]] || continue
+      local b
+      b=$(basename "$entry")
+      [[ "$b" == "$profile" || "$b" == .* ]] && continue
+      local other_ino
+      other_ino=$(stat -c "%d:%i" "$entry" 2>/dev/null || true)
+      if [[ -n "$target_ino" && "$target_ino" == "$other_ino" ]]; then
+        ap_die "$EX_LAYOUT" "profile '$profile' aliases existing profile '$b' (same filesystem inode $target_ino)"
+      fi
+    done
+  fi
+}
+
 ap_ensure_storage_dir() {
   local repo_root="$1"
   local storage_dir="$repo_root/.agent-profiles"

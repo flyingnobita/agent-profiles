@@ -45,10 +45,32 @@ ap_cmd_run() {
 
   local repo_root
   repo_root=$(ap_find_repo_root)
+
+  ap_check_profile_aliasing "$repo_root" "$profile"
+
   local prof_dir="$repo_root/.agent-profiles/$profile"
 
   if [[ ! -d "$prof_dir/home" ]]; then
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout (run 'agent-profiles init --profile $profile' first)"
+  fi
+
+  # Nested execution detection based on live bind evidence in /proc/self/mountinfo
+  local live_prof
+  live_prof=$(ap_detect_live_profile)
+
+  if [[ -n "$live_prof" ]]; then
+    if [[ "$live_prof" != "$profile" ]]; then
+      ap_die "$EX_BUSY" "nested execution inside profile '$live_prof' cannot switch to profile '$profile'"
+    fi
+
+    # Same-profile nested execution: do not re-wrap with bwrap
+    # Take an additional compatible shared lease
+    ap_lease_profile_shared "$repo_root" "$profile"
+
+    # Rebuild deduped environment from preserved base path
+    ap_prepare_profile_env "$repo_root" "$profile"
+
+    exec "$@"
   fi
 
   ap_ensure_locks_dir "$repo_root"
