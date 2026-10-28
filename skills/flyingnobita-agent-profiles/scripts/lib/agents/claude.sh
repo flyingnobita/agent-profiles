@@ -54,25 +54,47 @@ ap_doctor_check_claude_profile() {
   local prof_status="uninitialized"
   local logged_in="false"
   local auth_status="logged_out"
+  local auth_method="none"
   local auth_detail="No profile credentials stored"
 
   if [[ -d "$prof_dir" && -d "$prof_dir/home" ]]; then
     prof_status="initialized"
     local creds_file="$claude_dir/.credentials.json"
+    local env_cred_names=()
+    local env_var
+    for env_var in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+      if [[ -n "${!env_var:-}" ]]; then
+        env_cred_names+=("$env_var")
+      fi
+    done
+
     if [[ -f "$creds_file" ]]; then
       logged_in="true"
-      auth_status="authenticated"
-      auth_detail="Profile credentials present"
-    elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+      auth_status="profile_stored"
+      auth_method="profile_stored"
+      auth_detail="Profile credential file present (OS keyring not inspected)"
+    elif [[ ${#env_cred_names[@]} -gt 0 ]]; then
+      local joined_names=""
+      for env_var in "${env_cred_names[@]}"; do
+        if [[ -n "$joined_names" ]]; then
+          joined_names+=", "
+        fi
+        joined_names+="$env_var"
+      done
+      logged_in="true"
       auth_status="env_inherited"
-      auth_detail="ANTHROPIC_API_KEY inherited from environment (not stored in profile)"
+      auth_method="environment"
+      auth_detail="Credentials inherited from environment: $joined_names (not stored in profile)"
     else
       auth_status="logged_out"
-      auth_detail="Fresh profile, not signed in"
+      auth_method="none"
+      auth_detail="Fresh profile, not signed in (OS keyring not inspected)"
     fi
   else
     claude_dir="$prof_dir/.claude"
     prof_status="uninitialized"
+    auth_status="logged_out"
+    auth_method="none"
     auth_detail="Profile '$prof_name' not initialized"
   fi
 
@@ -85,7 +107,8 @@ prof_status = sys.argv[3]
 claude_dir = sys.argv[4]
 logged_in = (sys.argv[5] == "true")
 auth_status = sys.argv[6]
-auth_detail = sys.argv[7]
+auth_method = sys.argv[7]
+auth_detail = sys.argv[8]
 
 if "claude" in agents:
     agents["claude"]["profile"] = {
@@ -95,10 +118,11 @@ if "claude" in agents:
         "auth": {
             "logged_in": logged_in,
             "status": auth_status,
+            "method": auth_method,
             "detail": auth_detail
         }
     }
 
 print(json.dumps(agents))
-' "$AGENTS_JSON" "$prof_name" "$prof_status" "$claude_dir" "$logged_in" "$auth_status" "$auth_detail")
+' "$AGENTS_JSON" "$prof_name" "$prof_status" "$claude_dir" "$logged_in" "$auth_status" "$auth_method" "$auth_detail")
 }
