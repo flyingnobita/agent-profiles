@@ -123,3 +123,62 @@ assert auth["status"] == "profile_stored"
 assert auth["method"] == "profile_stored"
 ' "$output"
 }
+
+@test "doctor: classifies ANTHROPIC_AUTH_TOKEN without reporting logged out or exposing values" {
+  local repo="$TEST_TMPDIR/repo-claude-auth-token"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile tok
+  assert_success
+
+  run env ANTHROPIC_AUTH_TOKEN="synthetic-auth-token-value-not-real" \
+    bash "$AP_HELPER" doctor --json --agent claude --profile tok
+  assert_success
+  assert_output_not_contains "synthetic-auth-token-value-not-real"
+
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+auth = data["agents"]["claude"]["profile"]["auth"]
+assert auth["status"] != "logged_out", auth
+assert auth["method"] == "environment", auth
+assert "ANTHROPIC_AUTH_TOKEN" in auth["detail"], auth
+' "$output"
+}
+
+@test "doctor: classifies a profile apiKeyHelper as configured without executing it" {
+  local repo="$TEST_TMPDIR/repo-claude-keyhelper"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile helper
+  assert_success
+
+  local marker="$TEST_TMPDIR/helper-ran"
+  cat >"$TEST_TMPDIR/key-helper.sh" <<HELPER
+#!/usr/bin/env bash
+touch "$marker"
+printf 'sk-synthetic-helper-secret\n'
+HELPER
+  chmod +x "$TEST_TMPDIR/key-helper.sh"
+  cat >"$repo/.agent-profiles/helper/.claude/settings.json" <<JSON
+{"apiKeyHelper": "$TEST_TMPDIR/key-helper.sh"}
+JSON
+
+  run bash "$AP_HELPER" doctor --json --agent claude --profile helper
+  assert_success
+  assert_output_not_contains "sk-synthetic-helper-secret"
+
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+auth = data["agents"]["claude"]["profile"]["auth"]
+assert auth["status"] != "logged_out", auth
+assert auth["method"] == "api_key_helper", auth
+assert "not executed" in auth["detail"].lower(), auth
+' "$output"
+
+  # A read-only diagnostic never runs the configured credential helper.
+  [[ ! -e "$marker" ]]
+}

@@ -130,3 +130,30 @@ EOF
   # The leak file must NOT exist
   [[ ! -f "$leak_file" ]]
 }
+
+@test "doctor safety: unavailable mktemp marks probes unverified and leaves no predictable paths" {
+  local stub="$TEST_TMPDIR/mktemp-stub"
+  mkdir -p "$stub"
+  cat >"$stub/mktemp" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  chmod +x "$stub/mktemp"
+
+  local before after
+  before=$(find /tmp -maxdepth 1 \( -name 'ap-probe-*' -o -name 'ap-deps-*' \) 2>/dev/null | sort)
+
+  run env PATH="$stub:$PATH" bash "$AP_HELPER" doctor --json
+  assert_success
+
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+for agent in data["agents"].values():
+    assert agent["status"] != "available", agent
+    assert agent["version_probe"] != "verified", agent
+' "$output"
+
+  after=$(find /tmp -maxdepth 1 \( -name 'ap-probe-*' -o -name 'ap-deps-*' \) 2>/dev/null | sort)
+  assert_equal "$before" "$after"
+}
