@@ -43,6 +43,9 @@ ap_cmd_init() {
   ap_check_profile_aliasing "$repo_root" "$profile"
   ap_ensure_locks_dir "$repo_root"
 
+  # Preflight check before acquiring locks or mutating profile
+  ap_run_preflight "$repo_root" "$profile"
+
   # Short storage lock and profile lease during initialization
   local prof_dir="$repo_root/.agent-profiles/$profile"
   if [[ -d "$prof_dir" ]]; then

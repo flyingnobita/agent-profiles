@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Command: list
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/runtime.sh"
+source "$LIB_DIR/locks.sh"
 
 ap_cmd_list() {
   local json_mode=0
@@ -21,6 +23,9 @@ ap_cmd_list() {
 
   local repo_root
   repo_root=$(ap_find_repo_root)
+
+  # Preflight check
+  ap_run_preflight "$repo_root" ""
 
   ap_list_profiles "$repo_root" "$json_mode"
 }

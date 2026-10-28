@@ -54,6 +54,9 @@ ap_cmd_run() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout (run 'agent-profiles init --profile $profile' first)"
   fi
 
+  # 1. Preflight
+  ap_run_preflight "$repo_root" "$profile"
+
   # Nested execution detection based on live bind evidence in /proc/self/mountinfo
   local live_context
   live_context=$(ap_check_live_profile_context "$repo_root" "$profile")
@@ -72,9 +75,6 @@ ap_cmd_run() {
   fi
 
   ap_ensure_locks_dir "$repo_root"
-
-  # 1. Preflight
-  ap_run_preflight "$repo_root" "$profile"
 
   # 2. Shared storage lock
   ap_lock_storage_shared "$repo_root"

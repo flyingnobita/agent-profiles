@@ -383,8 +383,13 @@ ap_prepare_profile_env() {
     export PATH="$prof_bins"
   fi
 
-  # Call agent environment hooks if defined
+  # Source bounded shipped agent modules and call agent environment hooks if defined
   for ag in claude codex agy opencode; do
+    local agent_module="$LIB_DIR/agents/$ag.sh"
+    if [[ -f "$agent_module" ]]; then
+      # shellcheck source=/dev/null
+      source "$agent_module"
+    fi
     local hook="ap_agent_env_$ag"
     if declare -F "$hook" >/dev/null 2>&1; then
       "$hook" "$prof_dir"
