@@ -434,23 +434,75 @@ ap_cmd_recover() {
   local all_targets=()
   local fields=()
   local journal_op journal_profile migrated_profiles
-  local cleared_journals=()
+  local valid_journals=()
+  local incomplete_journals=()
+
+  # Phase 1: classify journals without mutating anything.
+  for journal_file in "${stale_journals[@]}"; do
+    if [[ ! -s "$journal_file" ]]; then
+      incomplete_journals+=("$journal_file")
+      continue
+    fi
+    fields=()
+    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    if [[ ${#fields[@]} -eq 0 ]]; then
+      ap_die "$EX_LAYOUT" "malformed journal '$(basename "$journal_file")'; inspect it manually instead of deleting data"
+    fi
+    journal_op="${fields[0]:-}"
+    case "$journal_op" in
+      reset | remove)
+        ap_validate_profile_name "${fields[1]:-}"
+        ;;
+      migrate)
+        for target in ${fields[9]:-}; do
+          ap_validate_profile_name "$target"
+        done
+        ;;
+      *)
+        ap_die "$EX_LAYOUT" "unknown operation '$journal_op' in journal '$(basename "$journal_file")'"
+        ;;
+    esac
+    valid_journals+=("$journal_file")
+  done
+
+  # Phase 2: an incomplete journal records no state, so clearing it is safe, but
+  # it still mutates profile storage: hold the exclusive storage lock first so a
+  # concurrent init or reset cannot race the clear.
+  if [[ ${#incomplete_journals[@]} -gt 0 ]]; then
+    ap_lock_storage_exclusive "$repo_root"
+    for journal_file in "${incomplete_journals[@]}"; do
+      ap_journal_is_stale "$journal_file" \
+        || ap_die "$EX_BUSY" "journal '$(basename "$journal_file")' became active during recovery"
+      if [[ -s "$journal_file" ]]; then
+        ap_die "$EX_BUSY" "journal '$(basename "$journal_file")' changed during recovery; rerun recover"
+      fi
+      ap_lock_journal "$journal_file"
+      rm -f "$journal_file"
+      ap_unlock_journal
+      printf "Cleared incomplete journal '%s' (no operation state was recorded; profile data untouched).\n" \
+        "$(basename "$journal_file")"
+    done
+    ap_unlock_storage
+  fi
+
+  stale_journals=()
+  if [[ ${#valid_journals[@]} -gt 0 ]]; then
+    stale_journals=("${valid_journals[@]}")
+  fi
+
+  if [[ ${#stale_journals[@]} -eq 0 ]]; then
+    printf "No recoverable interrupted operations remained after clearing incomplete journals.\n"
+    return 0
+  fi
+
+  # Collect the locks needed by every remaining journal before mutating anything.
+  local needs_exclusive_storage=0
+  local all_targets=()
   for journal_file in "${stale_journals[@]}"; do
     fields=()
     mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
     if [[ ${#fields[@]} -eq 0 ]]; then
-      if [[ ! -s "$journal_file" ]]; then
-        # No operation state was ever recorded, so nothing was moved or
-        # deleted. Clear the incomplete journal; never trust or act on it.
-        ap_lock_journal "$journal_file"
-        rm -f "$journal_file"
-        ap_unlock_journal
-        cleared_journals+=("$(basename "$journal_file")")
-        printf "Cleared incomplete journal '%s' (no operation state was recorded; profile data untouched).\n" \
-          "${cleared_journals[${#cleared_journals[@]} - 1]}"
-        continue
-      fi
-      ap_die "$EX_LAYOUT" "malformed journal '$(basename "$journal_file")'; inspect it manually instead of deleting data"
+      ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
     fi
     journal_op="${fields[0]:-}"
     journal_profile="${fields[1]:-}"
@@ -458,40 +510,17 @@ ap_cmd_recover() {
 
     case "$journal_op" in
       reset | remove)
-        ap_validate_profile_name "$journal_profile"
         all_targets+=("$journal_profile")
         ;;
       migrate)
         needs_exclusive_storage=1
         local target
         for target in $migrated_profiles; do
-          ap_validate_profile_name "$target"
           all_targets+=("$target")
         done
         ;;
-      *)
-        ap_die "$EX_LAYOUT" "unknown operation '$journal_op' in journal '$(basename "$journal_file")'"
-        ;;
     esac
   done
-
-  if [[ ${#cleared_journals[@]} -gt 0 ]]; then
-    local remaining=()
-    local candidate
-    for candidate in "${stale_journals[@]}"; do
-      [[ -e "$candidate" ]] && remaining+=("$candidate")
-    done
-    stale_journals=()
-    if [[ ${#remaining[@]} -gt 0 ]]; then
-      stale_journals=("${remaining[@]}")
-    fi
-    unset remaining candidate
-  fi
-
-  if [[ ${#stale_journals[@]} -eq 0 ]]; then
-    printf "No recoverable interrupted operations remained after clearing incomplete journals.\n"
-    return 0
-  fi
 
   if [[ $needs_exclusive_storage -eq 1 ]]; then
     ap_lock_storage_exclusive "$repo_root"
