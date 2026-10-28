@@ -205,3 +205,82 @@ EOF
   assert_equal "$status" 73
   assert_output_contains "symbolic link"
 }
+
+@test "bwrap: rejects overlapping ancestor and descendant mount targets with exit 73 and preserves host fixtures" {
+  local repo="$TEST_TMPDIR/repo-overlap-targets"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  # Symlink .claude to parent and .codex to child inside parent
+  local shared_parent="$TEST_TMPDIR/shared_mount_parent"
+  local shared_child="$shared_parent/child"
+  mkdir -p "$shared_child"
+
+  rm -rf "$HOME/.claude" "$HOME/.codex"
+  ln -s "$shared_parent" "$HOME/.claude"
+  ln -s "$shared_child" "$HOME/.codex"
+
+  # Ensure .gemini does not exist on host prior to run
+  rm -rf "$HOME/.gemini"
+
+  run bash "$AP_HELPER" run -- true
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "overlap"
+
+  # Host fixtures preserved: missing target was NOT created before refusal
+  [[ ! -e "$HOME/.gemini" ]]
+}
+
+@test "bwrap: allows mount target sharing sibling prefix with storage directory" {
+  local repo="$TEST_TMPDIR/repo-sibling-prefix"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local sibling_dir="$repo/.agent-profiles-sibling"
+  mkdir -p "$sibling_dir"
+
+  rm -rf "$HOME/.claude"
+  ln -s "$sibling_dir" "$HOME/.claude"
+
+  run bash "$AP_HELPER" run -- true
+  assert_success
+}
+
+@test "bwrap: canonicalizes missing mount targets under symlinked HOME ancestors" {
+  local repo="$TEST_TMPDIR/repo-symlink-home"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local real_home="$TEST_TMPDIR/real_home_dir"
+  mkdir -p "$real_home"
+  local sym_home="$TEST_TMPDIR/symlinked_home"
+  ln -s "$real_home" "$sym_home"
+
+  run env HOME="$sym_home" bash "$AP_HELPER" run -- true
+  assert_success
+  # Empty mountpoints created under physical home target
+  assert_dir_exists "$real_home/.claude"
+}
+
+@test "bwrap: rejects mount target that hides profile storage or repository with exit 73" {
+  local repo="$TEST_TMPDIR/repo-hiding-target"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  rm -rf "$HOME/.claude"
+  ln -s "$repo/.agent-profiles" "$HOME/.claude"
+
+  run bash "$AP_HELPER" run -- true
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "storage"
+}
