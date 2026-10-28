@@ -34,12 +34,18 @@ WATCHER_PIDS=()
 HOST_GEMINI_HASH_BEFORE=""
 HOST_GEMINI_HASH_AFTER=""
 
+# Hash the host configuration surface a profile run could touch. Volatile host
+# logs, conversations and caches are excluded because other host sessions write
+# them concurrently; they are never a stable comparison on a shared machine.
 agy_live_host_gemini_hash() {
   if [[ ! -d "$HOST_GEMINI" ]]; then
     printf 'absent\n'
     return 0
   fi
-  find "$HOST_GEMINI" -type f -print0 2>/dev/null \
+  find "$HOST_GEMINI" -type f \
+    \( -path "*/config/*" -o -name settings.json -o -name installation_id \
+    -o -name jetski_state.pbtxt -o -name mcp_oauth_tokens.json \) \
+    -print0 2>/dev/null \
     | xargs -0 sha256sum 2>/dev/null | sort | sha256sum | awk '{ print $1 }'
 }
 
@@ -350,7 +356,7 @@ git -C "$FIXTURE_REPO" config user.name "Test User"
 git -C "$FIXTURE_REPO" config user.email "test@example.com"
 
 HOST_GEMINI_HASH_BEFORE="$(agy_live_host_gemini_hash)"
-printf 'Host %s content hash before QA: %s\n' "$HOST_GEMINI" "$HOST_GEMINI_HASH_BEFORE"
+printf 'Host %s configuration hash before QA: %s\n' "$HOST_GEMINI" "$HOST_GEMINI_HASH_BEFORE"
 
 # ---------------------------------------------------------------------------
 # Class 1: version (informational; --version is not startup evidence)
@@ -602,11 +608,11 @@ ap_live_verify_host_untouched "$HOME"
 printf 'Synthetic host sha256 snapshot unchanged (host .gemini marker skills were not read or written).\n'
 HOST_GEMINI_HASH_AFTER="$(agy_live_host_gemini_hash)"
 if [[ "$HOST_GEMINI_HASH_BEFORE" != "$HOST_GEMINI_HASH_AFTER" ]]; then
-  printf 'ERROR: host %s changed during QA (%s -> %s)\n' \
+  printf 'ERROR: host %s configuration changed during QA (%s -> %s)\n' \
     "$HOST_GEMINI" "$HOST_GEMINI_HASH_BEFORE" "$HOST_GEMINI_HASH_AFTER" >&2
   exit 1
 fi
-printf 'Host %s content hash unchanged: %s\n' "$HOST_GEMINI" "$HOST_GEMINI_HASH_AFTER"
+printf 'Host %s configuration hash unchanged: %s\n' "$HOST_GEMINI" "$HOST_GEMINI_HASH_AFTER"
 
 python3 - "$SUMMARY_JSON" "$REPO_ROOT" "$AGY_VERSION" "$AGY_PATH" "$AGY_RAW_VERSION" \
   "$SHARED_UNIT" "$SOCKET_AUDIT" <<'PY'
