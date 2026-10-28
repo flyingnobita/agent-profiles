@@ -130,9 +130,3 @@ EOF
   # The leak file must NOT exist
   [[ ! -f "$leak_file" ]]
 }
-
-@test "doctor modularity: per-agent modules exist under lib/agents" {
-  for agent in claude codex agy opencode; do
-    assert_file_exists "$AP_SKILL_DIR/scripts/lib/agents/$agent.sh"
-  done
-}

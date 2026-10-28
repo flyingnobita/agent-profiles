@@ -48,7 +48,7 @@ print(f"EFFECTIVE_DATA={data_dir}")
   assert_output_contains "EFFECTIVE_DATA=$host_data_dir"
 }
 
-@test "mise: preserves explicit custom MISE_DATA_DIR override" {
+@test "guard: mise preserves explicit custom MISE_DATA_DIR override" {
   local repo="$TEST_TMPDIR/repo-mise-override"
   create_fixture_repo "$repo"
   cd "$repo"
@@ -68,7 +68,7 @@ print("OVERRIDE_OK")
   assert_output_contains "OVERRIDE_OK"
 }
 
-@test "mise: passes through other inherited MISE_ variables" {
+@test "guard: mise passes through other inherited MISE_ variables" {
   local repo="$TEST_TMPDIR/repo-mise-passthrough"
   create_fixture_repo "$repo"
   cd "$repo"
@@ -112,4 +112,43 @@ print("PASSTHROUGH_OK")
   run env PATH="$no_mise_bin" bash "$AP_HELPER" run -- echo "generic_cmd_ok"
   assert_success
   assert_output_contains "generic_cmd_ok"
+}
+
+@test "mise: resolves hermetic local mise-linked executable fixture and preserves caller cwd" {
+  local repo="$TEST_TMPDIR/repo-mise-tool"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init
+  assert_success
+
+  # Create a hermetic local tool executable directory
+  local tool_dir="$TEST_TMPDIR/fake_hermetic_tool"
+  mkdir -p "$tool_dir/bin"
+  cat <<'EOF' > "$tool_dir/bin/my-hermetic-tool"
+#!/bin/sh
+echo "HERMETIC_TOOL_OK:cwd=$(pwd)"
+EOF
+  chmod +x "$tool_dir/bin/my-hermetic-tool"
+
+  # Link as a custom local tool in mise (offline, no network or auth)
+  MISE_YES=1 mise link -f node@custom-test "$tool_dir"
+
+  # Configure repo to use this linked tool
+  cat <<'EOF' > "$repo/mise.toml"
+[tools]
+node = "custom-test"
+EOF
+
+  # Run from subdirectory to test caller cwd preservation
+  mkdir -p "$repo/nested/sub"
+  cd "$repo/nested/sub"
+
+  # Execute through generic agent-profiles run
+  run bash "$AP_HELPER" run -- mise exec -- my-hermetic-tool
+  assert_success
+  assert_output_contains "HERMETIC_TOOL_OK:cwd=$repo/nested/sub"
+
+  # Clean up linked tool
+  MISE_YES=1 mise uninstall node@custom-test 2>/dev/null || true
 }

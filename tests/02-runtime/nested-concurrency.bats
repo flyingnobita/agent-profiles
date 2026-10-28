@@ -12,7 +12,7 @@ teardown() {
   teardown_isolation
 }
 
-@test "nested: same-profile nested run executes without re-wrapping and dedupes PATH" {
+@test "guard: nested same-profile run executes without re-wrapping and dedupes PATH" {
   local repo="$TEST_TMPDIR/repo-nested-same"
   create_fixture_repo "$repo"
   cd "$repo"
@@ -128,7 +128,7 @@ print("SPURIOUS_RESET_OK")
   assert_output_contains "symbolic link"
 }
 
-@test "concurrency: concurrent runs in different profiles execute in parallel without conflict" {
+@test "guard: concurrent runs in different profiles execute in parallel without conflict" {
   local repo="$TEST_TMPDIR/repo-concurrency"
   create_fixture_repo "$repo"
   cd "$repo"
