@@ -16,7 +16,7 @@ ap_setup_read_field() {
   if [[ ! -r "$file" ]]; then
     return 0
   fi
-  sed -n "s/^${key}=//p" "$file" 2>/dev/null | head -n 1 | tr -d '"'
+  awk -F= -v key="$key" '$1 == key { value = substr($0, length(key) + 2); gsub(/"/, "", value); print value; exit }' "$file" 2>/dev/null
 }
 
 ap_setup_detect() {
@@ -94,7 +94,7 @@ ap_setup_package_command() {
 ap_setup_mise_registry_has() {
   local tool="$1"
   command -v mise >/dev/null 2>&1 || return 1
-  mise registry 2>/dev/null | awk '{print $1}' | grep -Fxq "$tool"
+  mise registry 2>/dev/null | awk -v tool="$tool" '$1 == tool { found = 1 } END { exit !found }'
 }
 
 ap_mise_config_dir() {
@@ -448,11 +448,68 @@ EOF
   printf "prepared: %s\n" "$prepare_dir"
 }
 
+ap_setup_install_package() {
+  local dep="$1"
+  local package
+  local -a cmd=()
+
+  package="$(ap_setup_package_for "$dep")" || return 1
+  case "$AP_SETUP_PKG_MANAGER" in
+    pacman) cmd=(pacman -S --noconfirm "$package") ;;
+    apt-get) cmd=(apt-get install -y "$package") ;;
+    *) return 1 ;;
+  esac
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    command -v sudo >/dev/null 2>&1 || return 1
+    cmd=(sudo "${cmd[@]}")
+  fi
+
+  printf "install: %s\n" "${cmd[*]}"
+  "${cmd[@]}"
+}
+
+ap_setup_install_prerequisites() {
+  local dep
+  for dep in bash git python3 bwrap; do
+    if ap_setup_resolve "$dep" >/dev/null 2>&1; then
+      continue
+    fi
+    if ! ap_setup_install_package "$dep"; then
+      printf "unsupported automatic path: dependency '%s' cannot be installed automatically\n" "$dep"
+    fi
+  done
+  if ! ap_setup_resolve mise >/dev/null 2>&1; then
+    printf "manual: mise must be installed manually (no curl installation)\n"
+  fi
+}
+
+ap_setup_install_agents() {
+  local agent path
+  for agent in "$@"; do
+    [[ -n "$agent" ]] || continue
+    if path="$(ap_setup_resolve "$agent")"; then
+      printf "agent: %s already available at %s\n" "$agent" "$path"
+      continue
+    fi
+    if ap_setup_mise_registry_has "$agent"; then
+      printf "install: mise use --global %s@latest\n" "$agent"
+      if ! mise use --global "$agent@latest"; then
+        ap_die "$EX_BROKEN" "failed to install agent '$agent' through the mise registry"
+      fi
+    else
+      printf "unsupported automatic path: agent '%s' is not in the mise registry\n" "$agent"
+    fi
+  done
+}
+
 # Apply the machine setup: deploy the release and install both global task
 # files, preserving foreign tasks and backing up managed files before changes.
 ap_setup_apply_tasks() {
   local prepare_dir="${1:-}"
-  local config_dir reason
+  local tasks_only="${2:-0}"
+  local -a requested_agents=("${@:3}")
+  local config_dir reason managed=0
   config_dir="$(ap_mise_config_dir)"
 
   if ! command -v mise >/dev/null 2>&1 && [[ -z "${MISE_CONFIG_DIR:-}" ]]; then
@@ -460,18 +517,21 @@ ap_setup_apply_tasks() {
   fi
 
   if reason="$(ap_setup_managed_config_reason "$config_dir")"; then
+    managed=1
     ap_setup_prepare_managed "$config_dir" "$reason" "$prepare_dir" \
       || ap_die "$EX_BROKEN" "failed to prepare managed configuration files"
-    return 0
   fi
 
-  if ! ap_setup_deploy_release >/dev/null; then
+  if [[ $managed -eq 0 ]] && ! ap_setup_deploy_release >/dev/null; then
     ap_die "$EX_BROKEN" "failed to deploy the versioned helper release"
   fi
 
-  (umask 022 && mkdir -p "$config_dir/tasks")
   local task target content conflicts=0 backup
+  if [[ $managed -eq 0 ]]; then
+    (umask 022 && mkdir -p "$config_dir/tasks")
+  fi
   for task in "${AP_SETUP_TASKS[@]}"; do
+    [[ $managed -eq 0 ]] || break
     target="$(ap_setup_task_path "$config_dir" "$task")"
 
     if ap_setup_inline_conflict "$config_dir" "$task"; then
@@ -514,8 +574,15 @@ ap_setup_apply_tasks() {
     fi
   done
 
+  if [[ "$tasks_only" -eq 0 ]]; then
+    ap_setup_install_prerequisites
+    ap_setup_install_agents "${requested_agents[@]}"
+  fi
+
   printf "\nApplied:\n"
-  printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
+  if [[ $managed -eq 0 ]]; then
+    printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
+  fi
   for task in "${AP_SETUP_TASKS[@]}"; do
     printf "  task: %s\n" "$(ap_setup_task_path "$config_dir" "$task")"
   done

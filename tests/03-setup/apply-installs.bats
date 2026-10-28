@@ -49,8 +49,8 @@ MISE_WRAPPER
   assert_output_contains "bubblewrap"
 
   grep -Fq "sudo pacman -S --noconfirm bubblewrap" "$AP_SPY_LOG"
-  ! grep -Eq "sudo pacman -S --noconfirm (git|bash|python)" "$AP_SPY_LOG"
-  ! grep -Fq "mise use" "$AP_SPY_LOG"
+  run ! grep -Eq "sudo pacman -S --noconfirm (git|bash|python)" "$AP_SPY_LOG"
+  run ! grep -Fq "mise use" "$AP_SPY_LOG"
 }
 
 @test "setup apply: installs a requested missing agent through the mise registry" {
@@ -60,7 +60,7 @@ MISE_WRAPPER
   assert_success
 
   grep -Fq "mise use --global codex@latest" "$AP_SPY_LOG"
-  ! grep -Eq "mise use --global (claude|agy|opencode)@" "$AP_SPY_LOG"
+  run ! grep -Eq "mise use --global (claude|agy|opencode)@" "$AP_SPY_LOG"
 }
 
 @test "setup apply: agents are optional and untouched unless requested" {
@@ -68,7 +68,7 @@ MISE_WRAPPER
 
   run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply
   assert_success
-  ! grep -Fq "mise use" "$AP_SPY_LOG"
+  run ! grep -Fq "mise use" "$AP_SPY_LOG"
 }
 
 @test "setup apply: --tasks-only performs no prerequisite or agent installation" {
@@ -78,6 +78,6 @@ MISE_WRAPPER
   assert_success
   assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles-init"
   assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles"
-  ! grep -Fq "sudo pacman" "$AP_SPY_LOG"
-  ! grep -Fq "mise use" "$AP_SPY_LOG"
+  run ! grep -Fq "sudo pacman" "$AP_SPY_LOG"
+  run ! grep -Fq "mise use" "$AP_SPY_LOG"
 }
