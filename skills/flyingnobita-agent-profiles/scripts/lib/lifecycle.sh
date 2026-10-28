@@ -6,7 +6,7 @@ ap_preview_profile_categories() {
   local prof_dir="$1"
 
   python3 -c '
-import os, sys
+import os, re, sys
 
 prof_dir = os.path.realpath(sys.argv[1])
 
@@ -18,7 +18,43 @@ categories = {
     "other": {"count": 0, "bytes": 0}
 }
 
-cred_names = {"auth.json", "credentials.json", ".credentials.json", "token", "secret", "key"}
+cred_names = {"auth.json", "credentials.json", ".credentials.json", "oauth_creds.json", "plugin-secrets.json"}
+cred_word = re.compile(r"(^|[._-])(credentials?|auth|token|secret)s?([._-]|$)", re.IGNORECASE)
+
+transcript_dirs = (
+    ".claude/projects/",
+    ".claude/sessions/",
+    ".claude/history/",
+    ".codex/sessions/",
+    ".gemini/antigravity-cli/conversations/",
+    ".gemini/antigravity/conversations/",
+    ".local/share/opencode/",
+    ".local/state/opencode/",
+    ".local/share/",
+    ".local/state/",
+)
+transcript_word = re.compile(r"transcript|history|sessions?|conversations?|rollout|chat", re.IGNORECASE)
+transcript_exts = (".jsonl", ".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3", ".pb")
+
+tool_dirs = ("npm-global/", "uv-tools/", "cargo-global/", "python-user/", "bin/", ".cache/")
+settings_exact = {".agent-profile", ".claude.json"}
+settings_exts = (".toml", ".json", ".jsonc", ".yaml", ".yml", ".ini")
+
+
+def classify(rel, name):
+    low = name.lower()
+    if low in cred_names or cred_word.search(name) or "oauth" in low or "plugin-secrets" in low:
+        return "credentials"
+    if rel.startswith(transcript_dirs) or transcript_word.search(rel) or low.endswith(transcript_exts):
+        return "transcripts"
+    if rel in settings_exact or rel.startswith(".config/"):
+        return "settings"
+    if rel.startswith(tool_dirs) or rel.startswith((".npm", ".cargo", ".rustup")):
+        return "tools"
+    if low.endswith(settings_exts) or low in ("config", "settings") or low.startswith(("config.", "settings.")):
+        return "settings"
+    return "other"
+
 
 for root, dirs, files in os.walk(prof_dir):
     for f in files:
@@ -30,17 +66,7 @@ for root, dirs, files in os.walk(prof_dir):
         except OSError:
             continue
 
-        low_f = f.lower()
-        if low_f in cred_names or "auth" in low_f or "token" in low_f or "credential" in low_f or "secret" in low_f:
-            cat = "credentials"
-        elif rel.startswith(".config") or rel == ".agent-profile" or "settings" in rel or "config" in rel:
-            cat = "settings"
-        elif rel.startswith(".local/share") or rel.startswith(".local/state") or "transcript" in rel or "history" in rel or "session" in rel:
-            cat = "transcripts"
-        elif rel.startswith("npm-global") or rel.startswith("uv-tools") or rel.startswith("cargo-global") or rel.startswith("python-user") or rel.startswith("bin") or rel.startswith(".cache"):
-            cat = "tools"
-        else:
-            cat = "other"
+        cat = classify(rel, f)
 
         categories[cat]["count"] += 1
         categories[cat]["bytes"] += size
@@ -56,6 +82,10 @@ for cat_key, label in items:
     cnt = categories[cat_key]["count"]
     sz = categories[cat_key]["bytes"]
     print(f"  {label}: {cnt} file(s), {sz} bytes")
+
+other = categories["other"]
+if other["count"] > 0:
+    print("  Other files: " + str(other["count"]) + " file(s), " + str(other["bytes"]) + " bytes")
 ' "$prof_dir"
 }
 
