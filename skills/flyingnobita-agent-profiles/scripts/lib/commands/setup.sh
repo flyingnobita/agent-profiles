@@ -88,5 +88,5 @@ ap_cmd_setup() {
     return 0
   fi
 
-  ap_die "$EX_USAGE" "setup --apply is not implemented yet (planned for a later slice)"
+  ap_setup_apply_tasks
 }

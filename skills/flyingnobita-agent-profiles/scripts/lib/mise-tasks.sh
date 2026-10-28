@@ -187,3 +187,153 @@ ap_setup_print_detection() {
     fi
   done
 }
+
+ap_setup_version() {
+  local version_file
+  version_file="$(ap_setup_skill_dir)/VERSION"
+  if [[ ! -f "$version_file" ]]; then
+    return 1
+  fi
+  tr -d '[:space:]' <"$version_file"
+}
+
+ap_setup_manifest_content() {
+  local skill_dir="$1"
+  (
+    cd "$skill_dir" || exit 1
+    {
+      find scripts -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+        sha256sum "$file"
+      done
+      sha256sum VERSION
+    }
+  )
+}
+
+ap_setup_release_root() {
+  printf "%s\n" "${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases"
+}
+
+# Copies the installed skill's scripts and VERSION into a versioned release
+# directory and writes a sha256 manifest. Reuses an already valid release so a
+# repeated apply is idempotent. Sets AP_SETUP_RELEASE_DIR, AP_SETUP_VERSION and
+# AP_SETUP_MANIFEST_DIGEST, then prints the release directory.
+ap_setup_deploy_release() {
+  local skill_dir version content digest sha8 root final tmp
+  skill_dir="$(ap_setup_skill_dir)"
+  if ! version="$(ap_setup_version)"; then
+    return 1
+  fi
+  if ! content="$(ap_setup_manifest_content "$skill_dir")" || [[ -z "$content" ]]; then
+    return 1
+  fi
+  digest="$(printf "%s\n" "$content" | sha256sum | cut -d' ' -f1)"
+  sha8="${digest:0:8}"
+  root="$(ap_setup_release_root)"
+  final="$root/$version-$sha8"
+
+  if [[ -d "$final" ]] && (cd "$final" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+    AP_SETUP_RELEASE_DIR="$final"
+    AP_SETUP_VERSION="$version"
+    AP_SETUP_MANIFEST_DIGEST="$digest"
+    printf "%s\n" "$final"
+    return 0
+  fi
+
+  (umask 022 && mkdir -p "$root")
+  tmp="$(mktemp -d "$root/.tmp-XXXXXX")" || return 1
+  mkdir -p "$tmp/scripts"
+  cp -a "$skill_dir/scripts/." "$tmp/scripts/"
+  cp -a "$skill_dir/VERSION" "$tmp/VERSION"
+  printf "%s\n" "$content" >"$tmp/manifest.sha256"
+
+  if ! (cd "$tmp" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  rm -rf "$final"
+  mv "$tmp" "$final"
+
+  AP_SETUP_RELEASE_DIR="$final"
+  AP_SETUP_VERSION="$version"
+  AP_SETUP_MANIFEST_DIGEST="$digest"
+  printf "%s\n" "$final"
+}
+
+ap_setup_task_command() {
+  case "$1" in
+    agent-profiles-init) printf "init\n" ;;
+    agent-profiles) printf "run\n" ;;
+    *) return 1 ;;
+  esac
+}
+
+# shellcheck disable=SC2016
+ap_setup_task_content() {
+  local task="$1"
+  local release="$2"
+  local version="$3"
+  local digest="$4"
+  local subcommand helper
+  subcommand="$(ap_setup_task_command "$task")" || return 1
+  helper="$release/scripts/agent-profiles"
+
+  printf '#!/usr/bin/env bash\n'
+  printf '#MISE dir="{{cwd}}"\n'
+  printf '# managed-by: flyingnobita-agent-profiles %s sha256:%s\n' "$version" "$digest"
+  printf '# release: %s\n' "$release"
+  printf 'helper=%q\n' "$helper"
+  printf 'if [[ ! -f "$helper" ]]; then\n'
+  printf '  echo "agent-profiles: error: helper missing at $helper; rerun agent-profiles setup --apply from the installed skill" >&2\n'
+  printf '  exit 78\n'
+  printf 'fi\n'
+  printf 'exec bash "$helper" %s "$@"\n' "$subcommand"
+}
+
+ap_setup_write_task() {
+  local config_dir="$1"
+  local task="$2"
+  local release="$3"
+  local version="$4"
+  local digest="$5"
+  local target tmp
+  target="$(ap_setup_task_path "$config_dir" "$task")"
+  tmp="$target.tmp.$$"
+  if ! ap_setup_task_content "$task" "$release" "$version" "$digest" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 755 "$tmp"
+  mv "$tmp" "$target"
+}
+
+# Apply the default machine setup: deploy the release and install both global
+# task files. Conflict, backup and managed-config rules are layered on later.
+ap_setup_apply_tasks() {
+  local config_dir
+  config_dir="$(ap_mise_config_dir)"
+
+  if ! command -v mise >/dev/null 2>&1 && [[ -z "${MISE_CONFIG_DIR:-}" ]]; then
+    ap_die "$EX_UNAVAILABLE" "mise is required for global task integration; install mise manually (no curl installation)"
+  fi
+
+  if ! ap_setup_deploy_release >/dev/null; then
+    ap_die "$EX_BROKEN" "failed to deploy the versioned helper release"
+  fi
+
+  (umask 022 && mkdir -p "$config_dir/tasks")
+  local task
+  for task in "${AP_SETUP_TASKS[@]}"; do
+    if ! ap_setup_write_task "$config_dir" "$task" "$AP_SETUP_RELEASE_DIR" \
+      "$AP_SETUP_VERSION" "$AP_SETUP_MANIFEST_DIGEST"; then
+      ap_die "$EX_BROKEN" "failed to write global mise task: $(ap_setup_task_path "$config_dir" "$task")"
+    fi
+  done
+
+  printf "\nApplied:\n"
+  printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
+  for task in "${AP_SETUP_TASKS[@]}"; do
+    printf "  task: %s\n" "$(ap_setup_task_path "$config_dir" "$task")"
+  done
+}
