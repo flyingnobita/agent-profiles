@@ -303,8 +303,15 @@ printf '%s\n' "$STARTUP_ROOT_PID" >"$STARTUP_MARKER"
 chmod 600 "$STARTUP_MARKER"
 
 STARTUP_READY=0
-for _ in $(seq 1 30); do
-  if grep -q 'Choose how you want to use Codex' "$STARTUP_LOG" 2>/dev/null; then
+STARTUP_SANITIZED="$BASE_TMP/codex-startup.sanitized"
+STARTUP_NORMALIZED="$BASE_TMP/codex-startup.normalized"
+for _ in $(seq 1 60); do
+  # Ratatui may render spaces as cursor moves and may bold part of a word, so
+  # strip terminal control sequences before comparing without whitespace.
+  codex_live_sanitize "$STARTUP_LOG" >"$STARTUP_SANITIZED" 2>/dev/null || true
+  tr -d '[:space:]' <"$STARTUP_SANITIZED" >"$STARTUP_NORMALIZED" 2>/dev/null || true
+  if grep -q 'WelcometoCodex' "$STARTUP_NORMALIZED" \
+    && grep -qE 'Signinwith(ChatGPT|DeviceCode)|ProvideyourownAPIkey|UseanOpenAIAPIkey' "$STARTUP_NORMALIZED"; then
     STARTUP_READY=1
     break
   fi
@@ -312,7 +319,7 @@ for _ in $(seq 1 30); do
 done
 
 if [[ "$STARTUP_READY" -eq 1 ]]; then
-  printf 'Startup ready marker found: "Choose how you want to use Codex"\n'
+  printf 'Startup ready marker found: "Welcome to Codex" with a sign-in/onboarding option.\n'
   printf '%s\n' 'Rendered screen (sanitized):'
   codex_live_sanitize "$STARTUP_LOG" | tail -c 4000
   printf '\n'
@@ -660,7 +667,7 @@ summary = {
         "startup": {
             "status": "pass",
             "mode": "TUI in PTY via script -qfc, offline with bwrap --unshare-net",
-            "ready_marker": "Choose how you want to use Codex",
+            "ready_marker": "Welcome to Codex with sign-in/onboarding options",
             "app_server_after": appserver,
             "cleanup": "owned PGID shutdown; no survivors",
         },
