@@ -105,7 +105,7 @@ EOF
   # Run in environment without bwrap
   local no_bwrap_bin="$TEST_TMPDIR/no-bwrap-bin"
   mkdir -p "$no_bwrap_bin"
-  for cmd in bash git python3 mise readlink dirname cat grep sed timeout which uname env rm mkdir touch printf cut tr ls head tail; do
+  for cmd in bash git python3 mise readlink dirname cat grep sed awk timeout which uname env rm mkdir touch printf cut tr ls head tail; do
     p=$(command -v "$cmd" 2>/dev/null || true)
     if [[ -n "$p" ]]; then
       ln -s "$p" "$no_bwrap_bin/$cmd"
