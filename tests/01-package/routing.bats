@@ -135,8 +135,8 @@ teardown() {
   assert_output_contains "doctor"
   assert_output_contains "Planned commands"
 
-  # Calling future command like init must exit 64 and say not yet implemented
-  run bash "$AP_HELPER" init
+  # Calling future command like setup must exit 64 and say not yet implemented
+  run bash "$AP_HELPER" setup
   assert_failure
   assert_equal "$status" 64
   assert_output_contains "not yet implemented"
