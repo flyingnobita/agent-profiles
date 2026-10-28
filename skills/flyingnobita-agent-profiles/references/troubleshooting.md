@@ -13,6 +13,23 @@ Common issues, diagnostic messages, and recovery procedures.
 - **Exit 77 (Refused / legacy layout / interrupted operation)**: Stale operation journals or unmigrated legacy `.agent-sandbox` directories detected. Run `agent-profiles recover` or `agent-profiles migrate`.
 - **Exit 78 (Broken task / deployment)**: Mise task shims point to a missing helper release. Rerun `agent-profiles setup`.
 
+## Process Scan Refusals
+
+When performing destructive lifecycle operations (`reset`, `remove`, `migrate`), the helper scans `/proc` for active processes using the target profile. If active processes are detected:
+
+1. The operation is refused with exit code 75 (`EX_BUSY`).
+2. PIDs and process names are reported.
+3. The helper never kills processes.
+4. Stop the reported processes or wait for them to finish, then rerun the command.
+
+## Missing Bubblewrap or User Namespaces
+
+Profile redirection requires `bubblewrap` and unprivileged user namespaces:
+
+- On Arch Linux / Omarchy: `sudo pacman -S bubblewrap`
+- On Ubuntu / Debian: `sudo apt install bubblewrap`
+- If unprivileged user namespaces are restricted, verify sysctl: `sysctl kernel.unprivileged_userns_clone` or check AppArmor namespace restrictions.
+
 ## Diagnosing Environment Issues
 
 Run the diagnostic command:

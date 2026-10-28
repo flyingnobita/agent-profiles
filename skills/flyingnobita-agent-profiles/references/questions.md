@@ -22,6 +22,14 @@ Profiles do not copy, write, or manage host secrets. Inherited environment crede
 
 When no profile name is explicitly specified via `--profile`, the helper uses `default`. The default profile follows the exact same separation rules and directory structure as any other named profile.
 
+### How do package managers interact with profiles?
+
+Package managers such as `npm`, `cargo`, `uv`, and `pip` write user-installed tools and global binaries to profile-isolated directories under `.agent-profiles/<name>/`. Profile binary directories take precedence on `PATH`. The project's existing repository package managers, lockfiles, and dependencies remain untouched.
+
+### Why are profiles not a substitute for VM or container isolation?
+
+Agent profiles provide directory redirection using `bubblewrap` to separate configuration state and tool installation locations across agent sessions. They do not eliminate the host Linux kernel attack surface, restrict network access by default, or isolate memory. Profiles separate workflows on the developer's machine; they do not contain untrusted code.
+
 ## Operating System Support
 
 ### What platforms are supported?
