@@ -12,7 +12,7 @@ teardown() {
   teardown_isolation
 }
 
-@test "routing: SKILL.md routing table links to valid existing references" {
+@test "guard: SKILL.md routing table links to valid existing references" {
   local skill_md="$AP_SKILL_DIR/SKILL.md"
   assert_file_exists "$skill_md"
 
@@ -29,7 +29,7 @@ teardown() {
   local cases_file="$AP_SUBJECT/tests/routing/cases.tsv"
   assert_file_exists "$cases_file"
 
-  while IFS=$'\t' read -r topic query target_ref required_heading required_term || [[ -n "$topic" ]]; do
+  while IFS=$'\t' read -r topic _query target_ref required_heading required_term || [[ -n "$topic" ]]; do
     [[ "$topic" == "topic" ]] && continue # header
     [[ -z "$topic" ]] && continue
 
@@ -43,10 +43,10 @@ teardown() {
     # Check required term exists in target reference
     run grep -F "$required_term" "$ref_path"
     assert_success
-  done < "$cases_file"
+  done <"$cases_file"
 }
 
-@test "routing: questions.md explicitly covers mandatory domain concepts" {
+@test "guard: questions.md explicitly covers mandatory domain concepts" {
   local q_file="$AP_SKILL_DIR/references/questions.md"
   assert_file_exists "$q_file"
 
@@ -73,7 +73,7 @@ teardown() {
   assert_success
 }
 
-@test "routing: reading a reference causes zero configuration or file changes" {
+@test "guard: reading a reference causes zero configuration or file changes" {
   local fixture_dir="$TEST_TMPDIR/check-tree"
   create_fixture_repo "$fixture_dir"
 
@@ -96,17 +96,49 @@ teardown() {
   assert_equal "$before_status" "$after_status"
 }
 
-@test "routing: progressive disclosure loads 1-hop focused reference per question" {
+@test "guard: progressive disclosure loads 1-hop focused reference per question" {
   local cases_file="$AP_SUBJECT/tests/routing/cases.tsv"
   assert_file_exists "$cases_file"
 
   # Verify every case maps to a single focused reference under references/
-  while IFS=$'\t' read -r topic query target_ref required_heading required_term || [[ -n "$topic" ]]; do
+  while IFS=$'\t' read -r topic _query target_ref _heading _term || [[ -n "$topic" ]]; do
     [[ "$topic" == "topic" ]] && continue
     [[ -z "$topic" ]] && continue
 
     [[ "$target_ref" =~ ^references/[a-zA-Z0-9/_-]+\.md$ ]]
     # Ensure no reference links point back to source code or unnecessary files
     grep -q -E '\.\./scripts' "$AP_SKILL_DIR/$target_ref" 2>/dev/null && return 1 || true
-  done < "$cases_file"
+  done <"$cases_file"
+}
+
+@test "routing: SKILL.md resolves helper relative to skill directory and documents read-only Q&A" {
+  local skill_md="$AP_SKILL_DIR/SKILL.md"
+  assert_file_exists "$skill_md"
+
+  # Must not contain bare ambiguous command 'bash scripts/agent-profiles'
+  run grep -E '^\s*bash scripts/agent-profiles' "$skill_md"
+  assert_failure
+
+  # Must mention resolving relative to skill directory or skill path
+  run grep -Fi "relative to" "$skill_md"
+  assert_success
+
+  # Must document read-only Q&A without mutating repo or config
+  run grep -Fi "without mutating" "$skill_md"
+  assert_success
+}
+
+@test "routing: helper --help distinguishes implemented vs planned future commands and rejects unimplemented with actionable message" {
+  run bash "$AP_HELPER" --help
+  assert_success
+  assert_output_contains "Implemented commands:"
+  assert_output_contains "doctor"
+  assert_output_contains "Planned commands"
+
+  # Calling future command like init must exit 64 and say not yet implemented
+  run bash "$AP_HELPER" init
+  assert_failure
+  assert_equal "$status" 64
+  assert_output_contains "not yet implemented"
+  assert_output_contains "Available commands: doctor"
 }
