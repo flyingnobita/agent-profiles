@@ -82,3 +82,27 @@ teardown() {
   assert_success
   assert_output_contains "demo"
 }
+
+@test "setup apply: a copied installed skill deploys durable tasks that survive its removal" {
+  local installed="$TEST_TMPDIR/installed/skills/flyingnobita-agent-profiles"
+  mkdir -p "$(dirname "$installed")"
+  cp -a "$AP_SKILL_DIR" "$installed"
+
+  run bash "$installed/scripts/agent-profiles" setup --apply
+  assert_success
+
+  local release
+  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  [[ "$release" == "$XDG_DATA_HOME/flyingnobita-agent-profiles/releases/"* ]]
+  [[ "$release" != "$installed"* ]]
+
+  rm -rf "$TEST_TMPDIR/installed"
+
+  local repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run mise run agent-profiles-init -- --profile demo
+  assert_success
+  assert_dir_exists "$repo/.agent-profiles/demo/home"
+}
