@@ -158,3 +158,29 @@ print("PATH_OK")
   assert_success
   assert_output_contains "PATH_OK"
 }
+
+@test "run: installed uv tool in UV_TOOL_BIN_DIR resolves through generic run" {
+  local repo="$TEST_TMPDIR/repo-run-uv-tool"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local prof_dir="$repo/.agent-profiles/default"
+  # Create a fake installed tool executable in UV_TOOL_BIN_DIR
+  mkdir -p "$prof_dir/bin"
+  cat <<'EOF' > "$prof_dir/bin/fake-uv-tool"
+#!/bin/sh
+echo "fake-uv-tool-active"
+EOF
+  chmod +x "$prof_dir/bin/fake-uv-tool"
+
+  run bash "$AP_HELPER" run -- fake-uv-tool
+  assert_success
+  assert_output_contains "fake-uv-tool-active"
+
+  # Verify UV_TOOL_BIN_DIR environment variable is <profile>/bin
+  run bash "$AP_HELPER" run -- sh -c 'echo "UV_BIN=$UV_TOOL_BIN_DIR"'
+  assert_success
+  assert_output_contains "UV_BIN=$prof_dir/bin"
+}

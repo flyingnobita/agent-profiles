@@ -191,3 +191,48 @@ assert "default" in profiles
 assert not any(p.startswith(".") for p in profiles)
 ' "$output"
 }
+
+@test "list: rejects symlinked storage directory with exit 73" {
+  local repo="$TEST_TMPDIR/repo-list-symlink"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local outside_storage="$TEST_TMPDIR/outside_storage"
+  mkdir -p "$outside_storage"
+  rm -rf "$repo/.agent-profiles"
+  ln -s "$outside_storage" "$repo/.agent-profiles"
+
+  run bash "$AP_HELPER" list
+  assert_failure
+  assert_equal "$status" 73
+  assert_output_contains "symbolic link"
+}
+
+@test "list: escapes JSON output and filters unsafe entries" {
+  local repo="$TEST_TMPDIR/repo-list-escape"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile valid-prof
+  assert_success
+
+  # Directly create an entry with characters requiring JSON escaping or filtering
+  local storage="$repo/.agent-profiles"
+  mkdir -p "$storage/invalid space" "$storage/invalid\"quote"
+
+  run bash "$AP_HELPER" list --json
+  assert_success
+
+  # Verify valid JSON parse and only valid profiles listed
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+assert "profiles" in data
+assert "valid-prof" in data["profiles"]
+assert "invalid space" not in data["profiles"]
+assert "invalid\"quote" not in data["profiles"]
+' "$output"
+}
