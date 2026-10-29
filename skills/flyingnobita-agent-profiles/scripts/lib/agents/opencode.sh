@@ -29,6 +29,52 @@ ap_agent_env_opencode() {
   export OPENCODE_CONFIG_DIR="$opencode_dir"
 }
 
+# OpenCode 2.2 starts a detached background service on a fixed host-wide port
+# (49374). Started from a profile it outlives the session, keeps the profile
+# environment and blocks the host's own service on that port. Profile runs
+# therefore get a private --standalone server, inserted right after the binary,
+# for the TUI and for each command that accepts the flag in OpenCode 2.2. Other
+# commands reject it and run unchanged, as does a command line that already
+# chooses --standalone or --server.
+ap_agent_args_opencode() {
+  local arg skip_value=0
+  local -a words=()
+
+  for arg in "${@:2}"; do
+    if [[ "$skip_value" -eq 1 ]]; then
+      skip_value=0
+      continue
+    fi
+    case "$arg" in
+      --standalone | --server | --server=*)
+        return 0
+        ;;
+      --log-level | --session | -s | --prompt | --completions)
+        skip_value=1
+        ;;
+      -*) ;;
+      *)
+        words+=("$arg")
+        ;;
+    esac
+  done
+
+  case "${words[0]:-} ${words[1]:-}" in
+    "run "* | "mini "* | "api "* | "auth "* | "models "* | "session "* | "stats "* | "reload "*) ;;
+    "mcp list" | "mcp auth" | "mcp logout") ;;
+    "debug agents" | "debug config") ;;
+    "plugin list" | "plugin check" | "plugin update") ;;
+    "mcp "* | "debug "* | "plugin "*)
+      return 0
+      ;;
+    "acp "* | "service "* | "serve "* | "upgrade "* | "update "* | "uninstall "* | "pair "*)
+      return 0
+      ;;
+  esac
+
+  AP_COMMAND=("$1" --standalone "${@:2}")
+}
+
 # Reports whether the shared OpenCode background-service port is listening. The
 # default port is fixed by the installed CLI, so a listener there belongs to a
 # host-wide service outside any profile. Read-only: /proc/net is inspected and no

@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 10:24 PM +08:00 - Run OpenCode in profiles with a private `--standalone` server wherever the command accepts it, so a profile session no longer leaves a background service on the shared port that blocks the host's own OpenCode
+
 - Oct-29, 2026 - 03:50 PM +08:00 - Preserve the nine completed Linux delivery specifications in a tracked archive with integration references and remove their untracked scratch copies
 
 - Oct-29, 2026 - 03:38 PM +08:00 - Configure GitHub Issues as the canonical tracker, migrate six remaining follow-ups, and add agent, triage and domain guidance

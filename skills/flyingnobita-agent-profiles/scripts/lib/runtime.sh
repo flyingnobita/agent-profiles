@@ -412,6 +412,19 @@ ap_prepare_profile_env() {
   done
 }
 
+# Sets AP_COMMAND to the command line run executes. An agent module may adjust
+# its own command line through ap_agent_args_<binary>; every other command is
+# forwarded verbatim. Requires the modules sourced by ap_prepare_profile_env.
+ap_agent_command() {
+  AP_COMMAND=("$@")
+
+  local name="${1##*/}"
+  local hook="ap_agent_args_$name"
+  if [[ "$name" =~ ^[a-z]+$ ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" "$@"
+  fi
+}
+
 ap_check_bwrap_readiness() {
   if [[ "$(uname -s)" != "Linux" ]]; then
     ap_die "$EX_UNAVAILABLE" "operating system '$(uname -s)' is not qualified (Linux is required)"

@@ -71,8 +71,9 @@ ap_cmd_run() {
 
     # Rebuild deduped environment from preserved base path
     ap_prepare_profile_env "$repo_root" "$profile"
+    ap_agent_command "$@"
 
-    exec "$@"
+    exec "${AP_COMMAND[@]}"
   fi
 
   ap_ensure_locks_dir "$repo_root"
@@ -96,6 +97,7 @@ ap_cmd_run() {
 
   ap_prepare_profile_env "$repo_root" "$profile"
   ap_build_bwrap_mounts "$repo_root" "$profile"
+  ap_agent_command "$@"
 
-  exec bwrap --dev-bind / / "${BWRAP_MOUNT_ARGS[@]}" --die-with-parent -- "$@"
+  exec bwrap --dev-bind / / "${BWRAP_MOUNT_ARGS[@]}" --die-with-parent -- "${AP_COMMAND[@]}"
 }
