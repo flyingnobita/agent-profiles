@@ -9,19 +9,25 @@ credential use, new platform work or release publication is authorized by a row.
 
 - All nine implementation tickets and all ten retrospective improvements are
   implemented in source.
-- Source publication is verified at `dea1c24` on `main`.
+- Source publication is verified at `7d291f8` on `main`.
 - [Hosted CI](https://github.com/flyingnobita/agent-profiles/actions/runs/40825706875)
   passed 332 tests, lint, both clean-install modes and release artifact validation.
 - The 12 delivery worktrees and owned worker workspaces and 13 merged local
   branches were removed. Original issue inputs, private evidence and the current
   verified artifact are retained.
 
+- F2 completed October 29, 2026: delivery-tooling source `0312f96` matches
+  freshly fetched `origin/main` on North-Omarchy, MBP-M4, Lifebook, IdeaPad,
+  XPS, ThinkPad and Raspberry Pi 5. Both complete Deliver and Retro skill
+  directories passed independent `chezmoi verify` on all seven hosts with no
+  target drift. Live files already matched; no apply or scripts were needed.
+  Unrelated local dotfiles edits were preserved.
+
 ## Follow-ups awaiting a decision or verification
 
 | ID | Item | Status and next trigger | Completion evidence |
 | --- | --- | --- | --- |
 | F1 | Real-machine skill installation and setup | Unverified here; choose a target and authorize installation | Preview, installed skill discovery/version, deployment doctor, two tasks and a disposable profile run verified on the chosen host |
-| F2 | Fleet deployment of delivery-skill improvements | Fleet-wide state unverified here; inspect the dotfiles deployment register and target sources before authorizing any apply | Per-host source/deployed equality and relevant checks; record exclusions or unreachable hosts explicitly |
 | F3 | Effectiveness of retrospective fixes | Implemented, awaiting a subsequent delivery | Evaluate the existing private retro ledger's measures against a new run, marking held or regressed without rewriting this run's evidence |
 | F4 | Separate `rapid-cloud` worktree | Intentionally retained; establish ownership and whether it is still needed | Owner confirms disposal; then verify clean state, landed commits and no active work before removal |
 
