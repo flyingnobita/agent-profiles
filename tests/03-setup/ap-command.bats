@@ -110,6 +110,20 @@ ap() {
   assert_output_contains "name=demo"
 }
 
+@test "ap: migrate, recover and --version reach the helper" {
+  run ap --version
+  assert_success
+  assert_output_equals "$(tr -d '[:space:]' <"$AP_SKILL_DIR/VERSION")"
+
+  run ap migrate
+  assert_success
+  assert_output_contains "No legacy profile storage"
+
+  run ap recover
+  assert_success
+  assert_output_contains "No interrupted operations"
+}
+
 @test "ap: no arguments prints usage" {
   run ap
   assert_failure 64

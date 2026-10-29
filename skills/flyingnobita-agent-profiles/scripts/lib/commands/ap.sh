@@ -16,6 +16,8 @@ Usage:
   mise ap rm NAME [--yes]            Remove profile NAME (preview until --yes)
   mise ap reset NAME [--yes]         Recreate profile NAME empty (preview until --yes)
   mise ap doctor [OPTIONS]           Diagnose the machine and agent integrations
+  mise ap migrate | recover [--yes]  Convert legacy storage, finish an interrupted operation
+  mise ap --version                  Print the helper version
 
 A missing profile is offered for creation in a terminal; elsewhere pass --create.
 EOF
@@ -73,8 +75,8 @@ ap_cmd_ap() {
       [[ "$cmd" == "rm" ]] && cmd="remove"
       exec bash "$SCRIPT_DIR/agent-profiles" "$cmd" --profile "$2" "${@:3}"
       ;;
-    doctor)
-      exec bash "$SCRIPT_DIR/agent-profiles" doctor "${@:2}"
+    doctor | migrate | recover | -v | --version)
+      exec bash "$SCRIPT_DIR/agent-profiles" "$@"
       ;;
     --profile | --profile=*)
       # The previous `agent-profiles` task took run's own options.

@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-30, 2026 - 12:55 AM +08:00 - `mise ap` also forwards `migrate`, `recover` and `--version` to the helper, so only machine setup still needs the helper's installed path
+
 - Oct-30, 2026 - 12:53 AM +08:00 - The README introduces the `ap` alias right after setup, in both Quick start and Install, and uses `ap` in the usage table and everything after it
 
 - Oct-30, 2026 - 12:51 AM +08:00 - The README uses the short `ap` alias after introducing it, keeping the installed helper only for first-time setup, redeploying after an update, `migrate` and `recover`
