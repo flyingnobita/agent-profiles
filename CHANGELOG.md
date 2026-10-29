@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-30, 2026 - 12:53 AM +08:00 - The README introduces the `ap` alias right after setup, in both Quick start and Install, and uses `ap` in the usage table and everything after it
+
 - Oct-30, 2026 - 12:51 AM +08:00 - The README uses the short `ap` alias after introducing it, keeping the installed helper only for first-time setup, redeploying after an update, `migrate` and `recover`
 
 - Oct-30, 2026 - 12:08 AM +08:00 - Announce in the README that the skill will be renamed to `agent-profiles`, dropping the `flyingnobita-` prefix, before it is published to the public registry

@@ -67,34 +67,34 @@ AP_HELPER="$HOME/.agents/skills/flyingnobita-agent-profiles/scripts/agent-profil
 bash "$AP_HELPER" setup --preview
 bash "$AP_HELPER" setup --apply
 
-# 3. In any Git checkout, run an agent in a profile
+# 3. Shorten `mise ap` to `ap` (add this to ~/.zshrc or ~/.bashrc)
+alias ap='mise ap'
+
+# 4. In any Git checkout, run an agent in a profile
 cd my-project
-mise ap demo claude      # asks to create "demo" the first time, then starts Claude
+ap demo claude      # asks to create "demo" the first time, then starts Claude
 ```
 
-Log in inside the profile as you normally would; the helper never copies, links
-or rewrites your host credential files.
+The rest of this README uses `ap`; without the alias, type `mise ap`. Log in
+inside the profile as you normally would; the helper never copies, links or
+rewrites your host credential files.
 
 ## Usage
 
 | Command | Does |
 | --- | --- |
-| `mise ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`) or any command in profile `NAME` |
-| `mise ap NAME` | Open your shell inside the profile; `exit` to leave |
-| `mise ap new NAME` | Create a profile without running anything |
-| `mise ap ls` | List the profiles in this checkout |
-| `mise ap rm NAME [--yes]` | Remove a profile (preview until `--yes`) |
-| `mise ap reset NAME [--yes]` | Recreate a profile empty (preview until `--yes`) |
-| `mise ap doctor` | Check the machine, the task and the agent integrations |
+| `ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`) or any command in profile `NAME` |
+| `ap NAME` | Open your shell inside the profile; `exit` to leave |
+| `ap new NAME` | Create a profile without running anything |
+| `ap ls` | List the profiles in this checkout |
+| `ap rm NAME [--yes]` | Remove a profile (preview until `--yes`) |
+| `ap reset NAME [--yes]` | Recreate a profile empty (preview until `--yes`) |
+| `ap doctor` | Check the machine, the task and the agent integrations |
 
 Everything after the agent name is forwarded unchanged
-(`mise ap demo claude --resume`). A missing profile is offered for creation in a
-terminal; scripts pass `--create` (`mise ap --create demo codex`) so a typo
-never creates a stray profile.
-
-> [!TIP]
-> Add `alias ap='mise ap'` to your shell to type `ap demo claude`. The rest of
-> this README uses `ap`; without the alias, type `mise ap`.
+(`ap demo claude --resume`). A missing profile is offered for creation in a
+terminal; scripts pass `--create` (`ap --create demo codex`) so a typo never
+creates a stray profile.
 
 ### Skills and tools inside a profile
 
@@ -187,19 +187,24 @@ npx skills add /path/to/flyingnobita-agent-profiles \
 
 The installed helper needs nothing outside its own directory, so it keeps
 working after the source checkout is gone. `npx skills list` shows where it was
-installed. Until setup has installed `ap`, call the helper by that path:
+installed.
+
+### Set up the machine and the `ap` alias
+
+Setup creates the `mise ap` task, so it is the one step that calls the helper
+by its installed path:
 
 ```bash
 AP_HELPER="<installed-skill-dir>/scripts/agent-profiles"
-bash "$AP_HELPER" --version
-bash "$AP_HELPER" doctor
-```
-
-### Set up the machine
-
-```bash
 bash "$AP_HELPER" setup --preview   # read-only plan
 bash "$AP_HELPER" setup --apply     # deploy
+```
+
+Then add the alias to `~/.zshrc` or `~/.bashrc` and check the result:
+
+```bash
+alias ap='mise ap'
+ap doctor
 ```
 
 `--apply` copies the helper to a versioned release under
