@@ -71,11 +71,14 @@ when agent commands would otherwise initialize it.
 On October 29, 2026 the user authorized Pi for all new implementers and
 handoffs of tickets 04, 05, and 08 from quota-blocked Antigravity sessions.
 The effective default is `deepseek/deepseek-flash` with high thinking.
-The original worktrees, partial changes, reports, and independent evidence
-remain preserved. All tickets 01-09 are independently verified and integrated.
+The original partial work, reports and independent evidence were preserved through
+integration. After publication, completed delivery worktrees and merged branches
+were removed with ownership and ancestry checks. All tickets 01-09 are
+independently verified and integrated.
 The integration gate at `2bd6013` passed 332 tests with no skips, lint, and both
-clean-install modes. Later closeout commits change documentation only; the runtime
-and test trees are identical to the qualified code. Local v0.1.0 artifacts,
+clean-install modes. The initial closeout commits changed documentation only;
+subsequent CI portability fixes changed test fixtures, with all 332 tests passing
+again on GitHub at `dea1c24`. The product runtime remains unchanged. Local v0.1.0 artifacts,
 checksums and release notes are retained.
 
 ## Whole-branch verification
@@ -106,8 +109,9 @@ interval is not claimed. Credential contents were never read out or copied.
 ## Local delivery complete
 
 All nine tickets, independent verification, review, QA, documentation and local
-artifact preparation are complete. The retained branch is `deliver/agent-profiles`.
-The original issue inputs and local worktrees remain available for inspection.
+artifact preparation are complete. The published branch is `main`.
+The original issue inputs and private evidence remain available for inspection;
+completed delivery branches and worktrees were removed after publication.
 Sanitized final evidence is in [the final Linux QA summary](../evidence/linux-2026-10-29.md).
 
 Live model responses and model-driven skill invocation remain credential-dependent
@@ -118,8 +122,28 @@ public release or deployment had occurred.
 
 The user subsequently authorized source publication to
 <https://github.com/flyingnobita/agent-profiles>. The published `main` was verified
-at `ea19dae`; repository-source installation in copy mode then passed in a
-disposable home. A GitHub Actions workflow and updated publication guidance are
-prepared on `retro/delivery-improvements`; hosted CI remains unverified until
-the workflow is pushed and runs. Tagged releases and real-host deployment remain
-separate actions.
+initially at `ea19dae`; repository-source installation in copy mode then passed
+in a disposable home. Subsequent CI and documentation updates reached `main` at
+`dea1c24`. [GitHub Actions run 40825706875](https://github.com/flyingnobita/agent-profiles/actions/runs/40825706875)
+passed all 332 tests, lint, both clean-install modes and release artifact checks.
+The runner installs bubblewrap and probes namespaces before verification. The
+two fixture portability failures from the first full hosted run were corrected
+without changing product behavior; the earlier failures remain in the CI history.
+
+All ten retrospective improvements were implemented in source. Their next-run
+effectiveness remains to be observed; the private retro ledger retains measures
+and commit references. This does not establish fleet-wide deployment.
+
+## Housekeeping complete
+
+- Removed 12 completed delivery worktrees and their owned worker workspaces.
+- Deleted 13 merged local branches after checking ancestry against published main.
+- Confirmed no processes remained with a removed delivery worktree as their cwd.
+- Retained private evidence, CI logs, duplicate artifact receipts and original
+  issue inputs; rebuilt and verified the current artifact in the main checkout.
+- Preserved the separate `rapid-cloud` worktree because its ownership was outside
+  the delivery cleanup evidence.
+
+Current follow-ups and their completion criteria are in
+[outstanding.md](outstanding.md). Tagged releases and real-host installation
+remain separate actions; no such completion is inferred from source publication.

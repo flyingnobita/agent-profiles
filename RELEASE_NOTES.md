@@ -71,8 +71,9 @@ OpenCode model commands).
 
 ## Known Limits
 
-- Hosted CI execution is pending publication of the workflow; local checks
-  remain available through mise.
+- Hosted CI passed at `dea1c24`: 332 tests, lint, both clean-install modes and
+  release artifact checks. See [the verified run](https://github.com/flyingnobita/agent-profiles/actions/runs/40825706875).
+  Current follow-ups are listed in [outstanding.md](docs/agents/outstanding.md).
 - The Antigravity CLI read of the repository/workspace `.agents` customization
   root is unqualified because it happens in an authenticated conversation.
 - OpenCode's background service uses a host-wide default port (49374) and a

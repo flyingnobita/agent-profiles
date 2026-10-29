@@ -323,6 +323,10 @@ results separate.
 
 ## Documentation
 
+For current delivery status, cleanup and deferred work, see the
+[delivery tracker](docs/agents/delivery-progress.md) and
+[outstanding follow-ups](docs/agents/outstanding.md).
+
 | Topic | Reference |
 | --- | --- |
 | Concepts, credentials, FAQ | [questions.md](skills/flyingnobita-agent-profiles/references/questions.md) |
