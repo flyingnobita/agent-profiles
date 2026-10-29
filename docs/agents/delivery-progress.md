@@ -56,7 +56,7 @@ Only the orchestrator updates this table. Completion requires verified integrati
 | 06 | Antigravity CLI integration | 02 | Verified and integrated | `e59a7ee` |
 | 07 | OpenCode integration | 02 | Verified and integrated | `bea878c` |
 | 08 | Lifecycle and migration | 02 | Verified and integrated | `8566f03` |
-| 09 | Public Linux release readiness | 03-08 | Verified and integrated | `d95d832` |
+| 09 | Public Linux release readiness | 03-08 | Verified and integrated | `3503944` |
 
 ## Ownership
 
@@ -73,16 +73,43 @@ handoffs of tickets 04, 05, and 08 from quota-blocked Antigravity sessions.
 The effective default is `deepseek/deepseek-flash` with high thinking.
 The original worktrees, partial changes, reports, and independent evidence
 remain preserved. All tickets 01-09 are independently verified and integrated.
-The integration gate at `d95d832` passed 298 tests with no skips, lint, and both
-clean-install modes. Local v0.1.0 artifacts, checksums and release notes are retained.
+The integration gate at `2bd6013` passed 332 tests with no skips, lint, and both
+clean-install modes. Later closeout commits change documentation only; the runtime
+and test trees are identical to the qualified code. Local v0.1.0 artifacts,
+checksums and release notes are retained.
 
 ## Whole-branch verification
 
-Whole-branch Standards and Spec review found lifecycle, setup and diagnostic gaps
-within the approved scope. One Pi implementer is repairing them test-first before
-focused review and a full Spec recheck against the original baseline.
+Three rounds of independent Standards and Spec review resolved all must-fix
+findings. The final code review is clean at `2bd6013`; documentation closeout is
+also independently reviewed. Genuine red checks, corrected fixtures, maintenance
+guards and initial failed QA probes remain distinguished in the retained evidence.
 
-Final QA remains pending. It must independently exercise setup installing a missing
-prerequisite through the real package-manager path in the approved Arch and Ubuntu
-containers, verify the four installed CLIs offline, and audit persistent host state
-and cleanup. Local delivery is complete only after review repairs and QA pass.
+Final QA is accepted. Actual offline startup, discovery and authentication
+diagnostics passed for all four supported CLIs. Codex enforcement checks proved
+controlled write denial. Claude qualified a background-session shell-mode `!`
+command with strict sandbox settings; foreground/manual shell-mode was not
+qualified. Profiles are not a security sandbox. Model-dependent checks remain
+explicitly unverified. Arch and Ubuntu containers installed genuinely missing
+prerequisites through pacman and apt-get and deployed the helper and both task
+shims idempotently. The init task ran successfully; the run task delegates to
+helper `run`, which truthfully returns namespace restriction exit 69 in default
+Docker. Full profile execution in default Docker is not qualified. Test-owned containers, images, networks,
+processes and temporary directories were removed; original Docker inventories match.
+
+A fresh controlled audit preserved hashes and metadata for 211 selected persistent
+settings, configuration, credential and mise paths. A configuration-file content
+change during an earlier paused interval remains unattributed. The user accepted
+the current Codex file as-is; it was preserved, and equality across that earlier
+interval is not claimed. Credential contents were never read out or copied.
+
+## Local delivery complete
+
+All nine tickets, independent verification, review, QA, documentation and local
+artifact preparation are complete. The retained branch is `deliver/agent-profiles`.
+The original issue inputs and local worktrees remain available for inspection.
+Sanitized final evidence is in [the final Linux QA summary](../evidence/linux-2026-10-29.md).
+
+Live model responses and model-driven skill invocation remain credential-dependent
+gaps; macOS is unqualified. Repository-source installation and publication remain
+separate future work. No remote, push, PR, tag, public release or deployment occurred.
