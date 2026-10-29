@@ -46,9 +46,16 @@ expecting containment.
 
 ## Evidence
 
-Sanitized Linux evidence is published in `docs/evidence/linux-2026-10-28.md`,
+Sanitized Linux evidence is published in `docs/evidence/linux-2026-10-29.md`
+(final QA) and `docs/evidence/linux-2026-10-28.md` (historical offline evidence),
 with version, startup, discovery, authentication and sandbox results kept
 separate. Raw QA logs stay private.
+
+Final QA installed genuinely missing prerequisites with `setup --apply` in
+`archlinux:latest` and `ubuntu:24.04`, verified idempotent deployment and both
+global tasks, and confirmed the truthful exit-69 refusal under default Docker
+namespace restrictions. Full profile execution inside default Docker, and
+equality across the original paused QA interval, are not claimed.
 
 Credential-dependent gaps are recorded, not claimed: live model responses,
 model-driven skill invocation, and command execution or sandbox denials that
@@ -64,6 +71,13 @@ OpenCode model commands).
 - OpenCode's background service uses a host-wide default port (49374) and a
   shared temporary directory (`/tmp/opencode`); profiles do not redirect either.
 - macOS support is deferred and this release contains no Darwin implementation.
+- Default Docker containers usually restrict unprivileged user namespaces; there
+  `run` exits 69 with the cause instead of falling back, so full profile
+  execution inside such a container is not qualified.
+- A fresh controlled audit found 211 selected persistent host configuration paths
+  equal around a Codex QA run. An earlier unattributed configuration-file content
+  change in the Codex config was accepted as-is by the user: the current file is
+  preserved with no restore, and no whole-interval equality is claimed.
 
 ## Artifact Contents
 
