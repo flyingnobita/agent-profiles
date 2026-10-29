@@ -93,15 +93,16 @@ terminal; scripts pass `--create` (`mise ap --create demo codex`) so a typo
 never creates a stray profile.
 
 > [!TIP]
-> Add `alias ap='mise ap'` to your shell to type `ap demo claude`.
+> Add `alias ap='mise ap'` to your shell to type `ap demo claude`. The rest of
+> this README uses `ap`; without the alias, type `mise ap`.
 
 ### Skills and tools inside a profile
 
 Install them the usual way, but from inside the profile:
 
 ```bash
-mise ap demo npx skills add owner/repo --skill NAME -g -y --agent claude-code codex
-mise ap demo npm install -g some-cli
+ap demo npx skills add owner/repo --skill NAME -g -y --agent claude-code codex
+ap demo npm install -g some-cli
 ```
 
 | Install | Lands in | Seen by |
@@ -115,7 +116,7 @@ experimental or account-specific setup.
 
 ### Show the active profile in your prompt
 
-`mise ap NAME` without a command leaves you in a profile shell, where even a
+`ap NAME` without a command leaves you in a profile shell, where even a
 plain `claude` runs in the profile. Every profile process exports
 `AGENT_PROFILES_NAME`, so your prompt can say so:
 
@@ -186,7 +187,7 @@ npx skills add /path/to/flyingnobita-agent-profiles \
 
 The installed helper needs nothing outside its own directory, so it keeps
 working after the source checkout is gone. `npx skills list` shows where it was
-installed; the examples here use that path as `$AP_HELPER`:
+installed. Until setup has installed `ap`, call the helper by that path:
 
 ```bash
 AP_HELPER="<installed-skill-dir>/scripts/agent-profiles"
@@ -222,11 +223,12 @@ Details: [machine-setup.md](skills/flyingnobita-agent-profiles/references/machin
 ```bash
 npx skills update flyingnobita-agent-profiles -g -y   # refresh the installed skill
 bash "$AP_HELPER" setup --apply                       # redeploy the release and task
-bash "$AP_HELPER" doctor                              # confirm it is current
+ap doctor                                             # confirm it is current
 ```
 
-After a skill update `doctor` reports the task as `stale` until setup runs
-again. A previous release is kept until the new one is verified.
+Run setup through the installed helper, not `ap`: `ap` runs the deployed
+release, so it would redeploy the old version. After a skill update `doctor`
+reports the task as `stale` until setup runs again. A previous release is kept until the new one is verified.
 
 ## Remove
 
@@ -234,9 +236,9 @@ Remove profiles first, while the helper still exists, then uninstall:
 
 ```bash
 # 1. Remove each profile (preview, then confirm) and check what is left.
-mise ap rm demo
-mise ap rm demo --yes
-bash "$AP_HELPER" doctor
+ap rm demo
+ap rm demo --yes
+ap doctor
 
 # 2. Uninstall the skill. The helper is gone after this step.
 npx skills remove -g -y --skill flyingnobita-agent-profiles
@@ -264,15 +266,14 @@ are kept until you delete them.
 
 ## Maintenance
 
-The `mise ap` shortcuts cover daily use. The full helper also exposes:
-
 ```bash
-bash "$AP_HELPER" doctor --json                    # machine-readable diagnostics
-bash "$AP_HELPER" doctor --agent claude --profile demo
-bash "$AP_HELPER" run --profile demo -- claude     # long form of `mise ap demo claude`
-bash "$AP_HELPER" migrate                          # preview: convert legacy storage
-bash "$AP_HELPER" recover --yes                    # finish an interrupted operation
+ap doctor --json                         # machine-readable diagnostics
+ap doctor --agent claude --profile demo  # one agent in one profile
+bash "$AP_HELPER" migrate                # preview: convert legacy storage
+bash "$AP_HELPER" recover --yes          # finish an interrupted operation
 ```
+
+`migrate` and `recover` have no `ap` shortcut, so they use the installed helper.
 
 - Reset, remove and migrate are previews until `--yes`. They refuse a profile
   that is in use (exit 75) and never kill processes, so run them from a normal

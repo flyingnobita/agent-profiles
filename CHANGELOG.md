@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-30, 2026 - 12:51 AM +08:00 - The README uses the short `ap` alias after introducing it, keeping the installed helper only for first-time setup, redeploying after an update, `migrate` and `recover`
+
 - Oct-30, 2026 - 12:08 AM +08:00 - Announce in the README that the skill will be renamed to `agent-profiles`, dropping the `flyingnobita-` prefix, before it is published to the public registry
 
 - Oct-29, 2026 - 11:42 PM +08:00 - Rewrite the README around what a profile isolates and the `mise ap` workflow, with quick start, usage, skill and tool scopes, prompt setup and condensed install, maintenance and security sections
