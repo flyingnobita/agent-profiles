@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 03:38 PM +08:00 - Configure GitHub Issues as the canonical tracker, migrate six remaining follow-ups, and add agent, triage and domain guidance
+
 - Oct-29, 2026 - 02:46 PM +08:00 - Record independent seven-host verification of the published Deliver and Retro skills and close fleet follow-up F2
 
 - Oct-29, 2026 - 02:21 PM +08:00 - Refresh verified publication, hosted CI and cleanup status, and consolidate remaining deployment, validation and optional-scope follow-ups
