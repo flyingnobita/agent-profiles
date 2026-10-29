@@ -260,8 +260,13 @@ startup, discovery, authentication or sandboxing work. See
 
 | Platform | Status | Notes |
 | --- | --- | --- |
-| Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces |
+| Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces; host and prerequisite-install QA passed |
 | macOS | Not qualified | Deferred; unverified, no bubblewrap redirection layer |
+
+In default Docker containers, unprivileged user namespaces are usually
+restricted. There, `setup`, the global tasks and `doctor` work, but `run` exits
+69 with the cause; full profile execution inside such a container is not
+qualified.
 
 ## Security and Shared Host Resources
 
@@ -289,11 +294,23 @@ that, use a VM or a container with its own credentials and network policy.
 ## Evidence
 
 Sanitized Linux evidence for this release is published in
-[`docs/evidence/linux-2026-10-28.md`](docs/evidence/linux-2026-10-28.md). It keeps
-version, startup, discovery, authentication and sandbox results separate.
+[the final QA summary](docs/evidence/linux-2026-10-29.md), with the earlier
+[offline evidence](docs/evidence/linux-2026-10-28.md) retained as historical
+context. Both keep version, startup, discovery, authentication and sandbox
+results separate.
 
+- Final QA installed genuinely missing prerequisites with `setup --apply` in
+  `archlinux:latest` and `ubuntu:24.04`, verified idempotent deployment and both
+  global tasks, and confirmed the truthful exit-69 refusal where default Docker
+  namespace restrictions apply. Full profile execution inside default Docker is
+  not claimed.
 - Offline checks enforce write denial for Claude Code and Codex CLI sandbox
-  modes, and verify profile-scoped skill discovery for all four CLIs.
+  modes, and verify profile-scoped skill discovery for all four CLIs. Claude
+  enforcement was independently reproduced in a background shell-mode command.
+- A fresh controlled audit compared 211 selected persistent configuration paths
+  around a Codex QA run and found them equal without reading credential values.
+  An earlier unattributed Codex setting change was accepted by the user as-is, so
+  equality across that original interval is not claimed.
 - Model responses, model-driven skill invocation and command execution that
   requires an authenticated model turn are **credential-dependent gaps** for this
   release. No credentialed model calls were run and none are claimed.
