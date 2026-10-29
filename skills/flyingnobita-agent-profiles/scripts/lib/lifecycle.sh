@@ -169,13 +169,28 @@ data = {
 }
 data.update(extra)
 
-tmp_file = journal_file + ".tmp"
-with open(tmp_file, "w") as handle:
-    json.dump(data, handle, indent=2)
-    handle.flush()
-    os.fsync(handle.fileno())
-os.chmod(tmp_file, 0o600)
-os.replace(tmp_file, journal_file)
+# Create a private, uniquely named temporary file in the tool-owned journal
+# directory. A pre-existing fixed-name path (for example a planted symlink) is
+# never opened or followed.
+import tempfile
+
+journal_dir = os.path.dirname(journal_file) or "."
+fd, tmp_file = tempfile.mkstemp(
+    prefix=os.path.basename(journal_file) + ".", suffix=".tmp", dir=journal_dir
+)
+try:
+    with os.fdopen(fd, "w") as handle:
+        json.dump(data, handle, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(tmp_file, 0o600)
+    os.replace(tmp_file, journal_file)
+except BaseException:
+    try:
+        os.unlink(tmp_file)
+    except OSError:
+        pass
+    raise
 
 dir_fd = os.open(os.path.dirname(journal_file) or ".", os.O_RDONLY)
 try:
@@ -210,8 +225,11 @@ ap_read_journal_fields() {
   python3 - "$journal_file" <<'PY'
 import json, sys
 
-with open(sys.argv[1], "r") as handle:
-    data = json.load(handle)
+try:
+    with open(sys.argv[1], "r") as handle:
+        data = json.load(handle)
+except Exception:
+    sys.exit(2)
 
 fields = [
     str(data.get("op", "")),

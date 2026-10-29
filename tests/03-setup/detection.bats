@@ -166,9 +166,13 @@ teardown() {
   local before
   before=$(snapshot_tree "$TEST_TMPDIR/dotfiles" "$TEST_TMPDIR/prepared")
 
-  run bash "$AP_HELPER" setup --preview --agent codex --prepare-dir "$TEST_TMPDIR/prepared"
+  local bin="$TEST_TMPDIR/no-agents-bin"
+  make_restricted_bin "$bin" codex claude agy opencode
+
+  run env PATH="$bin" bash "$AP_HELPER" setup --preview --agent codex --prepare-dir "$TEST_TMPDIR/prepared"
   assert_success
-  assert_output_contains "release: skipped"
+  assert_output_contains "release: "
+  assert_output_not_contains "release: skipped"
   assert_output_contains "prepared/tasks/agent-profiles-init"
   assert_output_contains "prepared/INSTRUCTIONS.md"
   assert_output_contains "prepared/mise/config.toml.fragment"
@@ -177,4 +181,20 @@ teardown() {
   local after
   after=$(snapshot_tree "$TEST_TMPDIR/dotfiles" "$TEST_TMPDIR/prepared")
   assert_equal "$before" "$after"
+}
+
+@test "setup preview: managed config with an installed agent does not promise a fragment" {
+  local bin="$TEST_TMPDIR/fake-bin"
+  write_fake_agent "$bin/codex" "9.9.9"
+  mkdir -p "$TEST_TMPDIR/work" "$TEST_TMPDIR/dotfiles/mise"
+  cd "$TEST_TMPDIR/work" || exit 1
+  printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/mise/config.toml"
+  rm -rf "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
+
+  run env PATH="$bin:$PATH" bash "$AP_HELPER" setup --preview --agent codex \
+    --prepare-dir "$TEST_TMPDIR/prepared"
+  assert_success
+  assert_output_contains "agent: codex (already available at"
+  assert_output_not_contains "config.toml.fragment"
 }

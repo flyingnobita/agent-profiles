@@ -184,3 +184,39 @@ MISE_WRAPPER
   [[ "$(printf '%s\n' "$backups" | grep -c .)" -eq 1 ]]
   assert_equal "$original" "$(sha256sum "$backups" | cut -d' ' -f1)"
 }
+
+@test "setup apply: repeated managed installs with an arbitrary prepare dir stay byte-identical" {
+  build_install_env
+
+  mkdir -p "$TEST_TMPDIR/dotfiles/mise"
+  printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/mise/config.toml"
+  rmdir "$MISE_CONFIG_DIR"
+  ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
+  local config_hash_before
+  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)
+
+  # Arbitrary prepare directory name, including spaces and multiple agents.
+  local prepare="$TEST_TMPDIR/prepared dir with spaces"
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply \
+    --agent codex --agent claude --prepare-dir "$prepare"
+  assert_success
+
+  local snapshot_first
+  snapshot_first=$(snapshot_tree "$prepare")
+  assert_file_exists "$prepare/mise/config.toml.fragment"
+  assert_file_exists "$prepare/INSTRUCTIONS.md"
+  [[ "$(grep -c '^## Managed global mise configuration$' "$prepare/INSTRUCTIONS.md")" -eq 1 ]]
+  [[ "$(grep -c '^codex = "latest"$' "$prepare/mise/config.toml.fragment")" -eq 1 ]]
+  [[ "$(grep -c '^claude = "latest"$' "$prepare/mise/config.toml.fragment")" -eq 1 ]]
+
+  # A repeated run with the same arguments adds nothing and changes nothing.
+  run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply \
+    --agent codex --agent claude --prepare-dir "$prepare"
+  assert_success
+  assert_equal "$snapshot_first" "$(snapshot_tree "$prepare")"
+
+  # The real managed target is still untouched.
+  [[ -L "$MISE_CONFIG_DIR" ]]
+  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)"
+  run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
+}

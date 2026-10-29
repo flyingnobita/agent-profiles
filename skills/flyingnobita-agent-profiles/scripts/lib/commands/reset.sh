@@ -78,7 +78,11 @@ ap_cmd_reset() {
     ap_die "$EX_NOINPUT" "profile '$profile' is not initialized in this checkout"
   fi
 
-  # 4. Process scan check
+  # 4. Re-run preflight under the locks: a concurrent crash journal that appeared
+  # after the first preflight must not be overwritten by a new mutation.
+  ap_run_preflight "$repo_root" "$profile"
+
+  # 5. Process scan check
   ap_scan_processes "$repo_root" "$profile" "$assume_unrelated"
 
   if [[ $yes_flag -eq 0 ]]; then
