@@ -53,8 +53,9 @@ a profile-first grammar over the long commands:
   `NAME`; a missing profile is offered for creation in a terminal, and
   `--create` (`mise ap --create NAME ...`) creates it without asking
 - `mise ap new NAME`, `mise ap ls`, `mise ap rm NAME [--yes]`,
-  `mise ap reset NAME [--yes]` and `mise ap doctor` map to `init`, `list`,
-  `remove`, `reset` and `doctor`
+  `mise ap reset NAME [--yes]`, `mise ap doctor`, `mise ap migrate`,
+  `mise ap recover` and `mise ap --version` map to `init`, `list`, `remove`,
+  `reset`, `doctor`, `migrate`, `recover` and `--version`
 - `mise ap --profile NAME COMMAND...` keeps the previous task's `run` form
 
 Earlier versions installed a second task, `agent-profiles-init`. Setup copies a

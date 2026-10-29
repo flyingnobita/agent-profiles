@@ -274,11 +274,10 @@ are kept until you delete them.
 ```bash
 ap doctor --json                         # machine-readable diagnostics
 ap doctor --agent claude --profile demo  # one agent in one profile
-bash "$AP_HELPER" migrate                # preview: convert legacy storage
-bash "$AP_HELPER" recover --yes          # finish an interrupted operation
+ap migrate                               # preview: convert legacy storage
+ap recover --yes                         # finish an interrupted operation
+ap --version                             # helper version
 ```
-
-`migrate` and `recover` have no `ap` shortcut, so they use the installed helper.
 
 - Reset, remove and migrate are previews until `--yes`. They refuse a profile
   that is in use (exit 75) and never kill processes, so run them from a normal
