@@ -88,9 +88,11 @@ as unverified, not assumed to work.
 - **Inherited credentials.** Environment credentials exported by the invoking
   shell are inherited. Doctor reports variable names only, never values.
 - **OpenCode background service.** The default service port is host-wide
-  (`49374` in the tested version); QA used private `--standalone` servers and
-  never connected to a host service. The shared temporary directory
-  (`/tmp/opencode`) is not redirected by a profile.
+  (`49374` in the tested version). Profile runs add `--standalone` to every
+  command that accepts it, so they use a private server instead; commands
+  without the flag, such as `service`, still manage a background service on
+  that port. The shared temporary directory (`/tmp/opencode`) is not
+  redirected by a profile.
 - **Host services.** Services started by the host outside a profile namespace
   (`systemd --user`, D-Bus activation) carry no profile marker and cannot be
   attributed to a profile by the process scan.

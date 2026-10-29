@@ -18,11 +18,12 @@ dedicated profile storage:
 ## Configuration Diagnostics
 
 Two read-only commands classify what a profile actually loads. Always run them
-through the profile wrapper and prefer `--standalone` (see Server Isolation):
+through the profile wrapper, which adds `--standalone` where the command accepts
+it (see Server Isolation):
 
 ```bash
-agent-profiles run --profile <name> -- opencode --standalone debug paths
-agent-profiles run --profile <name> -- opencode --standalone debug config
+agent-profiles run --profile <name> -- opencode debug paths
+agent-profiles run --profile <name> -- opencode debug config
 ```
 
 - `debug paths` prints the effective `home`, `data`, `cache`, `config`, `state`, `tmp`, `bin`, `log`, `repos` and `db` locations. Verify that `config` is the profile `.opencode` directory and that `data`, `state` and `cache` are under the profile before trusting any other observation.
@@ -78,13 +79,22 @@ visible.
 The client has two modes, and only one is safe for verification:
 
 - `--standalone` runs a private server for the lifetime of the command. Use it for every probe and for QA.
-- Without it, the CLI connects to (or tries to start) the background service. The default port is fixed at `49374`, so a host-wide service can answer the request with host configuration and invalidate an isolation test. On a host where that service is already running, a profile command fails with "port ... is already in use" instead of silently reusing it.
+- Without it, the CLI connects to (or tries to start) the background service. The default port is fixed at `49374`, so a host-wide service can answer the request with host configuration and invalidate an isolation test. A service started from a profile detaches, outlives the session with the profile environment, and blocks the host's own service on that port.
+
+`agent-profiles run` therefore inserts `--standalone` right after the binary for
+the TUI and for every command that accepts it in OpenCode 2.2 (`run`, `mini`,
+`api`, `auth`, `models`, `session`, `stats`, `reload`, `mcp list|auth|logout`,
+`debug agents|config` and `plugin list|check|update`). Commands that reject the
+flag (`acp`, `service`, `serve`, `upgrade`, `uninstall`, `pair` and the other
+`mcp`, `debug` and `plugin` subcommands) run unchanged, as does a command line
+that already passes `--standalone` or `--server`. To use a background service
+deliberately, start it and pass `--server <url>`.
 
 Read-only checks:
 
 ```bash
 agent-profiles run --profile <name> -- opencode service status
-agent-profiles run --profile <name> -- opencode --standalone api GET /api/info
+agent-profiles run --profile <name> -- opencode api GET /api/info
 ```
 
 `service status` and `service get` read the profile service configuration; they
@@ -113,6 +123,6 @@ Known gaps and checks that are not verified remain listed here:
 
 Troubleshooting:
 
-- `port 49374 ... already in use`: a host background service holds the shared port. Use `--standalone` rather than stopping a service you do not own.
+- `port 49374 ... already in use`: a background service holds the shared port. A profile run uses `--standalone` and is not affected. If the host's own `opencode` fails, check the owning process: a service left by a profile run before `--standalone` was automatic stops with `agent-profiles run --profile <name> -- opencode service stop`. Do not stop a service you do not own.
 - Empty `/api/skill` list: query again after the asynchronous scan, and confirm `debug config` shows the expected configuration sources.
 - Skill not found in a profile: check that the skill sits in `.opencode/skills/<name>/SKILL.md` (or the `skill` directory) of that profile or the repository, not in the XDG configuration root, which is replaced while `OPENCODE_CONFIG_DIR` is set.

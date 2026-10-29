@@ -282,9 +282,10 @@ container boundary: a profile process keeps broad remaining host access.
 - OS services stay shared. Antigravity CLI authenticates through the session
   D-Bus secret service; that service sits outside profile storage and can
   authenticate a process running inside a profile.
-- OpenCode's background service uses a host-wide default port (49374) and a
-  shared temporary directory (`/tmp/opencode` in the tested version); neither is
-  redirected by a profile.
+- OpenCode's background service uses a host-wide default port (49374), so
+  profile runs start OpenCode with a private `--standalone` server wherever the
+  command accepts it. Its shared temporary directory (`/tmp/opencode` in the
+  tested version) is not redirected by a profile.
 - Host services started outside the profile namespace (`systemd --user`, D-Bus
   activation) carry no profile marker and cannot be attributed to a profile by
   the process scan.
