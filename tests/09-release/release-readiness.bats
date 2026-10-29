@@ -37,12 +37,12 @@ teardown() {
   assert_success
 }
 
-@test "release: README marks repository-source installation as proposed after publication" {
+@test "release: README names the published repository and pinned installer" {
   assert_file_exists "$README"
-  run grep -F -- "flyingnobita/flyingnobita-agent-profiles" "$README"
+  run grep -F -- "npx skills@1.7.4 add flyingnobita/agent-profiles" "$README"
   assert_success
   run grep -F -- "proposed, after publication" "$README"
-  assert_success
+  assert_failure 1
 }
 
 @test "release: root LICENSE is the bundled MIT license" {

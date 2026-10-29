@@ -3,10 +3,11 @@
 First local Linux release of named agent profiles for Claude Code, OpenAI Codex
 CLI, Google Antigravity CLI and OpenCode. MIT licensed.
 
-This release is **not published**. The artifact set is built and verified
-locally; creating a public remote, pushing commits, tagging, publishing a
-release or deploying to real machines requires a separate explicit maintainer
-action.
+The source is available at <https://github.com/flyingnobita/agent-profiles>, and
+repository-source installation in copy mode is verified in a disposable home.
+A tagged GitHub Release is **not published**. The artifact set is built and
+verified locally; tagging, publishing a release or deploying to real machines
+requires a separate explicit maintainer action.
 
 ## Highlights
 
@@ -70,8 +71,8 @@ OpenCode model commands).
 
 ## Known Limits
 
-- Repository-source installation is proposed, after publication; only
-  local-source installation is verified for this release.
+- Hosted CI execution is pending publication of the workflow; local checks
+  remain available through mise.
 - The Antigravity CLI read of the repository/workspace `.agents` customization
   root is unqualified because it happens in an authenticated conversation.
 - OpenCode's background service uses a host-wide default port (49374) and a

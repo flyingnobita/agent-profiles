@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 12:30 PM +08:00 - Refresh installation guidance for the published source repository, record verified copy-mode source installation and distinguish source publication from an unpublished tagged release and pending hosted CI
+
 - Oct-29, 2026 - 12:16 PM +08:00 - Add GitHub Actions checks for main pushes and pull requests using pinned project tools, full CI verification and release artifact validation
 
 - Oct-29, 2026 - 11:04 AM +08:00 - Record final Linux QA evidence for v0.1.0: Docker prerequisite installation with idempotent deployment and truthful namespace refusal, final offline startup/discovery/auth results for the four integrations with an independently reproduced background-session Claude shell-mode write denial and a Codex read-only denial, twenty-command public workflow, and the fresh 211-path host configuration preservation audit

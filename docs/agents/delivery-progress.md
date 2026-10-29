@@ -111,5 +111,15 @@ The original issue inputs and local worktrees remain available for inspection.
 Sanitized final evidence is in [the final Linux QA summary](../evidence/linux-2026-10-29.md).
 
 Live model responses and model-driven skill invocation remain credential-dependent
-gaps; macOS is unqualified. Repository-source installation and publication remain
-separate future work. No remote, push, PR, tag, public release or deployment occurred.
+gaps; macOS is unqualified. At local delivery closeout, no remote, push, PR, tag,
+public release or deployment had occurred.
+
+## Subsequent publication and retrospective
+
+The user subsequently authorized source publication to
+<https://github.com/flyingnobita/agent-profiles>. The published `main` was verified
+at `ea19dae`; repository-source installation in copy mode then passed in a
+disposable home. A GitHub Actions workflow and updated publication guidance are
+prepared on `retro/delivery-improvements`; hosted CI remains unverified until
+the workflow is pushed and runs. Tagged releases and real-host deployment remain
+separate actions.

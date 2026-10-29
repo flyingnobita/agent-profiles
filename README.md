@@ -61,15 +61,14 @@ npx skills add /path/to/flyingnobita-agent-profiles \
   --agent claude-code codex antigravity-cli opencode
 ```
 
-From the repository (proposed, after publication). This release is prepared but
-not published: there is no public remote yet, so the repository-source command
-below cannot be used in v0.1.0.
+From the [published source repository](https://github.com/flyingnobita/agent-profiles).
+Repository-source installation in copy mode is verified for v0.1.0 in a
+disposable home directory:
 
 ```bash
-# Proposed, after publication. Requires a published repository and network
-# access; not available in this release.
-npx skills add flyingnobita/flyingnobita-agent-profiles \
-  --skill flyingnobita-agent-profiles -g -y
+npx skills@1.7.4 add flyingnobita/agent-profiles \
+  --skill flyingnobita-agent-profiles --copy -g -y \
+  --agent claude-code codex antigravity-cli opencode
 ```
 
 Nothing outside the installed skill directory is required: the helper resolves
