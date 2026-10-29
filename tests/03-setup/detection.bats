@@ -102,7 +102,6 @@ teardown() {
     "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$TEST_TMPDIR/work")
   assert_equal "$after" "$before"
   [[ ! -s "$AP_SPY_LOG" ]]
-  [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles-init" ]]
   [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles" ]]
 }
 
@@ -122,11 +121,11 @@ teardown() {
   cd "$TEST_TMPDIR/work" || exit 1
   export AP_SPY_LOG="$TEST_TMPDIR/spy.log"
 
-  # A foreign task file and a pre-existing managed task make the plan concrete.
+  # A foreign task file and a retired managed task make the plan concrete.
   mkdir -p "$MISE_CONFIG_DIR/tasks"
-  printf '#!/usr/bin/env bash\necho foreign\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  printf '#!/usr/bin/env bash\necho foreign\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles"
   printf '# managed-by: flyingnobita-agent-profiles 0.0.0 sha256:%064d\n' 0 \
-    >"$MISE_CONFIG_DIR/tasks/agent-profiles"
+    >"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
 
   local before
   before=$(snapshot_tree "$MISE_CONFIG_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}")
@@ -135,7 +134,8 @@ teardown() {
   assert_success
   assert_output_contains "Planned changes"
   assert_output_contains "release:"
-  assert_output_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  assert_output_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles"
+  assert_output_contains "retired task removed on --apply"
   assert_output_contains "conflict"
   assert_output_contains "agent: codex"
   assert_output_contains "No changes made"
@@ -176,7 +176,7 @@ teardown() {
   assert_success
   assert_output_contains "release: "
   assert_output_not_contains "release: skipped"
-  assert_output_contains "prepared/tasks/agent-profiles-init"
+  assert_output_contains "prepared/tasks/agent-profiles"
   assert_output_contains "prepared/INSTRUCTIONS.md"
   assert_output_contains "prepared/mise/config.toml.fragment"
 

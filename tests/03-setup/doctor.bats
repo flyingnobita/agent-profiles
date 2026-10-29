@@ -54,10 +54,10 @@ sys.exit(2)
   run bash "$AP_HELPER" setup --apply
   assert_success
   local release
-  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
   mv "$release" "$release.moved"
 
-  run mise run agent-profiles-init -- --profile demo
+  run mise ap new demo
   assert_failure 78
   assert_output_contains "$release"
   assert_output_contains "rerun"
@@ -92,7 +92,7 @@ sys.exit(2)
 
   local repo="$TEST_TMPDIR/shadow-repo"
   create_fixture_repo "$repo"
-  printf '[tasks.agent-profiles-init]\nrun = "echo project shadow"\n' >"$repo/mise.toml"
+  printf '[tasks.agent-profiles]\nrun = "echo project shadow"\n' >"$repo/mise.toml"
   cd "$repo"
 
   run env MISE_TRUSTED_CONFIG_PATHS="$repo" bash "$AP_HELPER" doctor --json

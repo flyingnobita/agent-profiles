@@ -15,6 +15,7 @@ usage() {
 Usage: agent-profiles [--help | --version] <command> [options] [arguments...]
 
 Implemented commands:
+  ap       Short profile-first form behind the global task: mise ap NAME [COMMAND...]
   doctor   Diagnose the OS, dependencies, global tasks, namespaces and agent integrations
   init     Initialize a named agent profile for this checkout
   list     List existing agent profiles in this checkout
@@ -61,7 +62,7 @@ fi
 
 cmd_file="$COMMANDS_DIR/$cmd.sh"
 if [[ ! -f "$cmd_file" ]]; then
-  ap_die "$EX_USAGE" "unknown command: $cmd. Available commands: doctor, init, list, migrate, recover, remove, reset, run, setup"
+  ap_die "$EX_USAGE" "unknown command: $cmd. Available commands: ap, doctor, init, list, migrate, recover, remove, reset, run, setup"
 fi
 
 # shellcheck source=/dev/null

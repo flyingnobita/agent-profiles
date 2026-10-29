@@ -39,7 +39,7 @@ teardown() {
   assert_output_contains "prepared"
 
   local task
-  for task in agent-profiles-init agent-profiles; do
+  for task in agent-profiles; do
     assert_file_exists "$prepared/tasks/$task"
     [[ -x "$prepared/tasks/$task" ]]
     grep -Fq '#MISE dir="{{cwd}}"' "$prepared/tasks/$task"
@@ -60,7 +60,6 @@ teardown() {
   assert_success
   assert_output_contains "managed configuration"
   assert_output_contains "chezmoi"
-  [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles-init" ]]
   [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles" ]]
 }
 
@@ -93,7 +92,7 @@ teardown() {
   assert_file_exists "$release/scripts/agent-profiles"
 
   # Adopt the prepared tasks into the managed source as a user would.
-  cp "$prepared/tasks/agent-profiles-init" "$prepared/tasks/agent-profiles" "$TEST_TMPDIR/dotfiles/tasks/"
+  cp "$prepared/tasks/agent-profiles" "$TEST_TMPDIR/dotfiles/tasks/"
 
   # A rerun keeps the managed target authoritative and still deploys the release.
   run bash "$AP_HELPER" setup --apply --prepare-dir "$prepared"
@@ -103,7 +102,7 @@ teardown() {
   local fixture_repo="$TEST_TMPDIR/work/repo"
   create_fixture_repo "$fixture_repo"
   cd "$fixture_repo"
-  run mise run agent-profiles-init -- --profile demo
+  run mise ap new demo
   assert_success
   assert_dir_exists "$fixture_repo/.agent-profiles/demo/home"
 
@@ -119,6 +118,6 @@ teardown() {
 
   run bash "$AP_HELPER" setup --apply --prepare-dir "$prepared"
   assert_success
-  assert_output_contains "prepared: $prepared/tasks/agent-profiles-init"
-  assert_output_not_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  assert_output_contains "prepared: $prepared/tasks/agent-profiles"
+  assert_output_not_contains "task: $MISE_CONFIG_DIR/tasks/agent-profiles"
 }

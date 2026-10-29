@@ -38,18 +38,17 @@ teardown() {
 
 @test "setup apply: a foreign task file is reported and left byte-identical" {
   mkdir -p "$MISE_CONFIG_DIR/tasks"
-  printf '#!/usr/bin/env bash\necho foreign task\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
-  chmod +x "$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  printf '#!/usr/bin/env bash\necho foreign task\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles"
+  chmod +x "$MISE_CONFIG_DIR/tasks/agent-profiles"
   local before
-  before=$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  before=$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles")
 
   run bash "$AP_HELPER" setup --apply
   assert_success
   assert_output_contains "conflict"
-  assert_output_contains "agent-profiles-init"
-  assert_equal "$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles-init")" "$before"
-  assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles"
-  [[ "$(cat "$MISE_CONFIG_DIR/tasks/agent-profiles-init")" == *"foreign task"* ]]
+  assert_output_contains "agent-profiles"
+  assert_equal "$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles")" "$before"
+  [[ "$(cat "$MISE_CONFIG_DIR/tasks/agent-profiles")" == *"foreign task"* ]]
 }
 
 @test "setup apply: an inline global config task is reported and untouched" {
@@ -64,32 +63,31 @@ teardown() {
   assert_output_contains "agent-profiles"
   assert_equal "$(sha256sum "$MISE_CONFIG_DIR/config.toml")" "$before"
   [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles" ]]
-  assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles-init"
 }
 
 @test "setup apply: a modified managed task is backed up outside the tasks directory" {
   run bash "$AP_HELPER" setup --apply
   assert_success
 
-  printf '# local edit that must be preserved in a backup\n' >>"$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  printf '# local edit that must be preserved in a backup\n' >>"$MISE_CONFIG_DIR/tasks/agent-profiles"
 
   run bash "$AP_HELPER" setup --apply
   assert_success
   assert_output_contains "backup"
 
   local backups
-  backups=$(find "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" -type f -name agent-profiles-init)
+  backups=$(find "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" -type f -name agent-profiles)
   [[ -n "$backups" ]]
   [[ "$backups" != "$MISE_CONFIG_DIR/tasks/"* ]]
   grep -Fq "local edit that must be preserved" "$backups"
-  grep -Fq '# managed-by: flyingnobita-agent-profiles' "$MISE_CONFIG_DIR/tasks/agent-profiles-init"
+  grep -Fq '# managed-by: flyingnobita-agent-profiles' "$MISE_CONFIG_DIR/tasks/agent-profiles"
 }
 
 @test "setup apply: a new release keeps the previous verified release" {
   run bash "$AP_HELPER" setup --apply
   assert_success
   local release_one
-  release_one=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  release_one=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
 
   local copy="$TEST_TMPDIR/skill-copy"
   cp -a "$AP_SKILL_DIR" "$copy"
@@ -98,7 +96,7 @@ teardown() {
   run bash "$copy/scripts/agent-profiles" setup --apply
   assert_success
   local release_two
-  release_two=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  release_two=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
 
   [[ "$release_one" != "$release_two" ]]
   assert_dir_exists "$release_one"

@@ -63,6 +63,13 @@ ap_doctor_check_tasks() {
     fi
     managed_tasks+=("$task")
   done
+  for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+    target="$(ap_setup_task_path "$config_dir" "$task")"
+    if ap_setup_is_managed_task "$target"; then
+      stale=1
+      details+=("stale: retired task '$target' is still installed (rerun setup to remove it)")
+    fi
+  done
 
   if [[ $broken -eq 1 ]]; then
     status="error"

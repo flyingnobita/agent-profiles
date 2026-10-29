@@ -23,7 +23,7 @@ teardown() {
   assert_success
 
   local release
-  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
   assert_dir_exists "$release"
   [[ "$release" == "$XDG_DATA_HOME/flyingnobita-agent-profiles/releases/"* ]]
   [[ "$(basename "$release")" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{8}$ ]]
@@ -33,23 +33,21 @@ teardown() {
   (cd "$release" && sha256sum -c manifest.sha256 --quiet)
 }
 
-@test "setup apply: installs exactly two executable global file tasks using the released helper" {
+@test "setup apply: installs exactly one executable global file task using the released helper" {
   run bash "$AP_HELPER" setup --apply
   assert_success
 
-  local task release
-  for task in agent-profiles-init agent-profiles; do
-    assert_file_exists "$MISE_CONFIG_DIR/tasks/$task"
-    [[ -x "$MISE_CONFIG_DIR/tasks/$task" ]]
-    grep -Fq '#MISE dir="{{cwd}}"' "$MISE_CONFIG_DIR/tasks/$task"
-    grep -Eq '^# managed-by: flyingnobita-agent-profiles [0-9]+\.[0-9]+\.[0-9]+ sha256:[0-9a-f]{64}$' \
-      "$MISE_CONFIG_DIR/tasks/$task"
-    release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/$task")
-    grep -Fq "$release/scripts/agent-profiles" "$MISE_CONFIG_DIR/tasks/$task"
-  done
+  local task="$MISE_CONFIG_DIR/tasks/agent-profiles" release
+  assert_file_exists "$task"
+  [[ -x "$task" ]]
+  [[ "$(find "$MISE_CONFIG_DIR/tasks" -type f | wc -l)" -eq 1 ]]
+  grep -Fq '#MISE dir="{{cwd}}"' "$task"
+  grep -Eq '^# managed-by: flyingnobita-agent-profiles [0-9]+\.[0-9]+\.[0-9]+ sha256:[0-9a-f]{64}$' "$task"
+  release=$(sed -n 's/^# release: //p' "$task")
+  grep -Fq "$release/scripts/agent-profiles" "$task"
 }
 
-@test "setup apply: agent-profiles-init task initializes a profile through mise" {
+@test "setup apply: mise ap new creates a profile through mise" {
   run bash "$AP_HELPER" setup --apply
   assert_success
 
@@ -57,7 +55,7 @@ teardown() {
   create_fixture_repo "$repo"
   cd "$repo"
 
-  run mise run agent-profiles-init -- --profile demo
+  run mise ap new demo
   assert_success
   assert_dir_exists "$repo/.agent-profiles/demo/home"
 }
@@ -70,7 +68,7 @@ teardown() {
   create_fixture_repo "$repo"
   cd "$repo"
 
-  run mise run agent-profiles-init -- --profile demo
+  run mise ap new demo
   assert_success
 
   run mise run agent-profiles -- --profile demo printf '%s\n' 'a b'
@@ -92,7 +90,7 @@ teardown() {
   assert_success
 
   local release
-  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles-init")
+  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
   [[ "$release" == "$XDG_DATA_HOME/flyingnobita-agent-profiles/releases/"* ]]
   [[ "$release" != "$installed"* ]]
 
@@ -102,7 +100,7 @@ teardown() {
   create_fixture_repo "$repo"
   cd "$repo"
 
-  run mise run agent-profiles-init -- --profile demo
+  run mise ap new demo
   assert_success
   assert_dir_exists "$repo/.agent-profiles/demo/home"
 }

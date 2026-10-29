@@ -2,7 +2,10 @@
 # Global mise task detection and machine setup support (ticket 03)
 # shellcheck disable=SC2034
 
-AP_SETUP_TASKS=(agent-profiles-init agent-profiles)
+AP_SETUP_TASKS=(agent-profiles)
+# Task files from earlier releases. Setup removes them, after a backup, only
+# while they still carry this tool's managed-by marker.
+AP_SETUP_RETIRED_TASKS=(agent-profiles-init)
 AP_SETUP_AGENTS=(claude codex agy opencode)
 AP_SETUP_DEPS=(bash git python3 mise bwrap)
 
@@ -238,6 +241,14 @@ ap_setup_print_plan() {
       printf "  task: %s (written on --apply)\n" "$target"
     fi
   done
+  if [[ $tasks_managed -eq 0 ]]; then
+    for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+      target="$(ap_setup_task_path "$config_dir" "$task")"
+      if ap_setup_is_managed_task "$target"; then
+        printf "  task: %s (retired task removed on --apply, after a backup)\n" "$target"
+      fi
+    done
+  fi
 
   if [[ -n "$prepare_dir" && ! -f "$prepare_dir/INSTRUCTIONS.md" ]]; then
     if [[ $tasks_managed -eq 1 ]] || ap_setup_config_file_managed_reason "$config_dir" >/dev/null; then
@@ -377,8 +388,7 @@ ap_setup_deploy_release() {
 
 ap_setup_task_command() {
   case "$1" in
-    agent-profiles-init) printf "init\n" ;;
-    agent-profiles) printf "run\n" ;;
+    agent-profiles) printf "ap\n" ;;
     *) return 1 ;;
   esac
 }
@@ -395,6 +405,8 @@ ap_setup_task_content() {
 
   printf '#!/usr/bin/env bash\n'
   printf '#MISE dir="{{cwd}}"\n'
+  printf '#MISE alias="ap"\n'
+  printf '#MISE quiet=true\n'
   printf '# managed-by: flyingnobita-agent-profiles %s sha256:%s\n' "$version" "$digest"
   printf '# release: %s\n' "$release"
   printf 'helper=%q\n' "$helper"
@@ -604,14 +616,16 @@ Managed configuration was detected: $reason
 
 The target task files were not modified. Copy the prepared task files into your managed source:
 
-- $prepare_dir/tasks/agent-profiles-init -> $config_dir/tasks/agent-profiles-init
 - $prepare_dir/tasks/agent-profiles -> $config_dir/tasks/agent-profiles
+
+Delete $config_dir/tasks/agent-profiles-init from your managed source if an
+earlier release prepared it; \`mise ap\` replaces it.
 
 Then rerun:
 
     bash $(ap_setup_skill_dir)/scripts/agent-profiles setup --apply
 
-This deploys the helper release at $release and installs the two global tasks.
+This deploys the helper release at $release and installs the global task.
 EOF
 
   printf "prepared: %s\n" "$prepare_dir"
@@ -742,8 +756,8 @@ ap_setup_install_agents() {
   done
 }
 
-# Apply the machine setup: deploy the release and install both global task
-# files, preserving foreign tasks and backing up managed files before changes.
+# Apply the machine setup: deploy the release and install the global task
+# file, preserving foreign tasks and backing up managed files before changes.
 ap_setup_apply_tasks() {
   local prepare_dir="${1:-}"
   local tasks_only="${2:-0}"
@@ -815,6 +829,18 @@ ap_setup_apply_tasks() {
       ap_die "$EX_BROKEN" "failed to write global mise task: $target"
     fi
   done
+
+  if [[ $managed -eq 0 ]]; then
+    for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+      target="$(ap_setup_task_path "$config_dir" "$task")"
+      ap_setup_is_managed_task "$target" || continue
+      if ! backup="$(ap_setup_backup_task "$target")"; then
+        ap_die "$EX_BROKEN" "failed to back up the retired task file: $target"
+      fi
+      rm -f "$target"
+      printf "removed retired task: %s (backup: %s)\n" "$target" "$backup"
+    done
+  fi
 
   if [[ "$tasks_only" -eq 0 ]]; then
     ap_setup_install_prerequisites

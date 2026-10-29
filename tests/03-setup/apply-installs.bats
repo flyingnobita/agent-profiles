@@ -78,7 +78,6 @@ MISE_WRAPPER
 
   run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --tasks-only --agent codex
   assert_success
-  assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles-init"
   assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles"
   run ! grep -Fq "sudo pacman" "$AP_SPY_LOG"
   run ! grep -Fq "mise use" "$AP_SPY_LOG"
