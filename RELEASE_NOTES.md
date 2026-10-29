@@ -75,8 +75,9 @@ OpenCode model commands).
   `run` exits 69 with the cause instead of falling back, so full profile
   execution inside such a container is not qualified.
 - A fresh controlled audit found 211 selected persistent host configuration paths
-  equal around a Codex QA run; an earlier unattributed Codex setting change was
-  accepted as-is by the user, so no whole-interval equality is claimed.
+  equal around a Codex QA run. An earlier unattributed configuration-file content
+  change in the Codex config was accepted as-is by the user: the current file is
+  preserved with no restore, and no whole-interval equality is claimed.
 
 ## Artifact Contents
 

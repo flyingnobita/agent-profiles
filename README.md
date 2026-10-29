@@ -309,8 +309,9 @@ results separate.
   enforcement was independently reproduced in a background shell-mode command.
 - A fresh controlled audit compared 211 selected persistent configuration paths
   around a Codex QA run and found them equal without reading credential values.
-  An earlier unattributed Codex setting change was accepted by the user as-is, so
-  equality across that original interval is not claimed.
+  An earlier unattributed configuration-file content change in the Codex config
+  was accepted by the user as-is; the current file is preserved, and equality
+  across that original interval is not claimed.
 - Model responses, model-driven skill invocation and command execution that
   requires an authenticated model turn are **credential-dependent gaps** for this
   release. No credentialed model calls were run and none are claimed.

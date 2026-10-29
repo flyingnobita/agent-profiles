@@ -98,7 +98,7 @@ as unverified, not assumed to work.
 - **Host configuration preservation.** A fresh controlled audit compared 211
   selected persistent settings, configuration, credential and mise paths by
   content hash and stat metadata around a Codex QA run and found them equal,
-  without reading credential values. An earlier unattributed Codex setting
-  change during a paused QA interval was accepted by the user as-is; equality
-  across that original interval is not claimed and no host configuration was
-  restored or written.
+  without reading credential values. An earlier unattributed configuration-file
+  content change in the Codex config during a paused QA interval has an unknown
+  actor; the current file is preserved as-is with no restore, and equality across
+  that original interval is not claimed.
