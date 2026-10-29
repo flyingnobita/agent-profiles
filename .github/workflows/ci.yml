@@ -16,7 +16,7 @@ concurrency:
 jobs:
   verify:
     name: Tests, lint, installation and release checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       MISE_YES: "1"
@@ -26,6 +26,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install Linux runtime prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap git python3
+          bwrap --dev-bind / / -- true
       - name: Install pinned project tools
         uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
       - name: Run CI checks

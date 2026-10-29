@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 01:32 PM +08:00 - Install Linux runtime prerequisites in CI and probe bubblewrap on the Ubuntu 22.04 runner before running clean-install and test checks
+
 - Oct-29, 2026 - 12:30 PM +08:00 - Refresh installation guidance for the published source repository, record verified copy-mode source installation and distinguish source publication from an unpublished tagged release and pending hosted CI
 
 - Oct-29, 2026 - 12:16 PM +08:00 - Add GitHub Actions checks for main pushes and pull requests using pinned project tools, full CI verification and release artifact validation
