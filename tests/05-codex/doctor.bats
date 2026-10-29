@@ -17,21 +17,36 @@ teardown() {
   create_fixture_repo "$repo"
   cd "$repo"
 
-  run bash "$AP_HELPER" doctor --json
+  local bin="$TEST_TMPDIR/launcher-bin" real="$TEST_TMPDIR/installed/bin"
+  mkdir -p "$bin" "$real"
+  printf '#!/usr/bin/env bash\nprintf "codex-cli 0.163.0\\n"\n' >"$real/codex"
+  chmod +x "$real/codex"
+  # Model a mise shim and its resolution without a host Codex installation.
+  cat >"$bin/mise" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == which && "\${2:-}" == codex ]]; then
+  printf '%s\\n' '$real/codex'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "$bin/mise"
+  ln -s "$bin/mise" "$bin/codex"
+  run env PATH="$bin:$PATH" bash "$AP_HELPER" doctor --json --agent codex
   assert_success
   python3 -c '
 import json, sys
 data = json.loads(sys.argv[1])
 codex = data["agents"]["codex"]
-assert codex["status"] in ["available", "unverified"]
+assert codex["status"] == "available"
 assert codex["path"] is not None
 cp = codex["path"]
 assert not (cp.endswith("/bin/mise") or cp == "/usr/bin/mise"), f"resolved path was mise binary: {cp}"
-assert cp.endswith("codex"), f"resolved path does not end with codex: {cp}"
+assert cp == sys.argv[2], f"wrong resolved path: {cp}"
 cv = codex.get("version")
 if cv:
     assert cv.startswith("0."), f"expected codex version starting with 0., got {cv}"
-' "$output"
+' "$output" "$real/codex"
 }
 
 @test "codex doctor: standalone fallback uses direct PATH binary when mise is not managing codex" {

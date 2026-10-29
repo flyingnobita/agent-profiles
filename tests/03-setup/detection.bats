@@ -37,6 +37,9 @@ teardown() {
 @test "setup preview: names a missing dependency and its detected-manager install command" {
   local bin="$TEST_TMPDIR/min-bin"
   make_restricted_bin "$bin" bwrap
+  # The OS fixture is Arch even when the runner only has apt-get installed.
+  export AP_SPY_LOG="$TEST_TMPDIR/spy.log"
+  make_spy "$bin" pacman
 
   run env PATH="$bin" bash "$AP_HELPER" setup --preview
   assert_success

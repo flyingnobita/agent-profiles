@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 01:50 PM +08:00 - Make setup package-manager and Codex mise-launcher tests independent of runner-installed tools using explicit disposable fixtures
+
 - Oct-29, 2026 - 01:32 PM +08:00 - Install Linux runtime prerequisites in CI and probe bubblewrap on the Ubuntu 22.04 runner before running clean-install and test checks
 
 - Oct-29, 2026 - 12:30 PM +08:00 - Refresh installation guidance for the published source repository, record verified copy-mode source installation and distinguish source publication from an unpublished tagged release and pending hosted CI
