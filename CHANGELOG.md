@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 03:50 PM +08:00 - Preserve the nine completed Linux delivery specifications in a tracked archive with integration references and remove their untracked scratch copies
+
 - Oct-29, 2026 - 03:38 PM +08:00 - Configure GitHub Issues as the canonical tracker, migrate six remaining follow-ups, and add agent, triage and domain guidance
 
 - Oct-29, 2026 - 02:46 PM +08:00 - Record independent seven-host verification of the published Deliver and Retro skills and close fleet follow-up F2

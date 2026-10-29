@@ -1,9 +1,10 @@
 # Linux agent profiles delivery
 
 The user approved the nine-ticket plan and test seams on October 28, 2026.
-The original ticket specifications are in the initiating checkout's
-`.scratch/agent-profiles/issues/` directory. The delivery run retains the full
-approved plan, reports, command evidence, and resource identities outside Git.
+The original ticket specifications are preserved in the
+[completed delivery archive](../archive/2026-10-linux-delivery/README.md). The
+delivery run retains the full approved plan, reports, command evidence, and
+resource identities outside Git.
 
 ## Confirmed scope
 

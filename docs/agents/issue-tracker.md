@@ -9,7 +9,8 @@ follow-up IDs (F1, F3, F4, O1-O3) in issue bodies for duplicate detection.
 Read back every created or updated issue to verify its body, labels and status.
 Recording an optional proposal grants no implementation or publication authority.
 
-Existing `.scratch/` delivery tickets and delivery reports remain history.
+Original delivery tickets are preserved under
+`docs/archive/2026-10-linux-delivery/`; delivery reports remain history.
 `docs/agents/outstanding.md` points to this tracker; maintain current status only
 in GitHub Issues.
 
