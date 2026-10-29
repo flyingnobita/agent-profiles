@@ -21,10 +21,11 @@ platform is not qualified (exit 69) instead of attempting a fallback. Linux
 results are not evidence for macOS behavior.
 
 Default Docker containers usually restrict unprivileged user namespaces. There,
-prerequisite installation, versioned deployment, the two global tasks and
-`doctor` are qualified, but the namespace probe reports the restriction and
-profile `run` exits 69 with the cause. Full profile execution inside such a
-container is not claimed and no bypass is attempted.
+prerequisite installation, versioned deployment, both task shims, the
+`agent-profiles-init` task and `doctor` are qualified; the `agent-profiles` run
+task delegates to the helper and returns the namespace refusal (exit 69), and
+`doctor` reports the restriction. Full profile execution inside such a container
+is not claimed and no bypass is attempted.
 
 ## Agent CLI Integration Matrix
 
@@ -60,7 +61,7 @@ home. The sanitized results are published in
 
 | Integration | Startup | Discovery | Auth | Sandbox |
 | --- | --- | --- | --- | --- |
-| Claude Code 2.1.312 | ready (init event, TUI banner offline) | profile-scoped skills and MCP; host markers absent | fresh profile logged out; environment key classified by name | enforced and independently reproduced in final QA: outside write denied, inside write allowed |
+| Claude Code 2.1.312 | ready (init event, TUI banner offline) | profile-scoped skills and MCP; host markers absent | fresh profile logged out; environment key classified by name | background-session shell-mode `!` command with strict sandbox settings: outside write denied, inside write allowed (foreground or manual shell-mode not qualified) |
 | Codex CLI 0.165.0 | ready (sign-in screen offline) | profile, repository and bundled skill roots; parent directory outside the repo excluded | fresh profile reports not logged in; environment key reported by name | enforced: read-only sandbox denies a controlled write (final QA) |
 | Antigravity CLI 1.4.9 | ready (sign-in screen offline, session bus masked) | three `.gemini` skill roots and per-profile plugins; profile `.agents` not read | no profile credential file; environment names only; OS credential service shared | credential-dependent: denial needs a model turn |
 | OpenCode 2.2.0 | ready (TUI composer offline) | profile, repository and bundled skills; private `--standalone` server | profile and environment sources separated by name; no values printed | not claimed: no enforced denial surface; shell command works without a model turn |

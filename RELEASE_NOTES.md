@@ -53,9 +53,15 @@ separate. Raw QA logs stay private.
 
 Final QA installed genuinely missing prerequisites with `setup --apply` in
 `archlinux:latest` and `ubuntu:24.04`, verified idempotent deployment and both
-global tasks, and confirmed the truthful exit-69 refusal under default Docker
-namespace restrictions. Full profile execution inside default Docker, and
-equality across the original paused QA interval, are not claimed.
+task shims, ran the `agent-profiles-init` task, and confirmed that the
+`agent-profiles` run task delegates to the helper and truthfully returns the
+exit-69 namespace refusal under default Docker restrictions. Full profile
+execution inside default Docker, and equality across the original paused QA
+interval, are not claimed.
+
+Claude Code write denial was verified for a background-session shell-mode `!`
+command with strict sandbox settings; foreground or manual shell-mode was not
+qualified.
 
 Credential-dependent gaps are recorded, not claimed: live model responses,
 model-driven skill invocation, and command execution or sandbox denials that

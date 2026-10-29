@@ -239,8 +239,9 @@ status. See [lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecyc
 
 ## Compatibility
 
-Verified 2026-10-28 on Linux x86_64 in disposable profiles with offline startup
-and discovery checks. These four are the only supported agent integrations.
+Verified 2026-10-28 (initial offline evidence) and 2026-10-29 (final QA) on
+Linux x86_64 in disposable profiles with offline startup and discovery checks.
+These four are the only supported agent integrations.
 
 | Agent integration | Command | Verified version | Profile redirection |
 | --- | --- | --- | --- |
@@ -264,9 +265,10 @@ startup, discovery, authentication or sandboxing work. See
 | macOS | Not qualified | Deferred; unverified, no bubblewrap redirection layer |
 
 In default Docker containers, unprivileged user namespaces are usually
-restricted. There, `setup`, the global tasks and `doctor` work, but `run` exits
-69 with the cause; full profile execution inside such a container is not
-qualified.
+restricted. There, `setup`, deployment, `doctor` and the `agent-profiles-init`
+task work; the `agent-profiles` run task delegates to the helper and truthfully
+returns the namespace refusal (exit 69). Full profile execution inside such a
+container is not qualified.
 
 ## Security and Shared Host Resources
 
@@ -301,12 +303,14 @@ results separate.
 
 - Final QA installed genuinely missing prerequisites with `setup --apply` in
   `archlinux:latest` and `ubuntu:24.04`, verified idempotent deployment and both
-  global tasks, and confirmed the truthful exit-69 refusal where default Docker
-  namespace restrictions apply. Full profile execution inside default Docker is
-  not claimed.
-- Offline checks enforce write denial for Claude Code and Codex CLI sandbox
-  modes, and verify profile-scoped skill discovery for all four CLIs. Claude
-  enforcement was independently reproduced in a background shell-mode command.
+  task shims, ran the `agent-profiles-init` task, and confirmed that the
+  `agent-profiles` run task truthfully returns the exit-69 namespace refusal
+  under default Docker restrictions. Full profile execution inside default
+  Docker is not claimed.
+- Offline checks enforce write denial for Codex CLI's read-only sandbox and for
+  Claude Code's background-session shell-mode `!` command with strict sandbox
+  settings, and verify profile-scoped skill discovery for all four CLIs. Claude
+  foreground or manual shell-mode was not qualified.
 - A fresh controlled audit compared 211 selected persistent configuration paths
   around a Codex QA run and found them equal without reading credential values.
   An earlier unattributed configuration-file content change in the Codex config
