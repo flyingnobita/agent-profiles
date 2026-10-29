@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 11:16 PM +08:00 - Document showing the active profile in the shell prompt (`ap: NAME`) for Starship, zsh and bash, so a shell opened with `mise ap NAME` is not mistaken for a normal one
+
 - Oct-29, 2026 - 10:55 PM +08:00 - Replace the two global mise tasks with one `agent-profiles` task aliased `ap`: `mise ap NAME [COMMAND]` runs a profile and offers to create a missing one (`--create` in scripts), with `new`, `ls`, `rm`, `reset` and `doctor` shortcuts; setup removes the retired `agent-profiles-init` task after a backup
 
 - Oct-29, 2026 - 10:24 PM +08:00 - Run OpenCode in profiles with a private `--standalone` server wherever the command accepts it, so a profile session no longer leaves a background service on the shared port that blocks the host's own OpenCode

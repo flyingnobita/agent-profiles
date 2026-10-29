@@ -149,6 +149,39 @@ Everything after `--` is forwarded unchanged, and the caller's working directory
 is preserved. Log in inside the profile normally; the helper never copies, links
 or rewrites host credential files.
 
+### Show the Active Profile in Your Prompt
+
+`mise ap NAME` without a command opens your shell inside the profile, and
+everything started from that shell, including a plain `claude`, stays in the
+profile until you `exit`. Every profile process exports `AGENT_PROFILES_NAME`,
+so your prompt can show it. Each snippet below prints `ap: NAME` only inside a
+profile and leaves a normal shell unchanged:
+
+```text
+ap: demo > _
+```
+
+[Starship](https://starship.rs) (`~/.config/starship.toml`): add the module to
+your `format` where the tag should appear, for example
+`${env_var.AGENT_PROFILES_NAME}[> ](bold green)`, and configure it:
+
+```toml
+[env_var.AGENT_PROFILES_NAME]
+format = '[ap: $env_value]($style) '
+style = 'bold purple'
+```
+
+Plain zsh (`~/.zshrc`) or bash (`~/.bashrc`), after any other prompt setup:
+
+```bash
+# zsh
+setopt PROMPT_SUBST
+PROMPT='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PROMPT"
+
+# bash
+PS1='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PS1"
+```
+
 ## Update
 
 ```bash
