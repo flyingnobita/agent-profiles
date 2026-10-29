@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 11:42 PM +08:00 - Rewrite the README around what a profile isolates and the `mise ap` workflow, with quick start, usage, skill and tool scopes, prompt setup and condensed install, maintenance and security sections
+
 - Oct-29, 2026 - 11:42 PM +08:00 - Release checks no longer treat bracket syntax inside README code blocks as links, so the Starship prompt example no longer fails `check-release`
 
 - Oct-29, 2026 - 11:16 PM +08:00 - Document showing the active profile in the shell prompt (`ap: NAME`) for Starship, zsh and bash, so a shell opened with `mise ap NAME` is not mistaken for a normal one

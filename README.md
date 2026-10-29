@@ -1,169 +1,130 @@
-# flyingnobita-agent-profiles
+# Agent Profiles
 
-Named Linux agent profiles for a single Git checkout. Give Claude Code, OpenAI
-Codex CLI, Google Antigravity CLI and OpenCode their own settings, credentials
-storage and user-installed tools, while the repository, its package managers and
-its lockfiles stay shared.
+**Separate logins, settings, skills and tools for your coding agents, per project.**
 
-Version 0.1.0, MIT licensed. Linux only; macOS is not qualified.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: Linux](https://img.shields.io/badge/platform-Linux%20x86__64-informational)
+![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity%20%7C%20OpenCode-8A2BE2)
 
-## What an Agent Profile Is
+[What a profile isolates](#what-a-profile-isolates) •
+[Quick start](#quick-start) •
+[Usage](#usage) •
+[Install](#install) •
+[Security](#security-and-shared-host-resources)
 
-An agent profile is a named directory, `.agent-profiles/<name>/`, created inside
-a Git checkout. It holds that profile's agent configuration, session state,
-credentials storage and tool-install roots. Running an agent through the profile
-redirects the directories the agent would otherwise read from your home
-directory, so two workflows cannot overwrite each other's settings or tools.
-
-- Profile selection is explicit: `--profile NAME`, or `default` when omitted.
-- Redirection covers agent configuration, state, credentials storage and
-  tool-install roots. It does not withhold inherited environment credentials or
-  shared OS services.
-- The repository working tree, project package managers and lockfiles are shared
-  by every profile in that checkout.
-- Host `mise` configuration, installed tools, state and cache directories are
-  preserved, not replaced.
-- Working directories, Git worktrees and subdirectories keep working; profiles
-  live with the checkout they belong to.
-
-Agent profiles are a workflow and dependency separation mechanism. They are
-**not a security sandbox** for untrusted code. See
-[Security and Shared Host Resources](#security-and-shared-host-resources).
-
-## Requirements
-
-- Linux x86_64 with unprivileged user namespaces enabled
-- `bubblewrap` (`bwrap`) for profile directory redirection
-- `bash`, `git` and `python3` (standard library only)
-- `mise` for the global tasks, versioned deployment and directory preservation
-- at least one supported agent CLI; each is optional and diagnosed separately
-
-`agent-profiles setup --preview` reports which prerequisites the detected
-distribution can install automatically (Arch-family `pacman`, Debian-family
-`apt-get`) and names anything it will not guess at. `mise` itself is never
-installed by the helper.
-
-## Install
-
-The skill is installed with the `skills` CLI (npm `skills` package, pinned to
-1.7.4 for this release). Explicit selection of the skill is required.
-
-From a local checkout of this repository (verified for v0.1.0):
+Coding agents keep everything in your home directory: one login, one set of
+settings, plugins and MCP servers, one session history, one set of globally
+installed tools. Agent profiles give a Git checkout any number of named,
+side-by-side setups for **Claude Code**, **OpenAI Codex CLI**,
+**Google Antigravity CLI** and **OpenCode**, while the repository itself stays
+shared.
 
 ```bash
-# Confirm discovery first: the skill name must be listed.
-npx skills add /path/to/flyingnobita-agent-profiles --list
-
-# Install with explicit skill selection. Use -g for user scope, or drop -g for
-# project scope. Install into the agents you use.
-npx skills add /path/to/flyingnobita-agent-profiles \
-  --skill flyingnobita-agent-profiles -g -y \
-  --agent claude-code codex antigravity-cli opencode
+mise ap work claude      # Claude with your work account and settings
+mise ap personal claude  # same checkout, different account, settings and history
 ```
 
-From the [published source repository](https://github.com/flyingnobita/agent-profiles).
-Repository-source installation in copy mode is verified for v0.1.0 in a
-disposable home directory:
+## What a profile isolates
+
+A profile is a directory, `.agent-profiles/<name>/`, inside the checkout. When
+an agent runs through it, the directories it would read from your home
+directory are redirected there:
+
+| Isolated per profile | What that means |
+| --- | --- |
+| **Logins and accounts** | Each profile has its own credential storage, so `work` and `personal` can be logged into different accounts or plans. |
+| **Settings, plugins, MCP servers and hooks** | The user-level ones, which mostly have no project-scope equivalent, or have one you would not want to commit. |
+| **Session history and state** | Transcripts, memory and caches stay with the profile. |
+| **User-installed tools** | `npm -g`, `cargo install`, `go install`, `uv tool` and `pip --user` install into the profile and come first on its `PATH`, so tool versions never collide with each other or with your host. |
+| **User-level skills** | Skills installed with `-g` inside a profile are visible only there. |
+
+What stays **shared** by every profile in the checkout:
+
+- the repository working tree, its project-scope config (`.claude/`, `.agents/`,
+  `.opencode/`) and project skills
+- project package managers, lockfiles and your host `mise` configuration and tools
+- network access, OS services and environment variables exported by your shell
+
+> [!WARNING]
+> Profiles separate workflows. They are **not a security sandbox**: a profile
+> process keeps broad host access and inherits your environment. See
+> [Security and shared host resources](#security-and-shared-host-resources).
+
+## Quick start
+
+> [!NOTE]
+> Linux x86_64 only, with `bubblewrap`, `git`, `python3` and `mise` installed.
+> See [Install](#install) for details.
 
 ```bash
+# 1. Install the skill into your agents
 npx skills@1.7.4 add flyingnobita/agent-profiles \
   --skill flyingnobita-agent-profiles --copy -g -y \
   --agent claude-code codex antigravity-cli opencode
-```
 
-Nothing outside the installed skill directory is required: the helper resolves
-its libraries and references relative to its own installation path, so it runs
-after the source checkout is gone.
-
-Verify the installation. The installed skill directory is the one reported by
-`npx skills list`:
-
-```bash
-AP_HELPER="<installed-skill-dir>/scripts/agent-profiles"
-
-bash "$AP_HELPER" --version
-bash "$AP_HELPER" doctor
-```
-
-## Machine Setup
-
-`setup` is read-only unless `--apply` is given:
-
-```bash
+# 2. Install the global `mise ap` task (preview first, then apply)
+AP_HELPER="$HOME/.agents/skills/flyingnobita-agent-profiles/scripts/agent-profiles"
 bash "$AP_HELPER" setup --preview
 bash "$AP_HELPER" setup --apply
+
+# 3. In any Git checkout, run an agent in a profile
+cd my-project
+mise ap demo claude      # asks to create "demo" the first time, then starts Claude
 ```
 
-`--apply` deploys the helper and its references to a versioned release directory
-under `${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases/`
-and installs one global `mise` file task, `agent-profiles`, aliased `ap`:
+Log in inside the profile as you normally would; the helper never copies, links
+or rewrites your host credential files.
+
+## Usage
+
+| Command | Does |
+| --- | --- |
+| `mise ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`) or any command in profile `NAME` |
+| `mise ap NAME` | Open your shell inside the profile; `exit` to leave |
+| `mise ap new NAME` | Create a profile without running anything |
+| `mise ap ls` | List the profiles in this checkout |
+| `mise ap rm NAME [--yes]` | Remove a profile (preview until `--yes`) |
+| `mise ap reset NAME [--yes]` | Recreate a profile empty (preview until `--yes`) |
+| `mise ap doctor` | Check the machine, the task and the agent integrations |
+
+Everything after the agent name is forwarded unchanged
+(`mise ap demo claude --resume`). A missing profile is offered for creation in a
+terminal; scripts pass `--create` (`mise ap --create demo codex`) so a typo
+never creates a stray profile.
+
+> [!TIP]
+> Add `alias ap='mise ap'` to your shell to type `ap demo claude`.
+
+### Skills and tools inside a profile
+
+Install them the usual way, but from inside the profile:
 
 ```bash
-mise ap demo claude    # run Claude in profile "demo"; offers to create it first
-mise ap demo           # open your shell inside the profile
-mise ap new demo       # create a profile without running anything
-mise ap ls             # list profiles in this checkout
-mise ap rm demo        # remove a profile (preview until --yes)
-mise ap doctor
+mise ap demo npx skills add owner/repo --skill NAME -g -y --agent claude-code codex
+mise ap demo npm install -g some-cli
 ```
 
-Everything after the agent name is forwarded verbatim. A missing profile is
-offered for creation in a terminal; scripts pass `--create`
-(`mise ap --create demo claude`) so a typo never creates a stray profile. Add
-`alias ap='mise ap'` to your shell if you want the bare word.
+| Install | Lands in | Seen by |
+| --- | --- | --- |
+| `-g` / global, run inside a profile | `.agent-profiles/<name>/` | that profile only; never committed |
+| `-g` / global, run in a normal shell | your home directory | your normal agents only |
+| project scope (no `-g`) | the repository (`.claude/skills/`, `.agents/skills/`) | the host and every profile in the checkout; commit it to share |
 
-The task stays pinned to that versioned release, and setup removes the
-`agent-profiles-init` task of earlier versions after a backup.
-After a skill update, `doctor` reports the deployment as `stale` and
-`setup --apply` refreshes it; if the release directory is removed the task exits
-78 and names the missing path. Missing
-prerequisites and agent CLIs are installed only with `--apply`, only when they
-are actually missing, and only through the detected package manager or the
-`mise` registry; `--agent claude|codex|agy|opencode` limits which agent is
-installed, and `--tasks-only` skips installation entirely. See
-[references/machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md) for conflicts, backups and managed configuration
-(for example dotfiles-managed task directories).
+Use project scope for what the project needs and profile scope for personal,
+experimental or account-specific setup.
 
-## Quick Start
+### Show the active profile in your prompt
 
-Inside any Git checkout:
-
-```bash
-# Create (or re-initialize) a profile. Profiles start empty.
-bash "$AP_HELPER" init --profile dev
-
-# Run an agent with that profile's configuration and tools. Inherited environment
-# credentials and shared OS services are not withheld; see the security section.
-bash "$AP_HELPER" run --profile dev -- claude
-bash "$AP_HELPER" run --profile dev -- codex
-bash "$AP_HELPER" run --profile dev -- agy
-bash "$AP_HELPER" run --profile dev -- opencode
-
-# Inspect profiles and the machine.
-bash "$AP_HELPER" list
-bash "$AP_HELPER" doctor --json
-bash "$AP_HELPER" doctor --agent claude --profile dev
-```
-
-Everything after `--` is forwarded unchanged, and the caller's working directory
-is preserved. Log in inside the profile normally; the helper never copies, links
-or rewrites host credential files.
-
-### Show the Active Profile in Your Prompt
-
-`mise ap NAME` without a command opens your shell inside the profile, and
-everything started from that shell, including a plain `claude`, stays in the
-profile until you `exit`. Every profile process exports `AGENT_PROFILES_NAME`,
-so your prompt can show it. Each snippet below prints `ap: NAME` only inside a
-profile and leaves a normal shell unchanged:
+`mise ap NAME` without a command leaves you in a profile shell, where even a
+plain `claude` runs in the profile. Every profile process exports
+`AGENT_PROFILES_NAME`, so your prompt can say so:
 
 ```text
 ap: demo > _
 ```
 
-[Starship](https://starship.rs) (`~/.config/starship.toml`): add the module to
-your `format` where the tag should appear, for example
-`${env_var.AGENT_PROFILES_NAME}[> ](bold green)`, and configure it:
+[Starship](https://starship.rs): put `${env_var.AGENT_PROFILES_NAME}` in your
+`format` where the tag belongs, and add:
 
 ```toml
 [env_var.AGENT_PROFILES_NAME]
@@ -171,64 +132,116 @@ format = '[ap: $env_value]($style) '
 style = 'bold purple'
 ```
 
-Plain zsh (`~/.zshrc`) or bash (`~/.bashrc`), after any other prompt setup:
+Plain zsh or bash, after any other prompt setup:
 
 ```bash
-# zsh
+# zsh (~/.zshrc)
 setopt PROMPT_SUBST
 PROMPT='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PROMPT"
 
-# bash
+# bash (~/.bashrc)
 PS1='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PS1"
 ```
+
+## Install
+
+### Requirements
+
+- Linux x86_64 with unprivileged user namespaces enabled
+- `bubblewrap` (`bwrap`) for the directory redirection
+- `bash`, `git` and `python3` (standard library only)
+- `mise` for the global task and versioned deployment
+- at least one supported agent CLI; each is optional and diagnosed separately
+
+`setup --preview` reports which missing prerequisites the detected distribution
+can install (Arch-family `pacman`, Debian-family `apt-get`). `mise` itself is
+never installed by the helper.
+
+### Install the skill
+
+The skill is installed with the `skills` CLI (npm `skills` package, pinned to
+1.7.4). Select the skill explicitly, and drop `-g` for project scope.
+
+From the [published repository](https://github.com/flyingnobita/agent-profiles):
+
+```bash
+npx skills@1.7.4 add flyingnobita/agent-profiles \
+  --skill flyingnobita-agent-profiles --copy -g -y \
+  --agent claude-code codex antigravity-cli opencode
+```
+
+From a local checkout:
+
+```bash
+npx skills add /path/to/flyingnobita-agent-profiles --list   # confirm discovery
+npx skills add /path/to/flyingnobita-agent-profiles \
+  --skill flyingnobita-agent-profiles -g -y \
+  --agent claude-code codex antigravity-cli opencode
+```
+
+The installed helper needs nothing outside its own directory, so it keeps
+working after the source checkout is gone. `npx skills list` shows where it was
+installed; the examples here use that path as `$AP_HELPER`:
+
+```bash
+AP_HELPER="<installed-skill-dir>/scripts/agent-profiles"
+bash "$AP_HELPER" --version
+bash "$AP_HELPER" doctor
+```
+
+### Set up the machine
+
+```bash
+bash "$AP_HELPER" setup --preview   # read-only plan
+bash "$AP_HELPER" setup --apply     # deploy
+```
+
+`--apply` copies the helper to a versioned release under
+`${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases/`
+and installs one global mise file task, `agent-profiles`, aliased `ap` and
+pinned to that release.
+
+- Missing prerequisites and agent CLIs are installed only with `--apply`, only
+  when actually missing, and only through the detected package manager or the
+  mise registry. `--agent claude|codex|agy|opencode` limits which agent is
+  installed; `--tasks-only` installs nothing.
+- Existing tasks you own are never overwritten, and a dotfiles-managed task
+  directory gets prepared files instead (`--prepare-dir DIR`).
+- Setup removes the `agent-profiles-init` task of earlier versions after a
+  backup.
+
+Details: [machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md).
 
 ## Update
 
 ```bash
-# Refresh an installed global skill (or re-run `npx skills add` from a checkout).
-npx skills update flyingnobita-agent-profiles -g -y
-
-# Redeploy the versioned release and refresh the global tasks.
-bash "$AP_HELPER" setup --apply
-
-# Confirm the deployment is current.
-bash "$AP_HELPER" doctor
+npx skills update flyingnobita-agent-profiles -g -y   # refresh the installed skill
+bash "$AP_HELPER" setup --apply                       # redeploy the release and task
+bash "$AP_HELPER" doctor                              # confirm it is current
 ```
 
-`doctor` reports the global tasks as `available`, `missing`, `foreign`,
-`managed`, `project-shadowed`, `stale` or `broken`, and names the release
-directory when it is broken. A previous release is kept until the new one is
-verified.
+After a skill update `doctor` reports the task as `stale` until setup runs
+again. A previous release is kept until the new one is verified.
 
 ## Remove
 
-Remove profiles and check the machine state first, then uninstall the skill.
-`doctor` and the other commands run from the installed helper, so resolve
-everything they report before you remove it.
+Remove profiles first, while the helper still exists, then uninstall:
 
 ```bash
-# 1. Preview, then confirm: removes one profile and its trash copy.
-bash "$AP_HELPER" remove --profile dev
-bash "$AP_HELPER" remove --profile dev --yes
-
-# 2. Inspect what is left while the helper still exists.
-bash "$AP_HELPER" list
+# 1. Remove each profile (preview, then confirm) and check what is left.
+mise ap rm demo
+mise ap rm demo --yes
 bash "$AP_HELPER" doctor
 
-# 3. Uninstall the skill from the agents it was installed into. The installed
-#    helper is gone after this step, so no helper command can run below.
+# 2. Uninstall the skill. The helper is gone after this step.
 npx skills remove -g -y --skill flyingnobita-agent-profiles
 
-# 4. Delete the global mise task files by absolute path, but only when this
-#    tool owns them. Setup resolves the config directory as $MISE_CONFIG_DIR, or
-#    from `mise doctor --json` dirs.config, or ${XDG_CONFIG_HOME:-$HOME/.config}/mise.
+# 3. Delete the global task files, but only those this tool manages.
 MISE_CONFIG="${MISE_CONFIG_DIR:-$(mise doctor --json 2>/dev/null |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["dirs"]["config"])' 2>/dev/null)}"
 MISE_CONFIG="${MISE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
 for task in agent-profiles agent-profiles-init; do
   target="$MISE_CONFIG/tasks/$task"
-  # Never delete a foreign or dotfiles-managed task: only files carrying this
-  # tool's managed-by marker are ours.
   if [ -f "$target" ] && grep -q '^# managed-by: flyingnobita-agent-profiles ' "$target"; then
     rm -f "$target"
   elif [ -e "$target" ]; then
@@ -236,167 +249,114 @@ for task in agent-profiles agent-profiles-init; do
   fi
 done
 
-# 5. Optional: delete the versioned deployment after the task files are gone.
+# 4. Optional: delete the versioned deployment.
 rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles"
 ```
 
-Removing a profile never touches other profiles, tracked project files,
-`mise.local.toml` or unrelated Git excludes. Migration backups live under
-`${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups/` and
-are kept until you delete them deliberately.
+Removing a profile never touches other profiles or tracked project files.
+Backups under `${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups/`
+are kept until you delete them.
 
 ## Maintenance
 
-```bash
-bash "$AP_HELPER" doctor                # OS, dependencies, tasks, namespaces, agents
-bash "$AP_HELPER" doctor --json         # machine-readable report
-bash "$AP_HELPER" list --json           # profiles in this checkout
+The `mise ap` shortcuts cover daily use. The full helper also exposes:
 
-bash "$AP_HELPER" reset --profile dev   # preview: recreate one profile empty
-bash "$AP_HELPER" remove --profile dev  # preview: delete one profile
-bash "$AP_HELPER" migrate               # preview: convert legacy storage
-bash "$AP_HELPER" recover --yes         # finish an interrupted operation
+```bash
+bash "$AP_HELPER" doctor --json                    # machine-readable diagnostics
+bash "$AP_HELPER" doctor --agent claude --profile demo
+bash "$AP_HELPER" run --profile demo -- claude     # long form of `mise ap demo claude`
+bash "$AP_HELPER" migrate                          # preview: convert legacy storage
+bash "$AP_HELPER" recover --yes                    # finish an interrupted operation
 ```
 
-- Mutating operations take the storage lock and exclusive profile locks, and
-  scan for live processes first. A profile that is in use exits 75; the helper
-  never kills processes. Run lifecycle commands from a host shell, not from
-  inside a profile.
-- Reset and remove are previews until `--yes`; the preview names the absolute
-  profile path and the affected settings, transcripts, credentials and installed
-  tools, never their contents.
-- `migrate` backs up legacy data to a private directory outside the checkout and
-  verifies per-file content hashes before removing originals. Corrupt or changed
-  backups are refused with exit 77 instead of being deleted.
-- Interrupted operations leave a journal. `recover` finishes or rolls back the
-  operation; until then, affected commands exit 77 and point at `recover`.
-- `doctor` is read-only. Version probes run in a temporary synthetic environment
-  and are informational; they are not readiness evidence.
+- Reset, remove and migrate are previews until `--yes`. They refuse a profile
+  that is in use (exit 75) and never kill processes, so run them from a normal
+  shell, not from inside a profile.
+- Interrupted operations leave a journal; affected commands exit 77 and point at
+  `recover` until it finishes or rolls back.
+- `doctor` is read-only, and its version probes are informational only.
 
-Exit codes: 64 usage, 65 invalid name/data, 66 not a Git checkout or not
-initialized, 69 dependency or namespace unavailable, 73 unsafe layout, 75 busy,
-77 refused, 78 broken task or deployment. `run` otherwise returns the child's
-status. See [lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecycle.md) and
+Exit codes: 64 usage, 65 invalid name or data, 66 not a Git checkout or profile
+missing, 69 dependency or namespace unavailable, 73 unsafe layout, 75 busy,
+77 refused, 78 broken task or deployment; `run` otherwise returns the agent's
+own status. See
+[lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecycle.md) and
 [troubleshooting.md](skills/flyingnobita-agent-profiles/references/troubleshooting.md).
 
 ## Compatibility
 
-Verified 2026-10-28 (initial offline evidence) and 2026-10-29 (final QA) on
-Linux x86_64 in disposable profiles with offline startup and discovery checks.
-These four are the only supported agent integrations.
+Verified on Linux x86_64 on 2026-10-28 (offline evidence) and 2026-10-29
+(final QA), with startup and discovery checks in disposable profiles. These are
+the four supported integrations:
 
 | Agent integration | Command | Verified version | Profile redirection |
 | --- | --- | --- | --- |
 | Claude Code | `claude` | 2.1.312 | `CLAUDE_CONFIG_DIR`, `.claude` mount |
 | OpenAI Codex CLI | `codex` | 0.165.0 | `CODEX_HOME`, `.codex`/`.agents` mounts |
 | Google Antigravity CLI | `agy` | 1.4.9 | `.gemini`/`.agents` mounts, XDG roots |
-| OpenCode | `opencode` | 2.2.0 | `OPENCODE_CONFIG_DIR`, XDG roots |
+| OpenCode | `opencode` | 2.2.0 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
 
-Other agent tools are not integrated. A delivery or orchestration harness used
-while building this release is not a fifth supported integration.
-
-Version probes are informational: a successful `--version` does not show that
-startup, discovery, authentication or sandboxing work. See
-[the compatibility reference](skills/flyingnobita-agent-profiles/references/compatibility.md) for the per-class results and limits.
+Logged-in model responses and model-driven skill use were not part of the
+verification. Sanitized results are in the
+[final QA summary](docs/evidence/linux-2026-10-29.md) and the
+[offline evidence](docs/evidence/linux-2026-10-28.md); per-agent limits are in
+[compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md).
 
 ## Platforms
 
 | Platform | Status | Notes |
 | --- | --- | --- |
-| Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces; host and prerequisite-install QA passed |
-| macOS | Not qualified | Deferred; unverified, no bubblewrap redirection layer |
+| Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces |
+| macOS | Not qualified | Deferred; no bubblewrap redirection layer |
 
-In default Docker containers, unprivileged user namespaces are usually
-restricted. There, `setup`, deployment, `doctor` and profile creation through
-the earlier `agent-profiles-init` task were qualified (its replacement,
-`mise ap new`, runs the same `init` and is not re-qualified there); running a
-profile delegates to the helper and truthfully returns the namespace refusal
-(exit 69). Full profile execution inside such a
-container is not qualified.
+Default Docker containers usually block unprivileged user namespaces. Setup,
+`doctor` and `init` were verified there; running a profile returns the
+namespace refusal (exit 69).
 
-## Security and Shared Host Resources
+## Security and shared host resources
 
-Agent profiles redirect directories and set per-profile environment variables.
-That is all they do. They are **not a security sandbox**, a virtual machine or a
-container boundary: a profile process keeps broad remaining host access.
+Profiles redirect directories and set per-profile environment variables, and
+that is all. They are **not a security sandbox**, a virtual machine or a
+container.
 
-- The profile keeps the kernel, the filesystem outside the redirected
+- A profile keeps the kernel, the filesystem outside the redirected
   directories, network access and the project checkout.
-- Inherited environment credentials (API keys exported in your shell) pass into
-  profile sessions by design. A profile is not a separate account.
-- OS services stay shared. Antigravity CLI authenticates through the session
-  D-Bus secret service; that service sits outside profile storage and can
-  authenticate a process running inside a profile.
-- OpenCode's background service uses a host-wide default port (49374), so
-  profile runs start OpenCode with a private `--standalone` server wherever the
-  command accepts it. Its shared temporary directory (`/tmp/opencode` in the
-  tested version) is not redirected by a profile.
-- Host services started outside the profile namespace (`systemd --user`, D-Bus
-  activation) carry no profile marker and cannot be attributed to a profile by
-  the process scan.
+- Inherited environment credentials, such as API keys exported in your shell,
+  reach the profile by design.
+- OS services stay shared. Antigravity CLI authenticates through the D-Bus
+  secret service, which can authenticate a process inside a profile.
+- OpenCode's background service uses a fixed host-wide port (49374), so profile
+  runs use a private `--standalone` server wherever the command accepts it. Its
+  temporary directory (`/tmp/opencode`) is not redirected.
+- Services started outside a profile (`systemd --user`, D-Bus activation) cannot
+  be attributed to a profile.
 
-Do not run untrusted or hostile code inside a profile expecting containment. For
-that, use a VM or a container with its own credentials and network policy.
-
-## Evidence
-
-Sanitized Linux evidence for this release is published in
-[the final QA summary](docs/evidence/linux-2026-10-29.md), with the earlier
-[offline evidence](docs/evidence/linux-2026-10-28.md) retained as historical
-context. Both keep version, startup, discovery, authentication and sandbox
-results separate.
-
-- Final QA installed genuinely missing prerequisites with `setup --apply` in
-  `archlinux:latest` and `ubuntu:24.04`, verified idempotent deployment and both
-  task shims, ran the `agent-profiles-init` task, and confirmed that the
-  `agent-profiles` run task truthfully returns the exit-69 namespace refusal
-  under default Docker restrictions. Full profile execution inside default
-  Docker is not claimed.
-- Offline checks enforce write denial for Codex CLI's read-only sandbox and for
-  Claude Code's background-session shell-mode `!` command with strict sandbox
-  settings, and verify profile-scoped skill discovery for all four CLIs. Claude
-  foreground or manual shell-mode was not qualified.
-- A fresh controlled audit compared 211 selected persistent configuration paths
-  around a Codex QA run and found them equal without reading credential values.
-  An earlier unattributed configuration-file content change in the Codex config
-  was accepted by the user as-is; the current file is preserved, and equality
-  across that original interval is not claimed.
-- Model responses, model-driven skill invocation and command execution that
-  requires an authenticated model turn are **credential-dependent gaps** for this
-  release. No credentialed model calls were run and none are claimed.
-- Raw QA logs stay private; only the sanitized summary and its generic paths,
-  versions and results are published.
+Do not run untrusted code in a profile expecting containment; use a VM or a
+container with its own credentials and network policy.
 
 ## Documentation
-
-For current delivery status, cleanup and deferred work, see the
-[delivery tracker](docs/agents/delivery-progress.md) and
-[outstanding follow-ups](docs/agents/outstanding.md).
 
 | Topic | Reference |
 | --- | --- |
 | Concepts, credentials, FAQ | [questions.md](skills/flyingnobita-agent-profiles/references/questions.md) |
-| Diagnostics and exit codes | [troubleshooting.md](skills/flyingnobita-agent-profiles/references/troubleshooting.md) |
 | Profile init, list, run | [repository-operations.md](skills/flyingnobita-agent-profiles/references/repository-operations.md) |
-| Prerequisites, doctor, mise tasks | [machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md) |
+| Prerequisites, doctor, `mise ap` task | [machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md) |
 | Reset, remove, migrate, recover | [lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecycle.md) |
-| Platform and CLI matrix | [compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md) |
-| Agent guidance | [claude-code.md](skills/flyingnobita-agent-profiles/references/agents/claude-code.md), [codex.md](skills/flyingnobita-agent-profiles/references/agents/codex.md), [antigravity.md](skills/flyingnobita-agent-profiles/references/agents/antigravity.md), [opencode.md](skills/flyingnobita-agent-profiles/references/agents/opencode.md) |
+| Diagnostics and exit codes | [troubleshooting.md](skills/flyingnobita-agent-profiles/references/troubleshooting.md) |
+| Platform and agent matrix | [compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md) |
+| Per-agent notes | [Claude Code](skills/flyingnobita-agent-profiles/references/agents/claude-code.md), [Codex](skills/flyingnobita-agent-profiles/references/agents/codex.md), [Antigravity](skills/flyingnobita-agent-profiles/references/agents/antigravity.md), [OpenCode](skills/flyingnobita-agent-profiles/references/agents/opencode.md) |
 
 ## Development
 
 ```bash
 MISE_TRUSTED_CONFIG_PATHS="$PWD" mise install
-mise run ci                 # lint, tests, clean installation checks
-mise run release-artifacts  # release readiness checks, tarball, checksum, notes
+mise run lint                 # shellcheck, shfmt, markdownlint, package check
+mise run test                 # full Bats suite
+mise run ci                   # lint, tests and clean-install checks
+mise run release-artifacts    # release checks and local artifacts in dist/
 ```
 
-`mise run release-artifacts` writes build output to `dist/` (ignored by Git) and
-does not publish anything. Creating a tag, remote, release or deployment is a
-separate, explicit maintainer action. Offline live QA is opt-in and per agent:
+Releasing, tagging and deployment are separate, explicit maintainer actions.
+Offline live QA is opt-in per agent:
 `AP_EVIDENCE_DIR=<private-dir> bash tests/live/claude.sh` (also `codex.sh`,
 `agy.sh`, `opencode.sh`).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
