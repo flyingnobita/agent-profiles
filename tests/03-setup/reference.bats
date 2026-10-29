@@ -27,8 +27,8 @@ teardown() {
   assert_success
   assert_output_contains "## Global Mise Task Integration"
   assert_output_contains "agent-profiles setup"
-  assert_output_contains "agent-profiles-init"
-  assert_output_contains "mise run agent-profiles-init -- --profile"
+  assert_output_contains "mise ap NAME"
+  assert_output_contains "mise ap new"
   assert_output_contains "--tasks-only"
 }
 

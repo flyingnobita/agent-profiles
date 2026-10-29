@@ -1,7 +1,7 @@
 # Machine Setup and Mise Tasks
 
-Focused guidance for preparing a Linux machine, configuring the two global
-`mise` tasks, and diagnosing the resulting deployment. Read this reference only
+Focused guidance for preparing a Linux machine, configuring the global
+`mise ap` task, and diagnosing the resulting deployment. Read this reference only
 for host setup, task integration, or setup troubleshooting requests.
 
 ## System Prerequisites
@@ -45,23 +45,35 @@ environment variable. It is a test input, not a user-facing override.
 
 ## Global Mise Task Integration
 
-`setup --apply` deploys the versioned helper release and installs exactly two
-global file tasks:
+`setup --apply` deploys the versioned helper release and installs one global
+file task, `agent-profiles`, aliased `ap`. It runs the helper's `ap` command,
+a profile-first grammar over the long commands:
 
-- `agent-profiles-init` runs `init` through the bundled helper
-- `agent-profiles` runs `run` through the bundled helper
+- `mise ap NAME [COMMAND...]` runs `COMMAND` (default: your shell) in profile
+  `NAME`; a missing profile is offered for creation in a terminal, and
+  `--create` (`mise ap --create NAME ...`) creates it without asking
+- `mise ap new NAME`, `mise ap ls`, `mise ap rm NAME [--yes]`,
+  `mise ap reset NAME [--yes]` and `mise ap doctor` map to `init`, `list`,
+  `remove`, `reset` and `doctor`
+- `mise ap --profile NAME COMMAND...` keeps the previous task's `run` form
+
+Earlier versions installed a second task, `agent-profiles-init`. Setup copies a
+managed copy of it to the backups directory and removes it; a foreign file with
+that name is left untouched, and `doctor` reports a managed leftover as stale.
 
 Tasks live in `$MISE_CONFIG_DIR/tasks/` and are never added to `config.toml`.
-Each file task carries `#MISE dir="{{cwd}}"`, a `managed-by` marker naming the
+Each file task carries `#MISE dir="{{cwd}}"`, `#MISE alias="ap"`,
+`#MISE quiet=true` (mise does not echo the command), a `managed-by` marker naming the
 skill version and manifest digest, and an explicit released-helper path. If that
 helper is missing the task exits 78 and tells you to rerun
 `agent-profiles setup`.
 
-Profile options and command arguments are forwarded verbatim:
+Command arguments are forwarded verbatim; mise needs neither `run` nor `--`:
 
 ```bash
-mise run agent-profiles-init -- --profile demo
-mise run agent-profiles -- --profile demo sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
+mise ap new demo
+mise ap demo sh -c 'printf "%s\n" "$AGENT_PROFILES_NAME"'
+mise ap NAME claude --resume
 ```
 
 `--tasks-only` configures the tasks without installing prerequisites or agents.
@@ -82,7 +94,7 @@ task shims copied from a prepared directory point at a real helper.
 Before writing a task, setup checks for conflicts:
 
 - an existing task file without the managed marker is a foreign task
-- an inline `[tasks.agent-profiles-init]` or `[tasks.agent-profiles]` entry in
+- an inline `[tasks.agent-profiles]` entry in
   the global configuration is an inline conflict
 - `mise tasks ls --global` catches global tasks from other sources
 
@@ -103,9 +115,9 @@ left untouched. Instead, setup prints instructions. Prepare source changes with:
 agent-profiles setup --apply --prepare-dir /path/to/prepared
 ```
 
-The prepared directory contains `tasks/agent-profiles-init`,
-`tasks/agent-profiles`, and `INSTRUCTIONS.md` naming the real targets. Copy those
-files into your managed source and commit them, then rerun setup so the versioned
+The prepared directory contains `tasks/agent-profiles` and `INSTRUCTIONS.md`
+naming the real target. Copy the task into your managed source, delete a
+prepared `agent-profiles-init` from an earlier release there, and commit, then rerun setup so the versioned
 release matches the prepared task files.
 
 ## Versioned Deployment

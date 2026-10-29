@@ -45,7 +45,7 @@ bash "$AP_HELPER" init [--profile NAME]
 bash "$AP_HELPER" list [--json]
 bash "$AP_HELPER" run [--profile NAME] -- COMMAND [ARGS...]
 
-# Deploy the versioned helper and the two global mise tasks (preview is default)
+# Deploy the versioned helper and the global `mise ap` task (preview is default)
 bash "$AP_HELPER" setup [--preview | --apply] [--agent ID]... [--tasks-only] [--prepare-dir DIR]
 
 # Lifecycle: previews until --yes; run from a host shell, never inside a profile

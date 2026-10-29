@@ -21,9 +21,11 @@ platform is not qualified (exit 69) instead of attempting a fallback. Linux
 results are not evidence for macOS behavior.
 
 Default Docker containers usually restrict unprivileged user namespaces. There,
-prerequisite installation, versioned deployment, both task shims, the
-`agent-profiles-init` task and `doctor` are qualified; the `agent-profiles` run
-task delegates to the helper and returns the namespace refusal (exit 69), and
+prerequisite installation, versioned deployment, the task shims, profile
+creation through the earlier `agent-profiles-init` task and `doctor` are
+qualified (its replacement, `mise ap new`, runs the same `init` and is not
+re-qualified there); running a profile delegates to the helper and returns the
+namespace refusal (exit 69), and
 `doctor` reports the restriction. Full profile execution inside such a container
 is not claimed and no bypass is attempted.
 

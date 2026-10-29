@@ -96,17 +96,27 @@ bash "$AP_HELPER" setup --apply
 
 `--apply` deploys the helper and its references to a versioned release directory
 under `${XDG_DATA_HOME:-$HOME/.local/share}/flyingnobita-agent-profiles/releases/`
-and installs exactly two global `mise` file tasks:
+and installs one global `mise` file task, `agent-profiles`, aliased `ap`:
 
 ```bash
-mise run agent-profiles-init -- --profile demo
-mise run agent-profiles -- --profile demo claude
+mise ap demo claude    # run Claude in profile "demo"; offers to create it first
+mise ap demo           # open your shell inside the profile
+mise ap new demo       # create a profile without running anything
+mise ap ls             # list profiles in this checkout
+mise ap rm demo        # remove a profile (preview until --yes)
+mise ap doctor
 ```
 
-The tasks forward arguments verbatim and stay pinned to that versioned release.
+Everything after the agent name is forwarded verbatim. A missing profile is
+offered for creation in a terminal; scripts pass `--create`
+(`mise ap --create demo claude`) so a typo never creates a stray profile. Add
+`alias ap='mise ap'` to your shell if you want the bare word.
+
+The task stays pinned to that versioned release, and setup removes the
+`agent-profiles-init` task of earlier versions after a backup.
 After a skill update, `doctor` reports the deployment as `stale` and
-`setup --apply` refreshes it; if the release directory is removed the tasks exit
-78 and name the missing path. Missing
+`setup --apply` refreshes it; if the release directory is removed the task exits
+78 and names the missing path. Missing
 prerequisites and agent CLIs are installed only with `--apply`, only when they
 are actually missing, and only through the detected package manager or the
 `mise` registry; `--agent claude|codex|agy|opencode` limits which agent is
@@ -176,7 +186,7 @@ bash "$AP_HELPER" doctor
 #    helper is gone after this step, so no helper command can run below.
 npx skills remove -g -y --skill flyingnobita-agent-profiles
 
-# 4. Delete the two global mise task files by absolute path, but only when this
+# 4. Delete the global mise task files by absolute path, but only when this
 #    tool owns them. Setup resolves the config directory as $MISE_CONFIG_DIR, or
 #    from `mise doctor --json` dirs.config, or ${XDG_CONFIG_HOME:-$HOME/.config}/mise.
 MISE_CONFIG="${MISE_CONFIG_DIR:-$(mise doctor --json 2>/dev/null |
@@ -264,9 +274,11 @@ startup, discovery, authentication or sandboxing work. See
 | macOS | Not qualified | Deferred; unverified, no bubblewrap redirection layer |
 
 In default Docker containers, unprivileged user namespaces are usually
-restricted. There, `setup`, deployment, `doctor` and the `agent-profiles-init`
-task work; the `agent-profiles` run task delegates to the helper and truthfully
-returns the namespace refusal (exit 69). Full profile execution inside such a
+restricted. There, `setup`, deployment, `doctor` and profile creation through
+the earlier `agent-profiles-init` task were qualified (its replacement,
+`mise ap new`, runs the same `init` and is not re-qualified there); running a
+profile delegates to the helper and truthfully returns the namespace refusal
+(exit 69). Full profile execution inside such a
 container is not qualified.
 
 ## Security and Shared Host Resources
