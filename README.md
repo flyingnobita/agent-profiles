@@ -162,6 +162,11 @@ never installed by the helper.
 The skill is installed with the `skills` CLI (npm `skills` package, pinned to
 1.7.4). Select the skill explicitly, and drop `-g` for project scope.
 
+> [!NOTE]
+> Before the skill is published to the public registry it will be renamed
+> without the `flyingnobita-` prefix, to `agent-profiles`. Commands that name
+> `flyingnobita-agent-profiles` will change accordingly.
+
 From the [published repository](https://github.com/flyingnobita/agent-profiles):
 
 ```bash
