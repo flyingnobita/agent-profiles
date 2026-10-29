@@ -1,5 +1,7 @@
 # Changelog
 
+- Oct-29, 2026 - 11:42 PM +08:00 - Release checks no longer treat bracket syntax inside README code blocks as links, so the Starship prompt example no longer fails `check-release`
+
 - Oct-29, 2026 - 11:16 PM +08:00 - Document showing the active profile in the shell prompt (`ap: NAME`) for Starship, zsh and bash, so a shell opened with `mise ap NAME` is not mistaken for a normal one
 
 - Oct-29, 2026 - 10:55 PM +08:00 - Replace the two global mise tasks with one `agent-profiles` task aliased `ap`: `mise ap NAME [COMMAND]` runs a profile and offers to create a missing one (`--create` in scripts), with `new`, `ls`, `rm`, `reset` and `doctor` shortcuts; setup removes the retired `agent-profiles-init` task after a backup

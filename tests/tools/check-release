@@ -126,6 +126,7 @@ done
 pass "README.md documents install, update, remove, maintenance and compatibility"
 
 # Every relative documentation link in the README must resolve to a real file.
+# Fenced code blocks are skipped: their bracket syntax is not a link.
 while IFS= read -r target; do
   [[ -n "$target" ]] || continue
   case "$target" in
@@ -133,7 +134,8 @@ while IFS= read -r target; do
   esac
   require_file "$ROOT_DIR/$target"
 done < <(
-  grep -oE '\]\([^)]+\)' "$README" \
+  awk '/^[[:space:]]*```/ { fenced = !fenced; next } !fenced' "$README" \
+    | grep -oE '\]\([^)]+\)' \
     | sed -E 's/^\]\((.*)\)$/\1/' \
     | cut -d'#' -f1
 )
