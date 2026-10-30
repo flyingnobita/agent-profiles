@@ -84,3 +84,34 @@ SHIM
   assert_success
   assert_output_contains "bounded"
 }
+
+@test "portability: profile init and sorted list work without mapfile or GNU stat" {
+  local repo="$TEST_TMPDIR/repo-stat"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  # BSD/macOS stat has no -c format option, so every GNU format string must go.
+  local shim="$TEST_TMPDIR/bsd-bin"
+  reject_gnu_options "$shim" stat
+  export PATH="$shim:$AP_HOST_PATH"
+
+  run bash "$AP_HELPER" init --profile zulu
+  assert_success
+  run bash "$AP_HELPER" init --profile alpha
+  assert_success
+  run bash "$AP_HELPER" init --profile mike
+  assert_success
+
+  run bash "$AP_HELPER" list
+  assert_success
+  assert_output_equals "$(printf '%s\n' alpha mike zulu)"
+
+  # Profile identity is still enforced. A second path that resolves to an
+  # existing profile is an inode alias: it must be refused, never skipped
+  # because an empty stat result looked like "no alias found".
+  ln -s "$repo/.agent-profiles/zulu" "$repo/.agent-profiles/alias-zulu"
+
+  run bash "$AP_HELPER" init --profile zulu
+  assert_failure 73
+  assert_output_contains "aliases existing profile"
+}
