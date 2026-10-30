@@ -268,3 +268,64 @@ print("DARWIN_ENV_OK")
   assert_dir_exists "$prof_dir/home"
   [[ ! -e "$prof_dir/home/.claude" ]]
 }
+@test "darwin run: two profiles keep home-relative writes and PATH entries separate" {
+  local repo="$TEST_TMPDIR/repo-darwin-two-profiles"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init --profile prof-a
+  assert_success
+  run bash "$AP_HELPER" init --profile prof-b
+  assert_success
+
+  local prof_a="$repo/.agent-profiles/prof-a"
+  local prof_b="$repo/.agent-profiles/prof-b"
+
+  local d
+  for d in .claude .codex .gemini .agents; do
+    mkdir -p "$HOME/$d"
+    printf "host-canary-%s\n" "$d" >"$HOME/$d/canary.txt"
+  done
+  local host_before
+  host_before=$(hash_tree "$HOME")
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run --profile prof-a -- python3 -c '
+import os
+import sys
+
+prof = sys.argv[1]
+with open(os.path.join(prof, ".claude", "a.txt"), "w") as handle:
+    handle.write("A\n")
+assert os.environ["HOME"] == prof
+print("PROFILE_A_OK")
+' "$prof_a"
+  assert_success
+  assert_output_contains "PROFILE_A_OK"
+
+  # Profile B starts with a PATH that still names profile A's bin directories.
+  run env PATH="$prof_a/npm-global/bin:$prof_a/bin:$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" run --profile prof-b -- python3 -c '
+import os
+import sys
+
+prof = sys.argv[1]
+other = sys.argv[2]
+assert os.environ["HOME"] == prof, os.environ["HOME"]
+assert os.environ["AGENT_PROFILES_NAME"] == "prof-b"
+path = os.environ["PATH"].split(":")
+assert not any(os.path.join(other, sub) in path for sub in ("bin", "npm-global/bin")), path
+with open(os.path.join(prof, ".agents", "b.txt"), "w") as handle:
+    handle.write("B\n")
+print("PROFILE_B_OK")
+' "$prof_b" "$prof_a"
+  assert_success
+  assert_output_contains "PROFILE_B_OK"
+
+  # Writes never cross profiles.
+  assert_equal "$(cat "$prof_a/.claude/a.txt")" "A"
+  assert_equal "$(cat "$prof_b/.agents/b.txt")" "B"
+  [[ ! -e "$prof_a/.agents/b.txt" ]]
+  [[ ! -e "$prof_b/.claude/a.txt" ]]
+
+  # The synthetic host tree is still byte-identical.
+  assert_equal "$(hash_tree "$HOME")" "$host_before"
+}
