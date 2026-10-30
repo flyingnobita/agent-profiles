@@ -351,3 +351,37 @@ assert tasks[0]["status"] == "error", tasks[0]
 assert "manifest verification failed" in tasks[0]["detail"], tasks[0]
 ' "$output"
 }
+
+@test "portability: doctor timeout handles a hanging probe without GNU timeout" {
+  local repo="$TEST_TMPDIR/repo-timeout"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  # A hanging version probe that writes a credential-shaped value before it
+  # blocks: the classification must be a timeout, and nothing raw may leak.
+  local agents="$TEST_TMPDIR/agents-bin"
+  mkdir -p "$agents"
+  cat >"$agents/claude" <<'STUB'
+#!/usr/bin/env bash
+printf 'ANTHROPIC_API_KEY=sk-ant-secret-value\n'
+sleep 30
+STUB
+  chmod +x "$agents/claude"
+
+  local shim="$TEST_TMPDIR/no-timeout-bin"
+  mask_command "$shim" timeout
+  export PATH="$shim:$agents:$AP_HOST_PATH"
+
+  run bash "$AP_HELPER" doctor --json --agent claude
+  assert_success
+  assert_output_not_contains "sk-ant-secret-value"
+
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+agent = data["agents"]["claude"]
+assert agent["status"] == "unverified", agent
+assert agent["version_probe"] == "timeout", agent
+assert agent["version"] is None, agent
+' "$output"
+}
