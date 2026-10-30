@@ -81,7 +81,7 @@ ap_fd_tracked() {
 
 ap_fd_is_open() {
   local candidate="$1"
-  ( : >&"$candidate" ) 2>/dev/null
+  (: >&"$candidate") 2>/dev/null
 }
 
 # Prints the lowest descriptor that is neither tracked nor already open.

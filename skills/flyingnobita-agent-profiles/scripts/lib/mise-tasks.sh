@@ -10,9 +10,9 @@ AP_SETUP_AGENTS=(claude codex agy opencode)
 AP_SETUP_DEPS=(bash git python3 mise bwrap)
 
 ap_setup_skill_dir() {
-  local lib_dir
-  lib_dir="$(ap_platform_script_dir "${BASH_SOURCE[0]}")"
-  printf "%s\n" "$(dirname "$(dirname "$lib_dir")")"
+  local mise_lib_dir
+  mise_lib_dir="$(ap_platform_script_dir "${BASH_SOURCE[0]}")"
+  printf "%s\n" "$(dirname "$(dirname "$mise_lib_dir")")"
 }
 
 ap_setup_read_field() {
