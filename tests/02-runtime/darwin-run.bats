@@ -49,6 +49,25 @@ teardown() {
   teardown_isolation
 }
 
+# hash_tree <dir>: stable content hash of every file under <dir>, so a test can
+# prove a synthetic host tree is byte-identical before and after a profile run.
+hash_tree() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import sys
+
+root = sys.argv[1]
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames.sort()
+    for name in sorted(filenames):
+        path = os.path.join(dirpath, name)
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+        print(digest, os.path.relpath(path, root))
+PY
+}
+
 @test "darwin run: executes without bwrap and never creates host mountpoints" {
   local repo="$TEST_TMPDIR/repo-darwin-no-bwrap"
   create_fixture_repo "$repo"
@@ -208,4 +227,44 @@ print("DARWIN_ENV_OK")
 ' "$prof_dir" "$storage_dir"
   assert_success
   assert_output_contains "DARWIN_ENV_OK"
+}
+
+@test "darwin run: HOME-relative Claude Codex Gemini and agents writes land in selected profile" {
+  local repo="$TEST_TMPDIR/repo-darwin-writes"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local prof_dir="$repo/.agent-profiles/default"
+  local d
+  for d in .claude .codex .gemini .agents; do
+    mkdir -p "$HOME/$d"
+    printf "host-canary-%s\n" "$d" >"$HOME/$d/canary.txt"
+  done
+  local host_before
+  host_before=$(hash_tree "$HOME")
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run -- sh -c '
+    printf "claude\n" >"$HOME/.claude/marker.txt"
+    printf "codex\n" >"$HOME/.codex/marker.txt"
+    printf "gemini\n" >"$HOME/.gemini/marker.txt"
+    printf "agents\n" >"$HOME/.agents/marker.txt"
+  '
+  assert_success
+
+  local name
+  for d in .claude .codex .gemini .agents; do
+    name="${d#.}"
+    assert_file_exists "$prof_dir/$d/marker.txt"
+    assert_equal "$(cat "$prof_dir/$d/marker.txt")" "$name"
+    [[ ! -e "$HOME/$d/marker.txt" ]]
+  done
+
+  # The synthetic host tree is byte-identical: no HOME-relative write reached it.
+  assert_equal "$(hash_tree "$HOME")" "$host_before"
+
+  # home/ is still only the initialization marker, not the Darwin HOME.
+  assert_dir_exists "$prof_dir/home"
+  [[ ! -e "$prof_dir/home/.claude" ]]
 }
