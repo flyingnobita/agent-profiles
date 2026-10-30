@@ -155,6 +155,75 @@ PY
   [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles" ]]
 }
 
+@test "setup apply darwin: repeated deploy is idempotent and the ap task creates and runs a profile" {
+  local repo="$TEST_TMPDIR/fixture-repo"
+  create_fixture_repo "$repo"
+  cd "$repo" || exit 1
+
+  local bin="$DARWIN_BIN:$NO_INSTALL_BIN"
+  run env PATH="$bin" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" setup --apply
+  assert_success
+  assert_output_contains "darwin family"
+  assert_output_not_contains "bwrap"
+
+  # Exactly one global task, aliased ap, pointing at a versioned release.
+  local task="$MISE_CONFIG_DIR/tasks/agent-profiles"
+  assert_file_exists "$task"
+  [[ -x "$task" ]]
+  [[ "$(find "$MISE_CONFIG_DIR/tasks" -type f | wc -l)" -eq 1 ]]
+  grep -Fxq '#MISE alias="ap"' "$task"
+  grep -Fxq '#MISE quiet=true' "$task"
+
+  local release
+  release="$(sed -n 's/^# release: //p' "$task")"
+  assert_dir_exists "$release"
+  [[ "$release" == "$XDG_DATA_HOME/flyingnobita-agent-profiles/releases/"* ]]
+  assert_file_exists "$release/scripts/agent-profiles"
+  assert_file_exists "$release/VERSION"
+  assert_file_exists "$release/manifest.sha256"
+
+  # Verify the deployed manifest independently of the helper, with the python3
+  # standard library only.
+  python3 - "$release" <<'PY'
+import hashlib
+import os
+import sys
+
+root = sys.argv[1]
+manifest = os.path.join(root, "manifest.sha256")
+with open(manifest) as handle:
+    lines = [line.strip() for line in handle if line.strip()]
+assert lines, "empty manifest"
+for line in lines:
+    digest, separator, relative = line.partition("  ")
+    assert separator and relative, line
+    with open(os.path.join(root, relative), "rb") as handle:
+        actual = hashlib.sha256(handle.read()).hexdigest()
+    assert actual == digest, (relative, actual, digest)
+print("verified", len(lines), "manifest entries")
+PY
+
+  # A second apply keeps every byte: no new release, no rewritten task and no
+  # backup, so repeated deploys are idempotent on macOS too.
+  local before after
+  before="$(hash_tree "$MISE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_STATE_HOME")"
+  run env PATH="$bin" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" setup --apply
+  assert_success
+  after="$(hash_tree "$MISE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_STATE_HOME")"
+  assert_equal "$before" "$after"
+  assert_equal "$release" "$(sed -n 's/^# release: //p' "$task")"
+  [[ "$(find "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" -type f 2>/dev/null | wc -l)" -eq 0 ]]
+
+  # The deployed task creates and runs a profile through mise on Darwin.
+  run env PATH="$bin" AP_TEST_PLATFORM_OS=Darwin mise ap new demo
+  assert_success
+  assert_dir_exists "$repo/.agent-profiles/demo/home"
+
+  run env PATH="$bin" AP_TEST_PLATFORM_OS=Darwin mise ap demo sh -c 'printf "name=%s\n" "$AGENT_PROFILES_NAME"'
+  assert_success
+  assert_output_contains "name=demo"
+}
+
 @test "setup apply darwin: managed config and optional agents stay untouched without bwrap installation" {
   cd "$TEST_TMPDIR/work" || exit 1
 
