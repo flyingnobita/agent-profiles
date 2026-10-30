@@ -7,6 +7,9 @@ AP_SETUP_TASKS=(agent-profiles)
 # while they still carry this tool's managed-by marker.
 AP_SETUP_RETIRED_TASKS=(agent-profiles-init)
 AP_SETUP_AGENTS=(claude codex agy opencode)
+# Prerequisites for the machine setup. ap_setup_detect narrows this list to the
+# configuration-redirection set on Darwin, which needs no bubblewrap because
+# macOS profiles redirect agent configuration by environment only.
 AP_SETUP_DEPS=(bash git python3 mise bwrap)
 
 ap_setup_skill_dir() {
@@ -26,8 +29,33 @@ ap_setup_read_field() {
 
 ap_setup_detect() {
   local os_name
-  os_name="$(uname -s 2>/dev/null || echo unknown)"
+  os_name="$(ap_platform_os 2>/dev/null || echo unknown)"
+
   AP_SETUP_OS_RELEASE="${AP_OS_RELEASE:-/etc/os-release}"
+  AP_SETUP_OS_ID=""
+  AP_SETUP_OS_ID_LIKE=""
+  AP_SETUP_OS_PRETTY=""
+  AP_SETUP_PKG_MANAGER=""
+
+  # macOS is a configuration-redirection platform: it publishes its identity
+  # through sw_vers, has no os-release file and needs no bubblewrap. No package
+  # manager is guessed for it either, so nothing is ever installed there.
+  if [[ "$os_name" == "Darwin" ]]; then
+    AP_SETUP_FAMILY="darwin"
+    AP_SETUP_OS_ID="macos"
+    AP_SETUP_DEPS=(bash git python3 mise)
+    local product_version=""
+    if command -v sw_vers >/dev/null 2>&1; then
+      product_version="$(sw_vers -productVersion 2>/dev/null || true)"
+    fi
+    if [[ -n "$product_version" ]]; then
+      AP_SETUP_OS_PRETTY="macOS $product_version"
+    else
+      AP_SETUP_OS_PRETTY="macOS (version unknown)"
+    fi
+    return 0
+  fi
+
   AP_SETUP_OS_ID="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" ID)"
   AP_SETUP_OS_ID_LIKE="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" ID_LIKE)"
   AP_SETUP_OS_PRETTY="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" PRETTY_NAME)"
@@ -35,6 +63,7 @@ ap_setup_detect() {
   [[ -n "$AP_SETUP_OS_ID" ]] || AP_SETUP_OS_ID="unknown"
   [[ -n "$AP_SETUP_OS_PRETTY" ]] || AP_SETUP_OS_PRETTY="unknown"
 
+  AP_SETUP_DEPS=(bash git python3 mise bwrap)
   AP_SETUP_FAMILY="unsupported"
   if [[ "$os_name" == "Linux" ]]; then
     case " $AP_SETUP_OS_ID $AP_SETUP_OS_ID_LIKE " in
@@ -43,7 +72,6 @@ ap_setup_detect() {
     esac
   fi
 
-  AP_SETUP_PKG_MANAGER=""
   case "$AP_SETUP_FAMILY" in
     arch) command -v pacman >/dev/null 2>&1 && AP_SETUP_PKG_MANAGER="pacman" ;;
     debian) command -v apt-get >/dev/null 2>&1 && AP_SETUP_PKG_MANAGER="apt-get" ;;
@@ -142,12 +170,16 @@ ap_setup_print_detection() {
 
   if [[ -n "$AP_SETUP_PKG_MANAGER" ]]; then
     printf "Package manager: %s (%s family)\n" "$AP_SETUP_PKG_MANAGER" "$AP_SETUP_FAMILY"
+  elif [[ "$AP_SETUP_FAMILY" == "darwin" ]]; then
+    printf "Package manager: none (macOS uses no automatic package installation)\n"
   else
     printf "Package manager: none detected\n"
   fi
   if [[ "$AP_SETUP_FAMILY" == "unsupported" ]]; then
     printf "  [UNSUPPORTED] unsupported automatic path: distribution family '%s' is not supported\n" \
       "$AP_SETUP_OS_ID"
+  elif [[ "$AP_SETUP_FAMILY" == "darwin" ]]; then
+    printf "  [NOTE] macOS redirects agent configuration by environment; only bash, git, python3 and mise are required\n"
   fi
   printf "\n"
 
@@ -261,7 +293,8 @@ ap_setup_print_plan() {
   if [[ "$tasks_only" -eq 1 ]]; then
     printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
   fi
-  for dep in bash git python3 bwrap; do
+  for dep in "${AP_SETUP_DEPS[@]:-}"; do
+    [[ -n "$dep" ]] || continue
     if [[ "$tasks_only" -eq 1 ]]; then
       break
     fi
@@ -276,9 +309,6 @@ ap_setup_print_plan() {
       printf "  prerequisite: %s (unsupported automatic path)\n" "$dep"
     fi
   done
-  if ! ap_setup_resolve mise >/dev/null 2>&1; then
-    printf "  prerequisite: mise (manual installation required; no curl)\n"
-  fi
 
   for agent in "${requested_agents[@]:-}"; do
     [[ -n "$agent" ]] || continue
@@ -651,11 +681,15 @@ ap_setup_install_prerequisites() {
   if [[ "$tasks_only" -eq 1 ]]; then
     printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
   fi
-  for dep in bash git python3 bwrap; do
+  for dep in "${AP_SETUP_DEPS[@]:-}"; do
+    [[ -n "$dep" ]] || continue
     if [[ "$tasks_only" -eq 1 ]]; then
       break
     fi
     if ap_setup_resolve "$dep" >/dev/null 2>&1; then
+      continue
+    fi
+    if [[ "$dep" == "mise" ]]; then
       continue
     fi
     if ! ap_setup_install_package "$dep"; then
