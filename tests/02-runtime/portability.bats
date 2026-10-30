@@ -162,3 +162,62 @@ SHIM
   assert_failure 73
   assert_output_contains "inside the git checkout"
 }
+
+@test "portability: shared and exclusive locks retain contention and descendant leases without flock or dynamic descriptors" {
+  local repo="$TEST_TMPDIR/repo-locks"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  local shim="$TEST_TMPDIR/no-flock-bin"
+  mask_command "$shim" flock
+  export PATH="$shim:$AP_HOST_PATH"
+
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+
+  local lock_file="$repo/.agent-profiles/.locks/default.lock"
+  assert_file_exists "$lock_file"
+  local lock_inode_before
+  lock_inode_before=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "$lock_file")
+
+  # Two shared leases are compatible: a run starts while the first is running.
+  bash "$AP_HELPER" run -- sleep 2 &
+  local first=$!
+  sleep 0.6
+  run bash "$AP_HELPER" run -- true
+  assert_success
+  wait "$first"
+
+  # An exclusive lifecycle lock is refused while a shared lease is held.
+  bash "$AP_HELPER" run -- sleep 2 &
+  local holder=$!
+  sleep 0.6
+  run bash "$AP_HELPER" reset --profile default --yes
+  assert_failure 75
+  assert_output_contains "in use"
+  wait "$holder"
+
+  # A background descendant keeps the inherited lease after the direct parent
+  # exits, and the persistent lock inode is never replaced.
+  local pid_file="$TEST_TMPDIR/lease-child.pid"
+  bash "$AP_HELPER" run -- sh -c 'sleep 5 & echo $! >"$1"' sh "$pid_file"
+  assert_file_exists "$pid_file"
+  local child
+  child=$(cat "$pid_file")
+  [[ -n "$child" ]]
+
+  local lock_inode_after
+  lock_inode_after=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "$lock_file")
+  assert_equal "$lock_inode_after" "$lock_inode_before"
+
+  run bash "$AP_HELPER" reset --profile default --yes
+  assert_failure 75
+  assert_output_contains "in use"
+
+  kill -9 "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+  sleep 0.4
+
+  run bash "$AP_HELPER" reset --profile default --yes
+  assert_success
+}
