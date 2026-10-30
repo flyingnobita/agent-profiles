@@ -42,3 +42,20 @@ ap_platform_realpath_existing() {
 ap_platform_realpath_missing() {
   ap_platform realpath --missing "$1"
 }
+
+# Prints one filesystem attribute so callers stop depending on GNU stat -c.
+ap_platform_stat_mode() {
+  ap_platform stat mode "$1"
+}
+
+ap_platform_stat_owner() {
+  ap_platform stat owner "$1"
+}
+
+ap_platform_stat_dev() {
+  ap_platform stat dev "$1"
+}
+
+ap_platform_stat_devino() {
+  ap_platform stat devino "$1"
+}

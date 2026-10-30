@@ -149,7 +149,9 @@ ap_check_profile_aliasing() {
     done
 
     local target_ino
-    target_ino=$(stat -c "%d:%i" "$prof_dir" 2>/dev/null || true)
+    if ! target_ino=$(ap_platform_stat_devino "$prof_dir"); then
+      ap_die "$EX_LAYOUT" "cannot determine the filesystem identity of profile directory '$prof_dir'"
+    fi
 
     for entry in "$storage_dir"/*; do
       [[ -d "$entry" ]] || continue
@@ -157,8 +159,10 @@ ap_check_profile_aliasing() {
       b=$(basename "$entry")
       [[ "$b" == "$profile" || "$b" == .* ]] && continue
       local other_ino
-      other_ino=$(stat -c "%d:%i" "$entry" 2>/dev/null || true)
-      if [[ -n "$target_ino" && "$target_ino" == "$other_ino" ]]; then
+      if ! other_ino=$(ap_platform_stat_devino "$entry"); then
+        ap_die "$EX_LAYOUT" "cannot determine the filesystem identity of profile entry '$entry'"
+      fi
+      if [[ "$target_ino" == "$other_ino" ]]; then
         ap_die "$EX_LAYOUT" "profile '$profile' aliases existing profile '$b' (same filesystem inode $target_ino)"
       fi
     done
@@ -316,19 +320,30 @@ ap_list_profiles() {
     done
   fi
 
-  # Sort profiles
-  if [[ ${#profiles[@]} -gt 1 ]]; then
-    mapfile -t profiles < <(printf "%s\n" "${profiles[@]}" | sort)
+  # Sort the profile names without mapfile, which stock bash 3.2 lacks.
+  local ordered=()
+  if [[ ${#profiles[@]} -gt 0 ]]; then
+    local profile_name
+    while IFS= read -r profile_name; do
+      [[ -n "$profile_name" ]] || continue
+      ordered+=("$profile_name")
+    done < <(printf "%s\n" "${profiles[@]}" | LC_ALL=C sort)
   fi
 
   if [[ "$json_mode" -eq 1 ]]; then
+    if [[ ${#ordered[@]} -eq 0 ]]; then
+      python3 -c 'import json; print(json.dumps({"profiles": []}, indent=2))'
+      return 0
+    fi
     python3 -c '
 import json, sys
 profiles = sys.argv[1:]
 print(json.dumps({"profiles": profiles}, indent=2))
-' "${profiles[@]}"
+' "${ordered[@]}"
   else
-    for p in "${profiles[@]}"; do
+    local p
+    for p in "${ordered[@]:-}"; do
+      [[ -n "$p" ]] || continue
       printf "%s\n" "$p"
     done
   fi

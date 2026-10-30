@@ -9,6 +9,7 @@ Python standard library is used: ``os.path``, ``os.stat``, ``hashlib``,
 """
 
 import os
+import stat
 import sys
 
 
@@ -55,6 +56,27 @@ def cmd_realpath(args):
     return 0
 
 
+def cmd_stat(args):
+    if len(args) != 2:
+        return _usage("stat requires a format and a path")
+    fmt, path = args
+    try:
+        info = os.stat(path)
+    except OSError:
+        return 1
+    if fmt == "mode":
+        sys.stdout.write("%o\n" % stat.S_IMODE(info.st_mode))
+    elif fmt == "owner":
+        sys.stdout.write("%d\n" % info.st_uid)
+    elif fmt == "dev":
+        sys.stdout.write("%d\n" % info.st_dev)
+    elif fmt == "devino":
+        sys.stdout.write("%d:%d\n" % (info.st_dev, info.st_ino))
+    else:
+        return _usage("unknown stat format: %s" % fmt)
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         return _usage("missing command")
@@ -62,6 +84,7 @@ def main(argv):
     handlers = {
         "script-dir": cmd_script_dir,
         "realpath": cmd_realpath,
+        "stat": cmd_stat,
     }
     handler = handlers.get(command)
     if handler is None:
