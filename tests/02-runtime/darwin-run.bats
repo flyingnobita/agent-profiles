@@ -329,3 +329,56 @@ print("PROFILE_B_OK")
   # The synthetic host tree is still byte-identical.
   assert_equal "$(hash_tree "$HOME")" "$host_before"
 }
+@test "darwin run: same-profile nesting dedupes PATH and different profile or checkout exits 75" {
+  local repo="$TEST_TMPDIR/repo-darwin-nested"
+  local repo_b="$TEST_TMPDIR/repo-darwin-nested-b"
+  create_fixture_repo "$repo"
+  create_fixture_repo "$repo_b"
+  cd "$repo"
+  run bash "$AP_HELPER" init --profile nest
+  assert_success
+  run bash "$AP_HELPER" init --profile other
+  assert_success
+  cd "$repo_b"
+  run bash "$AP_HELPER" init --profile nest
+  assert_success
+  cd "$repo"
+
+  local prof_dir="$repo/.agent-profiles/nest"
+
+  # Darwin has no mount table to inspect, so nesting identity comes from the
+  # validated active profile/root/checkout environment the outer run exported.
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" run --profile nest -- \
+    bash "$AP_HELPER" run --profile nest -- python3 -c '
+import os
+import sys
+
+prof = sys.argv[1]
+assert os.environ["HOME"] == prof
+assert os.environ["AGENT_PROFILES_NAME"] == "nest"
+path = os.environ["PATH"].split(":")
+for sub in ("bin", "npm-global/bin", "cargo-global/bin", "python-user/bin"):
+    entry = os.path.join(prof, sub)
+    assert path.count(entry) == 1, f"{entry} appears {path.count(entry)} times: {path}"
+print("NESTED_SAME_OK")
+' "$prof_dir"
+  assert_success
+  assert_output_contains "NESTED_SAME_OK"
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" run --profile nest -- \
+    bash "$AP_HELPER" run --profile other -- echo should_not_run
+  assert_failure
+  assert_equal "$status" 75
+  assert_output_contains "nested execution"
+  assert_output_not_contains "should_not_run"
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" run --profile nest -- \
+    sh -c 'cd "$1" && bash "$2" run --profile nest -- echo should_not_run' _ "$repo_b" "$AP_HELPER"
+  assert_failure
+  assert_equal "$status" 75
+  assert_output_contains "nested execution"
+  assert_output_not_contains "should_not_run"
+}
