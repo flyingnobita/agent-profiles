@@ -69,11 +69,6 @@ ap_scan_processes_for_paths() {
   local earliest_run_ticks="${3:-}"
   shift 3
 
-  local proc_root="${AP_PROC_ROOT:-/proc}"
-  if [[ ! -d "$proc_root" ]]; then
-    return 0
-  fi
-
   local current_uid
   current_uid=$(id -u)
 
@@ -100,6 +95,21 @@ ap_scan_processes_for_paths() {
   done
 
   if [[ ${#real_targets[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  # Darwin has no procfs, and a missing probe must never mean "no process":
+  # the inspector uses stock ps and lsof through the platform adapter and
+  # refuses with exit 69 when that inspection is unavailable. It never reads a
+  # synthetic proc root, and the Linux branch below never runs on Darwin.
+  if ap_platform_is_darwin; then
+    ap_platform darwin-proc-scan "$label" "$current_uid" "${caller_pids[*]}" \
+      "$assume_unrelated_csv" "${real_targets[@]}"
+    return $?
+  fi
+
+  local proc_root="${AP_PROC_ROOT:-/proc}"
+  if [[ ! -d "$proc_root" ]]; then
     return 0
   fi
 

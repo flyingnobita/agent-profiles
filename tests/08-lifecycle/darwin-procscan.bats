@@ -112,9 +112,9 @@ spawn_lease_session() {
   assert_output_contains "Reset profile 'leased' successfully"
 }
 
-# Waits until the Darwin inspector classifies a live holder, and leaves the
-# refusal of the last probe in $output. Polling replaces a sleeps-based guess at
-# how long an open descriptor takes to become visible.
+# Waits until the Darwin inspector classifies a live holder. Leaves the refusal
+# of the last probe in $output, so the caller asserts on it. Polling replaces a
+# sleeps-based guess at how long an open descriptor takes to become visible.
 wait_for_scan_refusal() {
   local attempt=0
   while [[ "$attempt" -lt 80 ]]; do
@@ -125,6 +125,7 @@ wait_for_scan_refusal() {
     sleep 0.1
     attempt=$((attempt + 1))
   done
+  printf '%s\n' "no Darwin process refusal observed; last status $status: $output" >&2
   return 1
 }
 
@@ -148,8 +149,7 @@ wait_for_scan_refusal() {
   local holder_pid=$!
   TEST_BG_PIDS+=("$holder_pid")
 
-  run wait_for_scan_refusal reset --profile target
-  assert_success
+  wait_for_scan_refusal reset --profile target
   assert_output_contains "refused: active process"
   assert_output_contains "profile 'target'"
   assert_output_contains "PID $holder_pid"
@@ -159,8 +159,7 @@ wait_for_scan_refusal() {
   assert_dir_exists "$prof_dir/home"
   assert_file_exists "$marker_file"
 
-  run wait_for_scan_refusal remove --profile target --yes
-  assert_success
+  wait_for_scan_refusal remove --profile target --yes
   assert_output_contains "PID $holder_pid"
   assert_output_not_contains "$secret"
   assert_dir_exists "$prof_dir"
@@ -179,8 +178,7 @@ wait_for_scan_refusal() {
   local legacy_pid=$!
   TEST_BG_PIDS+=("$legacy_pid")
 
-  run wait_for_scan_refusal migrate --yes
-  assert_success
+  wait_for_scan_refusal migrate --yes
   assert_output_contains "legacy storage"
   assert_output_contains "PID $legacy_pid"
   assert_output_not_contains "$secret"
@@ -217,8 +215,7 @@ PY
   local trash_pid=$!
   TEST_BG_PIDS+=("$trash_pid")
 
-  run wait_for_scan_refusal recover
-  assert_success
+  wait_for_scan_refusal recover --yes
   assert_output_contains "PID $trash_pid"
   assert_output_not_contains "$secret"
   # The journal and the trashed data are untouched by the refusal.

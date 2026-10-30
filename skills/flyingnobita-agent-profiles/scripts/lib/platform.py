@@ -387,6 +387,185 @@ def cmd_ps_ppid(args):
     return 0
 
 
+def _ps_rows():
+    """Returns the ps table as dicts, or None when ps cannot be run."""
+    binary = _ps_bin()
+    if not binary:
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                binary,
+                "-axo",
+                "pid=,ppid=,pgid=,uid=,stat=,lstart=,comm=",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    rows = []
+    for line in proc.stdout.splitlines():
+        fields = line.split(None, 10)
+        if len(fields) < 10:
+            continue
+        pid, ppid, pgid, uid, state = fields[:5]
+        if not (pid.isdigit() and ppid.isdigit() and uid.isdigit()):
+            continue
+        rows.append(
+            {
+                "pid": int(pid),
+                "ppid": int(ppid),
+                "pgid": int(pgid) if pgid.isdigit() else 0,
+                "uid": int(uid),
+                "state": state,
+                "start": " ".join(fields[5:10]).replace(" ", "_"),
+                "comm": fields[10] if len(fields) > 10 else "",
+            }
+        )
+    return rows
+
+
+def _comm_label(comm):
+    if not comm:
+        return "?"
+    return os.path.basename(comm) or comm
+
+
+def _refusal(label, relevant, unknown):
+    lines = []
+    for pid, comm in relevant:
+        lines.append(
+            "  PID %d (%s) [relevant: active profile resources in use]" % (pid, comm)
+        )
+    for pid, comm in unknown:
+        lines.append(
+            "  PID %d (%s) [relevant-unknown: uninspectable process potentially bound to profile]"
+            % (pid, comm)
+        )
+    if not lines:
+        return 0
+    sys.stderr.write(
+        "agent-profiles: error: refused: active process(es) associated with "
+        + label
+        + ":\n"
+    )
+    for line in lines:
+        sys.stderr.write(line + "\n")
+    sys.stderr.write(
+        "Use --assume-unrelated PID[,PID...] to explicitly vouch for unknown uninspectable processes.\n"
+    )
+    return 75
+
+
+def _inspection_unavailable(detail):
+    """A missing or unreadable probe never means "no process".
+
+    Destructive lifecycle refuses with EX_UNAVAILABLE (69) before any change
+    when complete inspection of the current user's processes cannot be
+    obtained.
+    """
+    sys.stderr.write(
+        "agent-profiles: error: refused: process inspection is unavailable "
+        "(%s); the lifecycle operation refuses rather than assuming that no "
+        "process uses this profile\n" % detail
+    )
+    return 69
+
+
+def cmd_darwin_proc_scan(args):
+    """Refuses while an owned process is bound to a target path on Darwin.
+
+    Procfs does not exist on Darwin, so the evidence comes from stock ps and
+    lsof: open descriptors, the inherited profile lease descriptor and the
+    working directory. Processes that ps sees but lsof cannot inspect keep the
+    Linux relevant-unknown semantics and refuse unless the caller vouches for
+    them, so an incomplete probe never means "no process".
+    """
+    if len(args) < 5:
+        return _usage(
+            "darwin-proc-scan requires a label, a UID, caller PIDs, assumed PIDs and a target"
+        )
+    label, uid_text, caller_csv, assume_csv = args[:4]
+    targets = [os.path.realpath(path) for path in args[4:] if path]
+    if not targets:
+        return 0
+    try:
+        uid = int(uid_text)
+    except ValueError:
+        return _usage("darwin-proc-scan UID is not a number: %s" % uid_text)
+
+    rows = _ps_rows()
+    if rows is None:
+        return _inspection_unavailable("ps")
+    entries = _lsof_entries(uid)
+    if entries is None:
+        return _inspection_unavailable("lsof")
+
+    parents = {row["pid"]: row["ppid"] for row in rows}
+    excluded = set(int(value) for value in caller_csv.split() if value.isdigit())
+    excluded.add(os.getpid())
+    # The inspector inherits the caller's lock descriptors, so its own ps/lsof
+    # children hold the profile lease open. Exclude only the inspector's own
+    # descendants: a QA session spawned by the caller is a real holder.
+    inspector = os.getpid()
+    for row in rows:
+        ancestor = row["ppid"]
+        for _ in range(64):
+            if ancestor == inspector:
+                excluded.add(row["pid"])
+                break
+            ancestor = parents.get(ancestor, 0)
+            if ancestor <= 1:
+                break
+
+    relevant = []
+    unknown = []
+    inspected = set(entries)
+
+    for pid in sorted(entries):
+        if pid in excluded or pid <= 1:
+            continue
+        record = entries[pid]
+        if any(_path_under_targets(name, targets) for name in record["names"]):
+            relevant.append((pid, _comm_label(record["comm"])))
+
+    assume_unrelated = set(
+        int(value) for value in assume_csv.split(",") if value.strip().isdigit()
+    )
+    for row in rows:
+        pid = row["pid"]
+        if pid in excluded or pid <= 1 or pid in inspected:
+            continue
+        if row["uid"] != uid:
+            continue
+        # A zombie holds nothing and cannot be bound to a profile.
+        if "Z" in row["state"]:
+            continue
+        if pid in assume_unrelated:
+            continue
+        if row["ppid"] <= 1:
+            unknown.append((pid, _comm_label(row["comm"])))
+            continue
+        ancestor = row["ppid"]
+        for _ in range(64):
+            if ancestor in excluded or ancestor <= 1:
+                break
+            comm = next(
+                (_comm_label(item["comm"]) for item in rows if item["pid"] == ancestor),
+                None,
+            )
+            if comm in ("bwrap", "agent-profiles"):
+                unknown.append((pid, _comm_label(row["comm"])))
+                break
+            ancestor = parents.get(ancestor, 0)
+
+    return _refusal(label, relevant, unknown)
+
+
 def cmd_proc_holders(args):
     """Prints "  PID <pid> (<comm>)" for each process that keeps a path open.
 
@@ -462,6 +641,7 @@ def main(argv):
         "sha256-text": cmd_sha256_text,
         "sha256sum": cmd_sha256sum,
         "copy-preserve": cmd_copy_preserve,
+        "darwin-proc-scan": cmd_darwin_proc_scan,
         "lock": cmd_lock,
         "proc-holders": cmd_proc_holders,
         "ps-ppid": cmd_ps_ppid,
