@@ -69,7 +69,7 @@ ap_scan_processes_for_paths() {
   for target in "$@"; do
     [[ -n "$target" ]] || continue
     local resolved
-    resolved=$(readlink -f "$target" 2>/dev/null || printf '%s\n' "$target")
+    resolved=$(ap_platform_realpath_existing "$target" 2>/dev/null || printf '%s\n' "$target")
     real_targets+=("$resolved")
   done
 

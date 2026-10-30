@@ -2,6 +2,11 @@
 # Common definitions, error codes, and utilities for agent-profiles
 # shellcheck disable=SC2034
 
+_AP_LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/platform.sh
+source "$_AP_LIB_DIR/platform.sh"
+unset _AP_LIB_DIR
+
 # Exit codes per contract
 EX_OK=0
 EX_USAGE=64

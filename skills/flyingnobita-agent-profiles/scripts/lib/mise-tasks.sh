@@ -10,7 +10,9 @@ AP_SETUP_AGENTS=(claude codex agy opencode)
 AP_SETUP_DEPS=(bash git python3 mise bwrap)
 
 ap_setup_skill_dir() {
-  printf "%s\n" "$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")")"
+  local lib_dir
+  lib_dir="$(ap_platform_script_dir "${BASH_SOURCE[0]}")"
+  printf "%s\n" "$(dirname "$(dirname "$lib_dir")")"
 }
 
 ap_setup_read_field() {
@@ -63,7 +65,7 @@ ap_setup_resolve() {
   local found
   found="$(command -v "$name" 2>/dev/null || true)"
   [[ -n "$found" ]] || return 1
-  readlink -f "$found" 2>/dev/null || printf "%s\n" "$found"
+  ap_platform_realpath_existing "$found" 2>/dev/null || printf "%s\n" "$found"
 }
 
 ap_setup_package_for() {
@@ -540,7 +542,7 @@ ap_setup_config_dir_managed_reason() {
     printf "global mise config directory '%s' is a symlink\n" "$config_dir"
     return 0
   fi
-  resolved_dir=$(readlink -f "$config_dir" 2>/dev/null || true)
+  resolved_dir=$(ap_platform_realpath_existing "$config_dir" 2>/dev/null || true)
   if [[ -n "$resolved_dir" && "$resolved_dir" != "$config_dir" ]]; then
     printf "global mise config directory '%s' resolves through a symlinked parent\n" "$config_dir"
     return 0

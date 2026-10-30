@@ -109,7 +109,7 @@ ap_doctor_check_agents() {
     fi
 
     if [[ -n "$agent_path" ]]; then
-      agent_path=$(readlink -f "$agent_path" 2>/dev/null || echo "$agent_path")
+      agent_path=$(ap_platform_realpath_existing "$agent_path" 2>/dev/null || printf "%s\n" "$agent_path")
 
       PROBE_EXIT=0
       PROBE_PARSED_VERSION=""

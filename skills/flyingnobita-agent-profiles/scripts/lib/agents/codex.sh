@@ -16,7 +16,7 @@ ap_agent_codex_detect() {
     p=$(mise which codex 2>/dev/null || true)
     if [[ -n "$p" && -x "$p" ]]; then
       local rp
-      rp=$(readlink -f "$p" 2>/dev/null || echo "$p")
+      rp=$(ap_platform_realpath_existing "$p" 2>/dev/null || printf "%s\n" "$p")
       if [[ "$rp" != *"/bin/mise" && "$rp" != "/usr/bin/mise" ]]; then
         printf "%s\n" "$rp"
         return 0
@@ -31,7 +31,7 @@ ap_agent_codex_detect() {
     local cand="$dir/codex"
     if [[ -x "$cand" && ! -d "$cand" ]]; then
       local rcand
-      rcand=$(readlink -f "$cand" 2>/dev/null || echo "$cand")
+      rcand=$(ap_platform_realpath_existing "$cand" 2>/dev/null || printf "%s\n" "$cand")
       if [[ "$rcand" != *"/bin/mise" && "$rcand" != "/usr/bin/mise" ]]; then
         IFS="$old_ifs"
         printf "%s\n" "$rcand"
@@ -111,7 +111,7 @@ ap_doctor_check_codex_profile() {
       auth_detail="Codex binary not found; login state unverified"
     else
       local resolved_bin=""
-      resolved_bin=$(readlink -f "$codex_bin" 2>/dev/null || echo "$codex_bin")
+      resolved_bin=$(ap_platform_realpath_existing "$codex_bin" 2>/dev/null || printf "%s\n" "$codex_bin")
       if [[ "$resolved_bin" == *"/bin/mise" || "$resolved_bin" == "/usr/bin/mise" ]]; then
         auth_status="unverified"
         auth_detail="Codex launcher resolved to mise; login state unverified"

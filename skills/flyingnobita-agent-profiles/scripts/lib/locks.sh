@@ -20,7 +20,9 @@ ap_ensure_locks_dir() {
   fi
 
   local real_ld
-  real_ld=$(readlink -f "$locks_dir" 2>/dev/null || true)
+  if ! real_ld=$(ap_platform_realpath_existing "$locks_dir"); then
+    ap_die "$EX_LAYOUT" "locks directory '$locks_dir' could not be resolved to a physical path"
+  fi
   if [[ "$real_ld" != "$locks_dir" ]]; then
     ap_die "$EX_LAYOUT" "locks directory path mismatch with realpath ($locks_dir -> $real_ld)"
   fi

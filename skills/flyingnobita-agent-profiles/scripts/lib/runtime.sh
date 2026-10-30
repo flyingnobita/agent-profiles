@@ -97,7 +97,9 @@ ap_check_profile_aliasing() {
 
   if [[ -d "$prof_dir" ]]; then
     local real_pd
-    real_pd=$(readlink -f "$prof_dir" 2>/dev/null || true)
+    if ! real_pd=$(ap_platform_realpath_existing "$prof_dir"); then
+      ap_die "$EX_LAYOUT" "profile directory '$prof_dir' could not be resolved to a physical path"
+    fi
     if [[ "$real_pd" != "$prof_dir" ]]; then
       ap_die "$EX_LAYOUT" "profile directory '$prof_dir' realpath mismatch ($real_pd)"
     fi
@@ -176,7 +178,9 @@ ap_ensure_storage_dir() {
   fi
 
   local real_st
-  real_st=$(readlink -f "$storage_dir" 2>/dev/null || true)
+  if ! real_st=$(ap_platform_realpath_existing "$storage_dir"); then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
+  fi
   if [[ "$real_st" != "$storage_dir" ]]; then
     ap_die "$EX_LAYOUT" "profile storage directory path mismatch with realpath ($storage_dir -> $real_st)"
   fi
@@ -291,7 +295,9 @@ ap_list_profiles() {
 
   if [[ -d "$storage_dir" ]]; then
     local real_st
-    real_st=$(readlink -f "$storage_dir" 2>/dev/null || true)
+    if ! real_st=$(ap_platform_realpath_existing "$storage_dir"); then
+      ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
+    fi
     if [[ "$real_st" != "$storage_dir" ]]; then
       ap_die "$EX_LAYOUT" "profile storage directory path mismatch with realpath ($storage_dir -> $real_st)"
     fi

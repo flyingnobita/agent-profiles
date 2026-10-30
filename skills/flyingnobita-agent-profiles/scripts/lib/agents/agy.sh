@@ -16,7 +16,7 @@ ap_agent_agy_detect() {
     p=$(mise which agy 2>/dev/null || true)
     if [[ -n "$p" && -x "$p" ]]; then
       local rp
-      rp=$(readlink -f "$p" 2>/dev/null || echo "$p")
+      rp=$(ap_platform_realpath_existing "$p" 2>/dev/null || printf "%s\n" "$p")
       if [[ "$rp" != *"/bin/mise" && "$rp" != "/usr/bin/mise" ]]; then
         printf "%s\n" "$rp"
         return 0
@@ -31,7 +31,7 @@ ap_agent_agy_detect() {
     local cand="$dir/agy"
     if [[ -x "$cand" && ! -d "$cand" ]]; then
       local rcand
-      rcand=$(readlink -f "$cand" 2>/dev/null || echo "$cand")
+      rcand=$(ap_platform_realpath_existing "$cand" 2>/dev/null || printf "%s\n" "$cand")
       if [[ "$rcand" != *"/bin/mise" && "$rcand" != "/usr/bin/mise" ]]; then
         IFS="$old_ifs"
         printf "%s\n" "$rcand"
