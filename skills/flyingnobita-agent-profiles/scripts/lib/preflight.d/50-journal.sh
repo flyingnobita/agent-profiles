@@ -33,7 +33,7 @@ ap_preflight_check_journals() {
     ap_journal_is_stale "$journal_file" || continue
 
     local fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       if [[ ! -s "$journal_file" ]]; then
         ap_die "$EX_REFUSED" "incomplete journal '$(basename "$journal_file")' (no operation state was recorded); run 'agent-profiles recover'"

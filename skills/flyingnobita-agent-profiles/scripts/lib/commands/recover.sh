@@ -448,7 +448,7 @@ ap_cmd_recover() {
       continue
     fi
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_LAYOUT" "malformed journal '$(basename "$journal_file")'; inspect it manually instead of deleting data"
     fi
@@ -504,7 +504,7 @@ ap_cmd_recover() {
   local all_targets=()
   for journal_file in "${stale_journals[@]}"; do
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
     fi
@@ -534,7 +534,11 @@ ap_cmd_recover() {
 
   local deduped_targets=()
   if [[ ${#all_targets[@]} -gt 0 ]]; then
-    mapfile -t deduped_targets < <(printf "%s\n" "${all_targets[@]}" | sort -u)
+    local target_name
+    while IFS= read -r target_name; do
+      [[ -n "$target_name" ]] || continue
+      deduped_targets+=("$target_name")
+    done < <(printf "%s\n" "${all_targets[@]}" | LC_ALL=C sort -u)
     ap_lock_profiles_exclusive "$repo_root" "${deduped_targets[@]}"
   fi
 
@@ -546,7 +550,7 @@ ap_cmd_recover() {
     ap_lock_journal "$journal_file"
 
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
     fi

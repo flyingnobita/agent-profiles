@@ -248,6 +248,18 @@ sys.stdout.buffer.write(("\0".join(fields) + "\0").encode())
 PY
 }
 
+# Reads the NUL-separated journal fields into the named array. bash 3.2 has no
+# mapfile, so a read -d '' loop keeps multi-line field values intact.
+read_journal_fields_into() {
+  local target_array="$1"
+  local journal_file="$2"
+  local field
+  eval "$target_array=()"
+  while IFS= read -r -d '' field; do
+    eval "$target_array+=(\"\$field\")"
+  done < <(ap_read_journal_fields "$journal_file")
+}
+
 # Prints one TAB-separated "path label mode" line per recorded migration source.
 ap_read_journal_sources() {
   local journal_file="$1"

@@ -107,7 +107,11 @@ ap_migrate_compute_plan() {
     MIG_TARGETS+=("default")
 
     local entry base
-    mapfile -t MIG_UNNAMED < <(ap_list_unnamed_legacy_entries "$storage_dir")
+    MIG_UNNAMED=()
+    while IFS= read -r entry; do
+      [[ -n "$entry" ]] || continue
+      MIG_UNNAMED+=("$entry")
+    done < <(ap_list_unnamed_legacy_entries "$storage_dir")
 
     for entry in "${MIG_UNNAMED[@]:-}"; do
       [[ -n "$entry" ]] || continue
@@ -125,7 +129,13 @@ ap_migrate_compute_plan() {
     ap_die "$EX_REFUSED" "legacy layout detected but no migration targets were identified"
   fi
 
-  mapfile -t MIG_TARGETS < <(printf "%s\n" "${MIG_TARGETS[@]}" | sort -u)
+  local sorted_targets=()
+  local target_name
+  while IFS= read -r target_name; do
+    [[ -n "$target_name" ]] || continue
+    sorted_targets+=("$target_name")
+  done < <(printf "%s\n" "${MIG_TARGETS[@]}" | LC_ALL=C sort -u)
+  MIG_TARGETS=("${sorted_targets[@]:-}")
 }
 
 ap_migrate_build_sources() {
