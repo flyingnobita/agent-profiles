@@ -221,3 +221,43 @@ SHIM
   run bash "$AP_HELPER" reset --profile default --yes
   assert_success
 }
+
+# Guard (approved plan, slice 1 test 5): the Linux runner ships bash 5, so this
+# passes here and on the base commit; it is red on stock macOS /bin/bash 3.2,
+# where mapfile -d '' does not exist. It pins the NUL-delimited journal field
+# parsing that replaces it.
+@test "portability: NUL-delimited journal fields survive Bash 3.2 recovery parsing" {
+  local repo="$TEST_TMPDIR/repo with spaces"
+  repo="$repo"$'\n'"and a newline"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+  printf 'keep me\n' >"$repo/.agent-profiles/default/home/marker.txt"
+
+  local journal="$repo/.agent-profiles/.journal/reset-default.json"
+
+  # Crash after the profile was moved into trash: the recorded state carries
+  # paths that contain a space and a newline.
+  run env AP_FAULT_AFTER=trashed bash "$AP_HELPER" reset --profile default --yes
+  assert_failure
+  assert_file_exists "$journal"
+
+  local trash_path
+  trash_path=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["trash_path"])' "$journal")
+  [[ -n "$trash_path" ]]
+  assert_file_exists "$trash_path/home/marker.txt"
+
+  run bash "$AP_HELPER" recover --yes
+  assert_success
+  assert_output_contains "Recovered interrupted 'reset' operation for profile 'default'"
+
+  [[ ! -e "$journal" ]]
+  [[ ! -e "$trash_path" ]]
+  assert_dir_exists "$repo/.agent-profiles/default/home"
+  [[ ! -e "$repo/.agent-profiles/default/home/marker.txt" ]]
+
+  run bash "$AP_HELPER" run --profile default -- true
+  assert_success
+}
