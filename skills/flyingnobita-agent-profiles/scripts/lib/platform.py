@@ -12,6 +12,7 @@ import errno
 import fcntl
 import hashlib
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -215,6 +216,46 @@ def _kill_group(process, sig):
         pass
 
 
+def cmd_copy_preserve(args):
+    if len(args) != 2:
+        return _usage("copy-preserve requires a source and a destination")
+    source, destination = args
+    try:
+        info = os.lstat(source)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            return 1
+        if os.path.lexists(destination):
+            # cp -a <dir> <existing-dir> copies inside the destination.
+            destination = os.path.join(destination, os.path.basename(source.rstrip("/")))
+            if os.path.lexists(destination):
+                return 1
+        _copy_tree(source, destination)
+    except OSError as exc:
+        sys.stderr.write("copy-preserve: %s\n" % exc)
+        return 1
+    return 0
+
+
+def _copy_tree(source, destination):
+    info = os.lstat(source)
+    os.mkdir(destination, stat.S_IMODE(info.st_mode))
+    for name in sorted(os.listdir(source)):
+        source_path = os.path.join(source, name)
+        destination_path = os.path.join(destination, name)
+        entry = os.lstat(source_path)
+        if stat.S_ISLNK(entry.st_mode):
+            # Shipped legacy data may contain symlinks; never follow them.
+            os.symlink(os.readlink(source_path), destination_path)
+        elif stat.S_ISDIR(entry.st_mode):
+            _copy_tree(source_path, destination_path)
+        elif stat.S_ISREG(entry.st_mode):
+            shutil.copyfile(source_path, destination_path)
+            shutil.copystat(source_path, destination_path, follow_symlinks=False)
+        else:
+            raise OSError(errno.EINVAL, "unsupported file type", source_path)
+    shutil.copystat(source, destination, follow_symlinks=False)
+
+
 def cmd_lock(args):
     if len(args) != 2:
         return _usage("lock requires a mode and a descriptor")
@@ -243,6 +284,7 @@ def main(argv):
         "script-dir": cmd_script_dir,
         "sha256-text": cmd_sha256_text,
         "sha256sum": cmd_sha256sum,
+        "copy-preserve": cmd_copy_preserve,
         "lock": cmd_lock,
         "manifest": cmd_manifest,
         "manifest-verify": cmd_manifest_verify,

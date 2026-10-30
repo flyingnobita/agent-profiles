@@ -333,10 +333,14 @@ ap_cmd_migrate() {
   (umask 077 && mkdir -m 700 "$staged_dir" "$legacy_dir")
 
   local backup_dev
-  backup_dev=$(stat -c "%d" "$run_backup")
+  if ! backup_dev=$(ap_platform_stat_dev "$run_backup"); then
+    ap_die "$EX_LAYOUT" "cannot read the filesystem identity of backup directory '$run_backup'"
+  fi
   for index in "${!MIG_SOURCE_PATHS[@]}"; do
     local source_dev
-    source_dev=$(stat -c "%d" "${MIG_SOURCE_PATHS[index]}")
+    if ! source_dev=$(ap_platform_stat_dev "${MIG_SOURCE_PATHS[index]}"); then
+      ap_die "$EX_LAYOUT" "cannot read the filesystem identity of legacy source '${MIG_SOURCE_PATHS[index]}'"
+    fi
     if [[ "$source_dev" == "$backup_dev" && "${AP_FORCE_COPY:-0}" != "1" ]]; then
       MIG_SOURCE_MODES+=("rename")
     else
@@ -363,7 +367,7 @@ ap_cmd_migrate() {
     local destination="$staged_dir/${MIG_SOURCE_LABELS[index]}"
 
     (umask 077 && mkdir -p "$(dirname "$destination")")
-    if ! cp -a --no-dereference "$source" "$destination"; then
+    if ! ap_platform_copy_preserve "$source" "$destination"; then
       ap_migrate_abort_copy "$run_backup" "$journal_file" "copy of legacy data failed; original data preserved"
     fi
 

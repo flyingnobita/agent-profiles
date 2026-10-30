@@ -163,3 +163,9 @@ ap_platform_stat_size() {
 ap_platform_timeout() {
   ap_platform timeout "$@"
 }
+
+# Copies a tree preserving modes, timestamps and symlinks without GNU cp
+# options. The destination must not exist yet.
+ap_platform_copy_preserve() {
+  ap_platform copy-preserve "$1" "$2"
+}
