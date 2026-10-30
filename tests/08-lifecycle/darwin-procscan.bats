@@ -144,7 +144,7 @@ wait_for_scan_refusal() {
   # in argv: the refusal may print the PID and command name only.
   (
     exec 8>"$marker_file"
-    SECRET_TOKEN="$secret" sh -c 'sleep 30' sh "$secret"
+    SECRET_TOKEN="$secret" exec python3 -c 'import time; time.sleep(30)' "$secret"
   ) </dev/null >/dev/null 2>&1 &
   local holder_pid=$!
   TEST_BG_PIDS+=("$holder_pid")
@@ -153,7 +153,7 @@ wait_for_scan_refusal() {
   assert_output_contains "refused: active process"
   assert_output_contains "profile 'target'"
   assert_output_contains "PID $holder_pid"
-  assert_output_contains "sleep"
+  assert_output_contains "python3"
   assert_output_not_contains "$secret"
   # Nothing was mutated and the profile is still complete.
   assert_dir_exists "$prof_dir/home"
@@ -173,7 +173,7 @@ wait_for_scan_refusal() {
   printf 'legacy content\n' >"$repo/.agent-sandbox/home/file.txt"
   (
     cd "$repo/.agent-sandbox/.claude" || exit 1
-    exec sh -c 'sleep 60' sh "$secret"
+    exec python3 -c 'import time; time.sleep(60)' "$secret"
   ) </dev/null >/dev/null 2>&1 &
   local legacy_pid=$!
   TEST_BG_PIDS+=("$legacy_pid")
@@ -210,7 +210,7 @@ with open(journal, "w") as handle:
 PY
   (
     cd "$trash_path/home" || exit 1
-    exec sh -c 'sleep 60' sh "$secret"
+    exec python3 -c 'import time; time.sleep(60)' "$secret"
   ) </dev/null >/dev/null 2>&1 &
   local trash_pid=$!
   TEST_BG_PIDS+=("$trash_pid")
@@ -224,4 +224,106 @@ PY
 
   kill -9 "$trash_pid" 2>/dev/null || true
   wait "$trash_pid" 2>/dev/null || true
+}
+
+# hash_tree <dir>: stable content hash of every file under <dir>, so a refused
+# mutation can be proven byte-identical afterwards.
+hash_tree() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import sys
+
+root = sys.argv[1]
+digest = hashlib.sha256()
+for current, dirs, files in os.walk(root):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(current, name)
+        rel = os.path.relpath(path, root)
+        digest.update(rel.encode("utf-8", "surrogateescape") + b"\0")
+        try:
+            with open(path, "rb") as handle:
+                digest.update(hashlib.sha256(handle.read()).digest())
+        except OSError:
+            digest.update(b"<unreadable>")
+print(digest.hexdigest())
+PY
+}
+
+@test "darwin procscan: unavailable process inspection fails closed before mutation" {
+  local repo="$TEST_TMPDIR/repo-darwin-unavailable"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile target
+  assert_success
+  local prof_dir="$repo/.agent-profiles/target"
+  printf 'profile sentinel\n' >"$prof_dir/home/keep.txt"
+  mkdir -p "$repo/.agent-sandbox/home"
+  printf 'legacy sentinel\n' >"$repo/.agent-sandbox/home/keep.txt"
+
+  # A live profile holder: without a working inspector the operation must not
+  # assume the profile is free.
+  (
+    exec 8>"$prof_dir/home/activity.marker"
+    exec sleep 30
+  ) </dev/null >/dev/null 2>&1 &
+  local holder_pid=$!
+  TEST_BG_PIDS+=("$holder_pid")
+
+  local profile_before legacy_before
+  profile_before=$(hash_tree "$prof_dir")
+  legacy_before=$(hash_tree "$repo/.agent-sandbox")
+
+  local stub_dir="$TEST_TMPDIR/inspector-stubs"
+  mkdir -p "$stub_dir"
+
+  # 1. The inspector binary is missing entirely.
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/does-not-exist" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_failure 69
+  assert_output_contains "refused: process inspection is unavailable"
+  assert_equal "$(hash_tree "$prof_dir")" "$profile_before"
+
+  # 2. The inspector exists but cannot complete its listing.
+  printf '#!/bin/sh\nexit 2\n' >"$stub_dir/lsof-failing"
+  chmod 700 "$stub_dir/lsof-failing"
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/lsof-failing" \
+    bash "$AP_HELPER" remove --profile target --yes
+  assert_failure 69
+  assert_output_contains "process inspection is unavailable"
+  assert_equal "$(hash_tree "$prof_dir")" "$profile_before"
+
+  # 3. The inspector reports success but lists nothing at all: a silent empty
+  # probe is incomplete inspection, never "no process".
+  printf '#!/bin/sh\nexit 0\n' >"$stub_dir/lsof-empty"
+  chmod 700 "$stub_dir/lsof-empty"
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/lsof-empty" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_failure 69
+  assert_output_contains "process inspection is unavailable"
+  assert_equal "$(hash_tree "$prof_dir")" "$profile_before"
+
+  # 4. Legacy mutation refuses the same way and leaves the legacy data alone.
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/does-not-exist" \
+    bash "$AP_HELPER" migrate --yes
+  assert_failure 69
+  assert_output_contains "process inspection is unavailable"
+  assert_equal "$(hash_tree "$repo/.agent-sandbox")" "$legacy_before"
+  [[ ! -e "$repo/.agent-profiles/default" ]]
+
+  kill -9 "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+
+  # With a working inspector and no holder left the same mutation proceeds, so
+  # the refusals above came from the probe and not from the fixture.
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_success
+  [[ "$(hash_tree "$prof_dir")" != "$profile_before" ]]
 }
