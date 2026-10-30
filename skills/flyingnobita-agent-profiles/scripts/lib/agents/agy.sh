@@ -46,13 +46,23 @@ ap_agent_agy_detect() {
 
 # Antigravity CLI has no configuration-directory environment variable in the
 # tested version: it resolves its configuration from HOME (~/.gemini) and the
-# XDG config root for plugin secrets. Profile isolation therefore comes from the
-# .gemini bind mount plus the XDG redirect, not from an agent variable.
+# XDG config root for plugin secrets. On Linux profile isolation therefore comes
+# from the .gemini bind mount plus the XDG redirect; on Darwin HOME itself is the
+# profile root, so the same directories are profile-local by environment alone.
+# OS credential storage stays shared on both platforms; macOS exposes it as one
+# Keychain to the whole user session instead of a D-Bus secret service.
 ap_agy_os_credential_service() {
   local runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   local bus_desc=""
   local out=""
   local rc=0
+
+  if ap_platform_is_darwin; then
+    AGY_SECRET_SERVICE_STATUS="present"
+    AGY_SECRET_SERVICE_DETAIL="the macOS Keychain OS credential service is available to the whole user session; credential storage is shared with the host environment and was not read"
+    AGY_SESSION_BUS_PRESENT="false"
+    return 0
+  fi
 
   if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     bus_desc="DBUS_SESSION_BUS_ADDRESS"
