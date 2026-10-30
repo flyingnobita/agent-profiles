@@ -126,13 +126,10 @@ PY
   local stale="$TEST_TMPDIR/stale"
 
   # Every managed variable arrives with a stale inherited value that must not
-  # survive into the Darwin child.
+  # survive into the Darwin child. Stale profile identity markers are behaviour
+  # 14's case, because a wrong live identity is refused instead of reset.
   run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
     HOME="$stale/home" \
-    AGENT_PROFILES_NAME="stale" \
-    AGENT_PROFILES_DIR="$stale/profile" \
-    AGENT_PROFILES_ROOT="$stale/storage" \
-    AGENT_PROFILES_SESSION="stale" \
     AGENT_PROFILES_BASE_PATH="$stale/base" \
     AGENT_SANDBOX_DIR="$stale/sandbox" \
     AGENT_SANDBOX_PROFILE="stale" \
