@@ -315,12 +315,34 @@ import subprocess
 import sys
 import time
 
-exec_script, profile, log, pgid_file, result_file, done_file, needle, mention = sys.argv[1:10]
+(
+    exec_script,
+    profile,
+    log,
+    pgid_file,
+    result_file,
+    done_file,
+    needle,
+    mention,
+    pty_exec,
+) = sys.argv[1:11]
 out = open(log, "ab")
 env = dict(os.environ)
 env["AGENT_PROFILES_DIR"] = os.environ.get("QA_PROFILE_DIR", "")
 proc = subprocess.Popen(
-    ["script", "-qfc", f"stty rows 40 cols 120; {exec_script} {profile} opencode --standalone", "/dev/null"],
+    [
+        sys.executable,
+        pty_exec,
+        "--rows",
+        "40",
+        "--cols",
+        "120",
+        "--",
+        exec_script,
+        profile,
+        "opencode",
+        "--standalone",
+    ],
     stdin=subprocess.PIPE,
     stdout=out,
     stderr=subprocess.STDOUT,
@@ -403,7 +425,7 @@ PY
 
 QA_PROFILE_DIR="$PROFILE_A" python3 "$WORK/tui_drive.py" "$EXEC" a "$OUT/tui.log" \
   "$WORK/tui.pgid" "$WORK/tui.result" "$WORK/tui.done" \
-  "Ask anything" "a-opencode-skill" >"$OUT/tui-driver.txt" 2>&1 &
+  "Ask anything" "a-opencode-skill" "$AP_LIVE_PTY_EXEC" >"$OUT/tui-driver.txt" 2>&1 &
 TUI_DRIVER_PID=$!
 for _ in $(seq 1 240); do
   [[ -f "$WORK/tui.pgid" ]] && break
@@ -715,7 +737,7 @@ summary = {
         "version": {"status": "pass", "note": "--version is informational only"},
         "paths": {"status": "pass", "config": "profile .opencode", "data_state_cache": "profile XDG directories"},
         "config": {"status": "pass", "behavior": "OPENCODE_CONFIG_DIR replaces the XDG config root", "sources": "profile .opencode and repository .opencode only"},
-        "startup": {"status": "pass", "mode": "TUI in PTY via script -qfc, offline bwrap --unshare-net", "ready_marker": "composer prompt 'Ask anything'"},
+        "startup": {"status": "pass", "mode": "TUI in a Python standard-library PTY, offline bwrap --unshare-net", "ready_marker": "composer prompt 'Ask anything'"},
         "discovery": {"status": "pass", "surfaces": ["debug config", "api /api/skill (second request)", "@ mention completion"], "isolated": "profile a/b markers separate; repository and bundled sources recorded separately"},
         "auth": {
             "status": "pass",

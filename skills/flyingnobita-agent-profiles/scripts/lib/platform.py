@@ -573,6 +573,254 @@ def cmd_darwin_proc_scan(args):
     return _refusal(label, relevant, unknown)
 
 
+def cmd_boot_identity(args):
+    """Prints an opaque identity for the current boot, or fails.
+
+    Live cleanup refuses to signal anything when this is unavailable, so a
+    recycled PID from a previous boot can never authorize a signal. Darwin
+    reports kern.boottime; Linux reports the kernel boot UUID. The two values
+    are never compared with each other.
+    """
+    if args:
+        return _usage("boot-identity takes no arguments")
+    sysctl = _tool_path("AP_DARWIN_SYSCTL", ("/usr/sbin/sysctl", "/usr/bin/sysctl", "sysctl"))
+    if sysctl:
+        try:
+            proc = subprocess.run(
+                [sysctl, "-n", "kern.boottime"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True,
+            )
+            if proc.returncode == 0:
+                fields = proc.stdout.replace(",", " ").split()
+                values = {}
+                for index, token in enumerate(fields):
+                    if token in ("sec", "usec") and index + 2 < len(fields):
+                        values[token] = fields[index + 2]
+                if "sec" in values:
+                    sys.stdout.write(
+                        "darwin-%s.%s\n"
+                        % (values["sec"], values.get("usec", "0"))
+                    )
+                    return 0
+        except OSError:
+            pass
+    try:
+        with open("/proc/sys/kernel/random/boot_id", "r") as handle:
+            value = handle.read().strip()
+    except OSError:
+        return 1
+    if not value:
+        return 1
+    sys.stdout.write(value + "\n")
+    return 0
+
+
+def _proc_stat_identity(pid):
+    try:
+        with open("/proc/%s/stat" % pid, "rb") as handle:
+            data = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    end = data.rfind(")")
+    if end < 0:
+        return None
+    fields = data[end + 2:].split()
+    if len(fields) < 20:
+        return None
+    return fields[2], fields[19]
+
+
+def cmd_process_identity(args):
+    """Prints "<process-group> <start-identity>" for one live process.
+
+    The start identity is the platform's own: procfs ticks on Linux and ps
+    lstart on Darwin. Callers compare it only for exact equality within one
+    boot, so Linux ticks are never compared with Darwin timestamps.
+    """
+    if len(args) != 2:
+        return _usage("process-identity requires a platform and a PID")
+    family, pid = args
+    if family == "Darwin":
+        binary = _ps_bin()
+        if not binary:
+            return 1
+        try:
+            proc = subprocess.run(
+                [binary, "-o", "pgid=,lstart=", "-p", str(pid)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True,
+            )
+        except OSError:
+            return 1
+        line = proc.stdout.strip()
+        if not line:
+            return 1
+        parts = line.split(None, 1)
+        if len(parts) != 2 or not parts[0].isdigit():
+            return 1
+        sys.stdout.write("%s %s\n" % (parts[0], parts[1].strip().replace(" ", "_")))
+        return 0
+    identity = _proc_stat_identity(pid)
+    if identity is None:
+        return 1
+    sys.stdout.write("%s %s\n" % identity)
+    return 0
+
+
+def cmd_process_uid(args):
+    if len(args) != 1:
+        return _usage("process-uid requires a PID")
+    binary = _ps_bin()
+    if not binary:
+        return 1
+    try:
+        proc = subprocess.run(
+            [binary, "-o", "uid=", "-p", args[0]],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        )
+    except OSError:
+        return 1
+    value = proc.stdout.strip()
+    if not value.isdigit():
+        return 1
+    sys.stdout.write(value + "\n")
+    return 0
+
+
+def cmd_process_holds_path(args):
+    """Exits 0 when a process keeps a path, or a path under it, open."""
+    if len(args) != 3:
+        return _usage("process-holds-path requires a platform, a PID and a path")
+    family, pid, path = args
+    try:
+        target = os.path.realpath(path)
+    except OSError:
+        target = path
+    names = []
+    if family == "Darwin":
+        binary = _lsof_bin()
+        if not binary:
+            return 2
+        try:
+            proc = subprocess.run(
+                [binary, "-n", "-P", "-p", str(pid), "-F", "n"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True,
+            )
+        except OSError:
+            return 2
+        if proc.returncode not in (0, 1):
+            return 2
+        for line in proc.stdout.splitlines():
+            if line.startswith("n"):
+                names.append(line[1:])
+    else:
+        names = _proc_open_names(int(pid), "/proc") if str(pid).isdigit() else []
+        if not names:
+            return 2
+    for name in names:
+        if _path_under_targets(name, [target]):
+            return 0
+    return 1
+
+
+def cmd_hash_tree(args):
+    """Prints a deterministic "hash  ./relative" listing for a directory.
+
+    The live harness records synthetic host trees with this so a comparison
+    cannot silently pass on a failed GNU pipeline.
+    """
+    if len(args) != 1:
+        return _usage("hash-tree requires a directory")
+    root = args[0]
+    entries = []
+    for current, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in files:
+            if name in (".checksums.sha256", ".checksums.sha256.tmp"):
+                continue
+            path = os.path.join(current, name)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            try:
+                digest = _hash_file(path)
+            except OSError as exc:
+                sys.stderr.write("hash-tree: %s: %s\n" % (path, exc))
+                return 1
+            relative = os.path.relpath(path, root)
+            entries.append("%s  ./%s" % (digest, relative))
+    entries.sort()
+    for entry in entries:
+        sys.stdout.write(entry + "\n")
+    return 0
+
+
+def cmd_owned_pids(args):
+    """Prints the current user's processes that own a QA profile.
+
+    One ps snapshot and, on Darwin, one lsof pass prove the whole set, so a live
+    cleanup never has to start a helper per process. Ownership is the marker in
+    the environment on Linux and an open profile lease descriptor or profile
+    file on Darwin, where another process's environment cannot be read.
+    """
+    if len(args) != 3:
+        return _usage("owned-pids requires a platform, a profile directory and excluded PIDs")
+    family, profile_dir, exclude_csv = args
+    if not profile_dir:
+        return _usage("owned-pids requires a profile directory")
+    excluded = set(int(value) for value in exclude_csv.split() if value.isdigit())
+    excluded.add(os.getpid())
+    lease = os.path.join(
+        os.path.dirname(profile_dir.rstrip("/")),
+        ".locks",
+        os.path.basename(profile_dir.rstrip("/")) + ".lock",
+    )
+    targets = [os.path.realpath(profile_dir), os.path.realpath(lease)]
+    rows = _ps_rows()
+    if rows is None:
+        return 1
+    uid = os.getuid()
+    candidates = [
+        row["pid"]
+        for row in rows
+        if row["uid"] == uid and row["pid"] > 1 and "Z" not in row["state"]
+    ]
+    owned = []
+    if family == "Darwin":
+        entries = _lsof_entries(uid)
+        if entries is None:
+            return 1
+        for pid in candidates:
+            if pid in excluded:
+                continue
+            record = entries.get(pid)
+            if record is None:
+                continue
+            if any(_path_under_targets(name, targets) for name in record["names"]):
+                owned.append(pid)
+    else:
+        for pid in candidates:
+            if pid in excluded:
+                continue
+            try:
+                with open("/proc/%d/environ" % pid, "rb") as handle:
+                    environ = handle.read()
+            except OSError:
+                continue
+            marker = ("AGENT_PROFILES_DIR=" + profile_dir).encode("utf-8", "surrogateescape")
+            if marker in environ.split(b"\0"):
+                owned.append(pid)
+    for pid in sorted(owned):
+        sys.stdout.write("%d\n" % pid)
+    return 0
+
+
 def cmd_proc_holders(args):
     """Prints "  PID <pid> (<comm>)" for each process that keeps a path open.
 
@@ -647,13 +895,19 @@ def main(argv):
         "script-dir": cmd_script_dir,
         "sha256-text": cmd_sha256_text,
         "sha256sum": cmd_sha256sum,
+        "boot-identity": cmd_boot_identity,
         "copy-preserve": cmd_copy_preserve,
         "darwin-proc-scan": cmd_darwin_proc_scan,
+        "hash-tree": cmd_hash_tree,
         "lock": cmd_lock,
         "proc-holders": cmd_proc_holders,
+        "process-holds-path": cmd_process_holds_path,
+        "process-identity": cmd_process_identity,
+        "process-uid": cmd_process_uid,
         "ps-ppid": cmd_ps_ppid,
         "manifest": cmd_manifest,
         "manifest-verify": cmd_manifest_verify,
+        "owned-pids": cmd_owned_pids,
         "realpath": cmd_realpath,
         "stat": cmd_stat,
         "timeout": cmd_timeout,

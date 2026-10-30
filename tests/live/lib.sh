@@ -1,6 +1,282 @@
 #!/usr/bin/env bash
-# Shared test harness functions for live agent QA (offline probes, synthetic host isolation, and PGID cleanup)
+# Shared test harness functions for live agent QA (offline probes, synthetic host
+# isolation, ownership-aware process-group cleanup).
+#
+# Stock macOS has bash 3.2 and no procfs, mapfile, associative arrays, setsid or
+# pgrep assumptions, so this harness is written for both platforms: indexed
+# arrays only, ps for process identity, and the shipped standard-library adapter
+# (scripts/lib/platform.py) for process identity, boot identity and hashing.
+# Every ownership check for cleanup is preserved: real UID, profile ownership,
+# process-group identity and start/boot identity are all proven before a signal.
 # shellcheck disable=SC2034
+
+AP_LIVE_LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+AP_LIVE_PLATFORM_SH="${AP_LIVE_PLATFORM_SH:-$AP_LIVE_LIB_DIR/../../skills/flyingnobita-agent-profiles/scripts/lib/platform.sh}"
+AP_LIVE_PLATFORM_PY="${AP_LIVE_PLATFORM_PY:-$AP_LIVE_LIB_DIR/../../skills/flyingnobita-agent-profiles/scripts/lib/platform.py}"
+AP_LIVE_PTY_EXEC="${AP_LIVE_PTY_EXEC:-$AP_LIVE_LIB_DIR/pty-exec.py}"
+
+if [[ ! -f "$AP_LIVE_PLATFORM_SH" || ! -f "$AP_LIVE_PLATFORM_PY" ]]; then
+  printf 'agent-profiles live: platform adapter not found next to %s\n' "$AP_LIVE_LIB_DIR" >&2
+  # shellcheck disable=SC2317  # sourced file: return ends the source, not the shell
+  return 1
+fi
+
+if ! declare -F ap_die >/dev/null 2>&1; then
+  # platform.sh reaches ap_die only when python3 is missing on PATH.
+  ap_die() {
+    local code="${1:-69}"
+    shift || true
+    printf 'agent-profiles live: error: %s\n' "$*" >&2
+    exit "$code"
+  }
+fi
+
+# shellcheck source=/dev/null
+source "$AP_LIVE_PLATFORM_SH"
+
+# --- platform and process identity ------------------------------------------
+
+ap_live_platform() {
+  "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" "$@"
+}
+
+ap_live_platform_os() {
+  ap_platform_os
+}
+
+ap_live_is_darwin() {
+  [[ "$(ap_live_platform_os)" == "Darwin" ]]
+}
+
+# Prints an opaque identity for this boot. Cleanup refuses to signal when it is
+# unavailable, so a PID recycled from an earlier boot can never authorize one.
+ap_live_boot_identity() {
+  ap_live_platform boot-identity
+}
+
+# Prints "<process-group> <start-identity>" for a live process. The start
+# identity is the platform's own native value: procfs ticks on Linux and ps
+# lstart on Darwin. It is only ever compared for exact equality against another
+# value from the same boot, so Linux ticks are never compared with Darwin
+# timestamps.
+ap_live_pid_identity() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 1
+  ap_live_platform process-identity "$(ap_live_platform_os)" "$pid"
+}
+
+ap_live_pid_uid() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 1
+  ap_live_platform process-uid "$pid"
+}
+
+# Prints the member PIDs of a process group. ps -g is not used: its meaning
+# differs between userlands, so the group column is selected explicitly.
+ap_live_pgid_members() {
+  local pgid="${1:-}"
+  [[ -n "$pgid" ]] || return 1
+  ps -axo pid=,pgid= 2>/dev/null | awk -v pgid="$pgid" '$2 == pgid { print $1 }'
+}
+
+# Prints the direct children of a PID through ps, so no pgrep-specific
+# assumption is required.
+ap_live_child_pids() {
+  local parent="${1:-}"
+  [[ -n "$parent" ]] || return 1
+  ps -axo pid=,ppid= 2>/dev/null | awk -v parent="$parent" '$2 == parent { print $1 }'
+}
+
+ap_live_descendant_pids() {
+  local pid="$1" child
+  printf '%s\n' "$pid"
+  for child in $(ap_live_child_pids "$pid"); do
+    ap_live_descendant_pids "$child"
+  done
+}
+
+# Prints the current shell and its parent chain, one PID per line. Cleanup never
+# treats any of them as a candidate, because a scanner's own subprocess can
+# inherit the very descriptors it is scanning for.
+ap_live_ancestry_pids() {
+  local pid="${BASHPID:-$$}" parent="" depth=0
+  local -a seen=()
+  while [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 && "$depth" -lt 64 ]]; do
+    case ",${seen[*]:-}," in
+      *",$pid,"*) break ;;
+    esac
+    seen+=("$pid")
+    printf '%s\n' "$pid"
+    parent=$(ap_platform_process_ppid "$pid" 2>/dev/null || true)
+    pid="$parent"
+    depth=$((depth + 1))
+  done
+  if [[ "${BASHPID:-$$}" != "$$" ]]; then
+    printf '%s\n' "$$"
+  fi
+}
+
+# Profile ownership evidence. Linux reads the QA marker from procfs. Darwin
+# cannot read another process's environment, so the evidence is the open profile
+# lease descriptor or an open file inside the profile, both of which a profile
+# run session always holds.
+ap_live_pid_holds_profile() {
+  local pid="${1:-}" profile_dir="${2:-}" lease=""
+  [[ -n "$pid" && -n "$profile_dir" ]] || return 1
+  lease="$(dirname "$profile_dir")/.locks/$(basename "$profile_dir").lock"
+  ap_live_platform process-holds-path "$(ap_live_platform_os)" "$pid" "$profile_dir" && return 0
+  ap_live_platform process-holds-path "$(ap_live_platform_os)" "$pid" "$lease"
+}
+
+ap_live_pid_owns_profile() {
+  local pid="${1:-}" profile_dir="${2:-}" env_dump=""
+  [[ -n "$pid" && -n "$profile_dir" ]] || return 1
+  if ap_live_is_darwin; then
+    ap_live_pid_holds_profile "$pid" "$profile_dir"
+    return
+  fi
+  env_dump=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || return 1
+  grep -Fqx "AGENT_PROFILES_DIR=$profile_dir" <<<"$env_dump"
+}
+
+# Prints the PIDs of the caller's QA profile-owned processes, excluding the
+# given PIDs. One platform-adapter pass proves the whole set, so a scan never
+# starts a helper process per candidate.
+ap_live_profile_pids() {
+  local profile_dir="${1:-}" exclude_csv="${2:-}"
+  [[ -n "$profile_dir" ]] || return 1
+  ap_live_platform owned-pids "$(ap_live_platform_os)" "$profile_dir" "$exclude_csv"
+}
+
+ap_live_pid_tree_owns_profile() {
+  local pid="$1" profile_dir="$2" child
+  ap_live_pid_owns_profile "$pid" "$profile_dir" && return 0
+  for child in $(ap_live_child_pids "$pid"); do
+    ap_live_pid_tree_owns_profile "$child" "$profile_dir" && return 0
+  done
+  return 1
+}
+
+ap_live_pgid_owns_profile() {
+  local pgid="$1" profile_dir="$2" pid
+  for pid in $(ap_live_pgid_members "$pgid"); do
+    ap_live_pid_tree_owns_profile "$pid" "$profile_dir" && return 0
+  done
+  return 1
+}
+
+# Returns PGIDs in the root process tree that contain a process carrying the
+# QA profile marker. The caller still cleans each group through
+# ap_live_cleanup_pgid, which re-checks ownership before signalling.
+ap_live_owned_pgids() {
+  local root_pid="$1" profile_dir="$2" pid pgid known
+  local -a seen=()
+  for pid in $(ap_live_descendant_pids "$root_pid"); do
+    pgid=$(ps -axo pid=,pgid= 2>/dev/null | awk -v pid="$pid" '$1 == pid { print $2; exit }')
+    [[ -n "$pgid" ]] || continue
+    known=",${seen[*]:-},"
+    case "$known" in
+      *",$pgid,"*) continue ;;
+    esac
+    if ap_live_pid_owns_profile "$pid" "$profile_dir"; then
+      seen+=("$pgid")
+      printf '%s\n' "$pgid"
+    fi
+  done
+  return 0
+}
+
+ap_live_marker_field() {
+  local marker="$1" key="$2"
+  awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$marker" 2>/dev/null
+}
+
+# Writes a private marker for an existing process-group leader. The marker
+# records the leader PID, boot identity, start identity and UID so later cleanup
+# can distinguish the original group from a recycled PGID. start_ticks holds the
+# platform-native start identity; it is an opaque token compared for equality,
+# never a unit conversion between platforms.
+ap_live_write_group_marker() {
+  local pgid="${1:-}" marker="${2:-}"
+  local pgrp="" start="" uid="" boot="" myuid=""
+
+  [[ "$pgid" =~ ^[0-9]+$ && "$pgid" -gt 1 ]] || return 1
+  [[ -n "$marker" ]] || return 1
+
+  read -r pgrp start <<<"$(ap_live_pid_identity "$pgid" 2>/dev/null || true)" || return 1
+  [[ "$pgrp" == "$pgid" && -n "$start" ]] || return 1
+
+  uid=$(ap_live_pid_uid "$pgid" 2>/dev/null || true)
+  myuid=$(id -u)
+  [[ "$uid" == "$myuid" ]] || return 1
+
+  boot=$(ap_live_boot_identity 2>/dev/null || true)
+  [[ -n "$boot" ]] || return 1
+
+  (
+    umask 077
+    {
+      printf 'pgid=%s\n' "$pgid"
+      printf 'leader_pid=%s\n' "$pgid"
+      printf 'boot_id=%s\n' "$boot"
+      printf 'start_ticks=%s\n' "$start"
+      printf 'uid=%s\n' "$uid"
+    } >"$marker"
+  ) || return 1
+  chmod 600 "$marker" 2>/dev/null || true
+  return 0
+}
+
+# Spawns a detached process group with Python start_new_session, then records
+# its identity. A profile directory fd is inherited by the child as well, so a
+# Darwin cleanup has profile ownership evidence even when the environment of the
+# process cannot be read. AP_LIVE_SPAWN_STDOUT and AP_LIVE_SPAWN_STDERR may name
+# files when the caller needs the child's output (a TUI probe log).
+ap_live_spawn_test_process() {
+  local marker_file="$1"
+  shift
+
+  local pgid=""
+  pgid=$(python3 -c '
+import os, sys, subprocess
+
+cmd = sys.argv[1:]
+pass_fds = ()
+profile_dir = os.environ.get("AGENT_PROFILES_DIR", "")
+if profile_dir and os.path.isdir(profile_dir):
+    try:
+        pass_fds = (os.open(profile_dir, os.O_RDONLY),)
+    except OSError:
+        pass_fds = ()
+
+stdout = subprocess.DEVNULL
+stderr = subprocess.DEVNULL
+if os.environ.get("AP_LIVE_SPAWN_STDOUT"):
+    stdout = open(os.environ["AP_LIVE_SPAWN_STDOUT"], "ab")
+if os.environ.get("AP_LIVE_SPAWN_STDERR"):
+    stderr = open(os.environ["AP_LIVE_SPAWN_STDERR"], "ab")
+
+proc = subprocess.Popen(
+    cmd,
+    start_new_session=True,
+    stdin=subprocess.DEVNULL,
+    stdout=stdout,
+    stderr=stderr,
+    close_fds=True,
+    pass_fds=pass_fds
+)
+print(os.getpgid(proc.pid))
+' "$@") || return 1
+
+  if ! ap_live_write_group_marker "$pgid" "$marker_file"; then
+    kill -KILL -"$pgid" 2>/dev/null || true
+    return 1
+  fi
+
+  printf '%s\n' "$pgid"
+}
+
+# --- synthetic host isolation ----------------------------------------------
 
 ap_live_setup_isolation() {
   local base_dir="$1"
@@ -66,6 +342,12 @@ except Exception:
   mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
 }
 
+# Deterministic content listing of a tree through the standard library, so a
+# comparison can never pass on a failed GNU find/sha256sum pipeline.
+ap_live_hash_tree() {
+  ap_live_platform hash-tree "$1"
+}
+
 ap_live_create_synthetic_home() {
   local target_home="$1"
   mkdir -p "$target_home/.claude" \
@@ -79,10 +361,8 @@ ap_live_create_synthetic_home() {
   printf 'synthetic-agents-marker\n' >"$target_home/.agents/marker.txt"
 
   local chk_file="$target_home/.checksums.sha256"
-  (
-    cd "$target_home" && find . -type f ! -name ".checksums.sha256" -exec sha256sum {} + | sort >"$chk_file"
-    chmod 600 "$chk_file" 2>/dev/null || true
-  )
+  (umask 077 && ap_live_hash_tree "$target_home" >"$chk_file")
+  chmod 600 "$chk_file" 2>/dev/null || true
 }
 
 ap_live_verify_host_untouched() {
@@ -95,9 +375,7 @@ ap_live_verify_host_untouched() {
   fi
 
   local current_chk
-  current_chk=$(
-    cd "$target_home" && find . -type f ! -name ".checksums.sha256" -exec sha256sum {} + | sort
-  )
+  current_chk=$(ap_live_hash_tree "$target_home")
   local recorded_chk
   recorded_chk=$(cat "$chk_file")
 
@@ -107,164 +385,7 @@ ap_live_verify_host_untouched() {
   fi
 }
 
-ap_live_descendant_pids() {
-  local pid="$1" child
-  printf '%s\n' "$pid"
-  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-    ap_live_descendant_pids "$child"
-  done
-}
-
-ap_live_pid_has_profile_env() {
-  local pid="$1" profile_dir="$2" env_dump=""
-  [[ -n "$pid" && -n "$profile_dir" ]] || return 1
-  env_dump=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || return 1
-  grep -Fqx "AGENT_PROFILES_DIR=$profile_dir" <<<"$env_dump"
-}
-
-ap_live_pid_uid() {
-  local pid="$1" uid=""
-  uid=$({ awk '/^Uid:/ { print $2; exit }' "/proc/$pid/status"; } 2>/dev/null) || return 1
-  [[ -n "$uid" ]] || return 1
-  printf '%s\n' "$uid"
-}
-
-# Prints "<process-group> <starttime-ticks>" for a live process. Start time is
-# part of the marker identity so a recycled PID cannot authorize a signal.
-ap_live_pid_stat() {
-  local pid="$1"
-  python3 - "$pid" <<'PY'
-import sys
-
-pid = sys.argv[1]
-try:
-    with open(f"/proc/{pid}/stat", "rb") as handle:
-        data = handle.read().decode("utf-8", "replace")
-except OSError:
-    raise SystemExit(1)
-
-end = data.rfind(")")
-if end < 0:
-    raise SystemExit(1)
-fields = data[end + 2:].split()
-if len(fields) < 20:
-    raise SystemExit(1)
-
-print(f"{fields[2]} {fields[19]}")
-PY
-}
-
-ap_live_profile_pids() {
-  local profile_dir="$1" pid
-  for pid in $(ps -eo pid= 2>/dev/null); do
-    if ap_live_pid_has_profile_env "$pid" "$profile_dir"; then
-      printf '%s\n' "$pid"
-    fi
-  done
-  return 0
-}
-
-ap_live_pid_tree_has_profile_env() {
-  local pid="$1" profile_dir="$2" child
-  ap_live_pid_has_profile_env "$pid" "$profile_dir" && return 0
-  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-    ap_live_pid_tree_has_profile_env "$child" "$profile_dir" && return 0
-  done
-  return 1
-}
-
-ap_live_pgid_has_profile_env() {
-  local pgid="$1" profile_dir="$2" pid
-  for pid in $(ps -o pid= -g "$pgid" 2>/dev/null || true); do
-    ap_live_pid_tree_has_profile_env "$pid" "$profile_dir" && return 0
-  done
-  return 1
-}
-
-# Returns PGIDs in the root process tree that contain a process carrying the
-# QA profile marker. The caller still cleans each group through
-# ap_live_cleanup_pgid, which re-checks ownership before signalling.
-ap_live_owned_pgids() {
-  local root_pid="$1" profile_dir="$2" pid pgid
-  local -A seen=()
-  for pid in $(ap_live_descendant_pids "$root_pid"); do
-    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
-    [[ -n "$pgid" ]] || continue
-    [[ -n "${seen[$pgid]:-}" ]] && continue
-    if ap_live_pid_has_profile_env "$pid" "$profile_dir"; then
-      seen[$pgid]=1
-      printf '%s\n' "$pgid"
-    fi
-  done
-  return 0
-}
-
-ap_live_marker_field() {
-  local marker="$1" key="$2"
-  awk -v key="$key" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }' "$marker" 2>/dev/null
-}
-
-# Writes a private marker for an existing process-group leader. The marker
-# records the leader PID, boot ID, starttime and UID so later cleanup can
-# distinguish the original group from a recycled PGID.
-ap_live_write_group_marker() {
-  local pgid="${1:-}" marker="${2:-}"
-  local pgrp="" start="" uid="" boot="" myuid=""
-
-  [[ "$pgid" =~ ^[0-9]+$ && "$pgid" -gt 1 ]] || return 1
-  [[ -n "$marker" ]] || return 1
-
-  read -r pgrp start <<<"$(ap_live_pid_stat "$pgid" 2>/dev/null || true)" || return 1
-  [[ "$pgrp" == "$pgid" && -n "$start" ]] || return 1
-
-  uid=$(ap_live_pid_uid "$pgid" 2>/dev/null || true)
-  myuid=$(id -u)
-  [[ "$uid" == "$myuid" ]] || return 1
-
-  boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
-  [[ -n "$boot" ]] || return 1
-
-  (
-    umask 077
-    {
-      printf 'pgid=%s\n' "$pgid"
-      printf 'leader_pid=%s\n' "$pgid"
-      printf 'boot_id=%s\n' "$boot"
-      printf 'start_ticks=%s\n' "$start"
-      printf 'uid=%s\n' "$uid"
-    } >"$marker"
-  ) || return 1
-  chmod 600 "$marker" 2>/dev/null || true
-  return 0
-}
-
-ap_live_spawn_test_process() {
-  local marker_file="$1"
-  shift
-
-  local pgid=""
-  pgid=$(python3 -c '
-import os, sys, subprocess
-
-cmd = sys.argv[1:]
-proc = subprocess.Popen(
-    cmd,
-    start_new_session=True,
-    stdin=subprocess.DEVNULL,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-    close_fds=True
-)
-print(os.getpgid(proc.pid))
-' "$@") || return 1
-
-  if ! ap_live_write_group_marker "$pgid" "$marker_file"; then
-    kill -KILL -"$pgid" 2>/dev/null || true
-    return 1
-  fi
-
-  printf '%s\n' "$pgid"
-}
+# --- offline profile execution ---------------------------------------------
 
 ap_live_run_offline_in_profile() {
   local helper="$1"
@@ -288,16 +409,42 @@ ap_live_run_offline_in_profile() {
   env -i "${env_args[@]}" bwrap --dev-bind / / --unshare-net -- bash "$helper" run --profile "$profile" -- "$@"
 }
 
+# --- PTY driver ------------------------------------------------------------
+
+# Runs a command under a Python standard-library PTY with a fixed window size,
+# replacing util-linux script -qfc. Output goes to stdout and the caller's stdin
+# is forwarded to the PTY, so interactive TUI probes work on both platforms.
+# Usage: ap_live_pty_exec [--timeout SECONDS] [--rows N] [--cols N] -- CMD...
+ap_live_pty_exec() {
+  "$AP_PLATFORM_PYTHON" "$AP_LIVE_PTY_EXEC" "$@"
+}
+
+# Installs portable stand-ins for GNU-only QA helpers at the front of PATH, so
+# an inner shell that only knows "timeout 25 cmd" keeps working on stock macOS.
+ap_live_prepare_tool_shims() {
+  local dir="$1"
+  mkdir -p "$dir"
+  cat >"$dir/timeout" <<EOF
+#!/usr/bin/env bash
+exec "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout "\$@"
+EOF
+  chmod 700 "$dir/timeout"
+  export PATH="$dir:$PATH"
+}
+
+# --- ownership-aware cleanup -----------------------------------------------
+
 # Usage: ap_live_cleanup_pgid <pgid> <marker-file> <qa-profile-dir>
 # The marker must be written by ap_live_write_group_marker or
 # ap_live_spawn_test_process. Every group member must carry the caller's real
 # UID, and the profile marker must be present on a group member or descendant.
+# Nothing is signalled until all of those checks pass.
 ap_live_cleanup_pgid() {
   local pgid="${1:-}"
   local marker_file="${2:-}"
   local profile_dir="${3:-}"
   local recorded_pgid="" leader_pid="" boot_id="" start_ticks="" marker_uid=""
-  local current_boot="" pgrp="" current_start="" myuid=""
+  local current_boot="" leader_identity="" pgrp="" current_start="" myuid=""
   local pids="" pid="" uid=""
 
   if [[ -z "$pgid" || ! "$pgid" =~ ^[0-9]+$ || "$pgid" -le 1 ]]; then
@@ -330,23 +477,24 @@ ap_live_cleanup_pgid() {
     return 1
   fi
 
-  pids=$(ps -o pid= -g "$pgid" 2>/dev/null | awk '{ print $1 }' || true)
+  pids=$(ap_live_pgid_members "$pgid")
   if [[ -z "$pids" ]]; then
     rm -f "$marker_file"
     return 0
   fi
 
-  current_boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+  current_boot=$(ap_live_boot_identity 2>/dev/null || true)
   if [[ -z "$current_boot" || "$current_boot" != "$boot_id" ]]; then
     printf "ap_live_cleanup_pgid: boot identity mismatch for group %s\n" "$pgid" >&2
     return 1
   fi
 
-  if [[ ! -r "/proc/$leader_pid/stat" ]]; then
+  leader_identity=$(ap_live_pid_identity "$leader_pid" 2>/dev/null || true)
+  if [[ -z "$leader_identity" ]]; then
     printf "ap_live_cleanup_pgid: process identity for group %s is unavailable (leader %s missing)\n" "$pgid" "$leader_pid" >&2
     return 1
   fi
-  read -r pgrp current_start <<<"$(ap_live_pid_stat "$leader_pid" 2>/dev/null || true)" || true
+  read -r pgrp current_start <<<"$leader_identity" || true
   if [[ "$pgrp" != "$pgid" || "$current_start" != "$start_ticks" ]]; then
     printf "ap_live_cleanup_pgid: process identity mismatch for group %s (possible PID reuse)\n" "$pgid" >&2
     return 1
@@ -363,8 +511,8 @@ ap_live_cleanup_pgid() {
     fi
   done <<<"$pids"
 
-  if ! ap_live_pgid_has_profile_env "$pgid" "$profile_dir"; then
-    printf "ap_live_cleanup_pgid: process group %s lacks AGENT_PROFILES_DIR=%s ownership\n" \
+  if ! ap_live_pgid_owns_profile "$pgid" "$profile_dir"; then
+    printf "ap_live_cleanup_pgid: process group %s lacks AGENT_PROFILES_DIR=%s ownership (no profile marker or open profile lease)\n" \
       "$pgid" "$profile_dir" >&2
     return 1
   fi
