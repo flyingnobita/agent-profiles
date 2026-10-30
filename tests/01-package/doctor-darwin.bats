@@ -12,6 +12,31 @@
 # macOS bash 3.2 or of a real Darwin host.
 # shellcheck disable=SC2030,SC2031
 
+setup_file() {
+  # A PATH that holds every host command except GNU timeout: the Codex login
+  # probe must work with the portable platform timeout only.
+  NO_TIMEOUT_BIN="$BATS_FILE_TMPDIR/no-timeout-bin"
+  mkdir -p "$NO_TIMEOUT_BIN"
+
+  local dir tool name
+  local old_ifs="$IFS"
+  IFS=':'
+  for dir in $PATH; do
+    IFS="$old_ifs"
+    [[ -d "$dir" ]] || continue
+    for tool in "$dir"/*; do
+      [[ -x "$tool" && ! -d "$tool" ]] || continue
+      name="$(basename "$tool")"
+      [[ "$name" == "timeout" ]] && continue
+      [[ -e "$NO_TIMEOUT_BIN/$name" ]] && continue
+      ln -s "$tool" "$NO_TIMEOUT_BIN/$name" 2>/dev/null || true
+    done
+  done
+  IFS="$old_ifs"
+
+  export NO_TIMEOUT_BIN
+}
+
 setup() {
   load '../helpers/common.bash'
   load '../helpers/assert.bash'
@@ -62,6 +87,25 @@ STUB
 
 teardown() {
   teardown_isolation
+}
+
+# hash_tree <dir>: stable content hash of every file under <dir>, so a test can
+# prove a profile or host tree is byte-identical across a read-only probe.
+hash_tree() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import sys
+
+root = sys.argv[1]
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames.sort()
+    for name in sorted(filenames):
+        path = os.path.join(dirpath, name)
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+        print(digest, os.path.relpath(path, root))
+PY
 }
 
 @test "doctor darwin: arm64 is qualified and bwrap namespace checks are not applicable" {
@@ -327,4 +371,126 @@ PY
 
   kill "$listener_pid" 2>/dev/null || true
   wait "$listener_pid" 2>/dev/null || true
+}
+
+@test "doctor darwin: codex login probe uses portable timeout and disposable snapshot" {
+  local repo="$TEST_TMPDIR/repo-doctor-darwin-codex"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile codex-darwin
+  assert_success
+
+  local codex_dir="$repo/.agent-profiles/codex-darwin/.codex"
+  printf '{"token":"host-codex-login-marker-906"}\n' >"$codex_dir/auth.json"
+  printf 'model = "synthetic"\n' >"$codex_dir/config.toml"
+
+  local mode_file="$TEST_TMPDIR/codex-mode"
+  local home_log="$TEST_TMPDIR/codex-probe-homes"
+  printf 'logged_in\n' >"$mode_file"
+  : >"$home_log"
+
+  cat >"$STUB_BIN/codex" <<STUB
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "--version" ]]; then
+  printf 'codex-cli 0.165.0\n'
+  exit 0
+fi
+if [[ "\${1:-}" == "login" && "\${2:-}" == "status" ]]; then
+  # The snapshot the doctor hands the probe must be disposable, never the
+  # profile's own config directory.
+  printf '%s\n' "\${CODEX_HOME:-}" >>"$home_log"
+  case "\$(cat "$mode_file" 2>/dev/null || printf 'logged_in')" in
+    hang)
+      sleep 10
+      exit 0
+      ;;
+    logged_out)
+      printf 'Not logged in\n'
+      exit 1
+      ;;
+    *)
+      printf 'Logged in using ChatGPT\n'
+      if [[ -f "\${CODEX_HOME:-}/auth.json" ]]; then
+        cat "\${CODEX_HOME}/auth.json"
+      fi
+      exit 0
+      ;;
+  esac
+fi
+exit 0
+STUB
+  chmod +x "$STUB_BIN/codex"
+
+  # GNU timeout is genuinely unavailable in the PATH used below.
+  run env PATH="$STUB_BIN:$NO_TIMEOUT_BIN" bash -c 'command -v timeout'
+  assert_failure
+
+  local before
+  before=$(hash_tree "$codex_dir")
+
+  run env PATH="$STUB_BIN:$NO_TIMEOUT_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" doctor --json --agent codex --profile codex-darwin
+  local reported_output="$output"
+  assert_success
+  assert_output_not_contains "host-codex-login-marker-906"
+  python3 - "$reported_output" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+auth = data["agents"]["codex"]["profile"]["auth"]
+assert auth["status"] == "login_reported", auth
+assert auth["logged_in"] is None, "a status report must not mean authenticated"
+assert auth["probe_exit"] == 0, auth
+assert "not validated" in auth["detail"], auth
+PY
+
+  # A reported logout stays a reported logout.
+  printf 'logged_out\n' >"$mode_file"
+  run env PATH="$STUB_BIN:$NO_TIMEOUT_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" doctor --json --agent codex --profile codex-darwin
+  local logged_out_output="$output"
+  assert_success
+  python3 - "$logged_out_output" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+auth = data["agents"]["codex"]["profile"]["auth"]
+assert auth["status"] == "logged_out", auth
+assert auth["logged_in"] is False, auth
+assert auth["probe_exit"] == 1, auth
+PY
+
+  # A hanging probe is a portable timeout, not a failure and not a login.
+  printf 'hang\n' >"$mode_file"
+  run env PATH="$STUB_BIN:$NO_TIMEOUT_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" doctor --json --agent codex --profile codex-darwin
+  local hang_output="$output"
+  assert_success
+  python3 - "$hang_output" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+auth = data["agents"]["codex"]["profile"]["auth"]
+assert auth["status"] == "unverified", auth
+assert auth["logged_in"] is None, auth
+assert auth["probe_exit"] == 124, auth
+assert "timed out" in auth["detail"], auth
+PY
+
+  # The probe only read a disposable snapshot: the profile is byte-identical
+  # and every snapshot directory is gone.
+  assert_equal "$(hash_tree "$codex_dir")" "$before"
+  local snapshot
+  while IFS= read -r snapshot; do
+    [[ -n "$snapshot" ]] || continue
+    [[ "$snapshot" != "$codex_dir" ]]
+    [[ ! -e "$snapshot" ]] || {
+      echo "snapshot directory was not removed: $snapshot" >&2
+      false
+    }
+  done <"$home_log"
 }
