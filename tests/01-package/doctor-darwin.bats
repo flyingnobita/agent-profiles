@@ -209,3 +209,122 @@ assert shared["session_bus"] is False, shared
 assert shared["os_credential_service"] == "present", shared
 PY
 }
+
+@test "doctor darwin: opencode classifies a test-owned listener without procfs" {
+  local repo="$TEST_TMPDIR/repo-doctor-darwin-port"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile port-darwin
+  assert_success
+
+  local port
+  port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+  python3 - "$port" "$TEST_TMPDIR/listener.ready" <<'PY' &
+import socket
+import sys
+import time
+
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("127.0.0.1", int(sys.argv[1])))
+sock.listen(1)
+open(sys.argv[2], "w").close()
+time.sleep(20)
+PY
+  local listener_pid=$!
+  local i
+  for ((i = 0; i < 100; i++)); do
+    [[ -f "$TEST_TMPDIR/listener.ready" ]] && break
+    sleep 0.1
+  done
+
+  # Real platform: /proc on Linux, lsof on Darwin, so this part is a guard that
+  # the classification itself is not weakened.
+  run env AP_OPENCODE_SERVICE_PORT="$port" \
+    bash "$AP_HELPER" doctor --json --agent opencode --profile port-darwin
+  local real_output="$output"
+  assert_success
+  python3 - "$real_output" "$port" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+service = data["agents"]["opencode"]["profile"]["shared"]["background_service_port"]
+assert service["port"] == int(sys.argv[2]), service
+assert service["status"] == "listening", service
+PY
+
+  # Darwin stand-in for lsof: a read-only socket check of the requested port,
+  # with lsof's exit codes (0 found, 1 no match). No procfs is consulted.
+  cat >"$STUB_BIN/lsof" <<'STUB'
+#!/usr/bin/env bash
+port=""
+for arg in "$@"; do
+  case "$arg" in
+    -iTCP:*) port="${arg#-iTCP:}" ;;
+  esac
+done
+if [[ -z "$port" ]]; then
+  exit 2
+fi
+python3 - "$port" <<'PY'
+import socket
+import sys
+
+sock = socket.socket()
+sock.settimeout(1.0)
+try:
+    sock.connect(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+print(f"opencode {sys.argv[1]} (LISTEN)")
+PY
+STUB
+  chmod +x "$STUB_BIN/lsof"
+
+  run env PATH="$STUB_BIN:$PATH" AP_TEST_PLATFORM_OS=Darwin AP_OPENCODE_SERVICE_PORT="$port" \
+    bash "$AP_HELPER" doctor --json --agent opencode --profile port-darwin
+  local darwin_output="$output"
+  assert_success
+  python3 - "$darwin_output" "$port" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+service = data["agents"]["opencode"]["profile"]["shared"]["background_service_port"]
+assert service["port"] == int(sys.argv[2]), service
+assert service["status"] == "listening", service
+assert "lsof" in service["detail"], service
+PY
+
+  # A probe that fails is unverified, never not_listening: a silent socket
+  # inspection must not be reported as "no shared service".
+  cat >"$STUB_BIN/lsof" <<'STUB'
+#!/usr/bin/env bash
+printf 'lsof: cannot inspect the socket table\n' >&2
+exit 2
+STUB
+  chmod +x "$STUB_BIN/lsof"
+
+  run env PATH="$STUB_BIN:$PATH" AP_TEST_PLATFORM_OS=Darwin AP_OPENCODE_SERVICE_PORT="$port" \
+    bash "$AP_HELPER" doctor --json --agent opencode --profile port-darwin
+  local failed_output="$output"
+  assert_success
+  python3 - "$failed_output" "$port" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+service = data["agents"]["opencode"]["profile"]["shared"]["background_service_port"]
+assert service["port"] == int(sys.argv[2]), service
+assert service["status"] == "unverified", service
+assert service["status"] != "not_listening", service
+assert service["detail"], service
+PY
+
+  kill "$listener_pid" 2>/dev/null || true
+  wait "$listener_pid" 2>/dev/null || true
+}
