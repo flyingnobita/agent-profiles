@@ -379,3 +379,72 @@ print("NESTED_SAME_OK")
   assert_output_contains "nested execution"
   assert_output_not_contains "should_not_run"
 }
+@test "darwin run: spurious inherited profile markers without an active session are reset" {
+  local repo="$TEST_TMPDIR/repo-darwin-spurious"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init --profile target
+  assert_success
+
+  local prof_dir="$repo/.agent-profiles/target"
+  local storage_dir="$repo/.agent-profiles"
+  local spurious="$TEST_TMPDIR/spurious"
+
+  # Without the explicit active-session marker the inherited identity is stale
+  # bookkeeping from an earlier environment, not a live nested session, so the
+  # run proceeds with a freshly exported identity.
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    AGENT_PROFILES_NAME="spurious" \
+    AGENT_PROFILES_DIR="$spurious/profile" \
+    AGENT_PROFILES_ROOT="$spurious/storage" \
+    AGENT_SANDBOX_DIR="$spurious/sandbox" \
+    AGENT_SANDBOX_PROFILE="spurious" \
+    bash "$AP_HELPER" run --profile target -- python3 -c '
+import os
+import sys
+
+prof = sys.argv[1]
+storage = sys.argv[2]
+assert os.environ["AGENT_PROFILES_NAME"] == "target"
+assert os.environ["AGENT_PROFILES_DIR"] == prof
+assert os.environ["AGENT_PROFILES_ROOT"] == storage
+assert os.environ["AGENT_PROFILES_SESSION"] == "target"
+assert os.environ["AGENT_SANDBOX_PROFILE"] == "target"
+for name in ("AGENT_PROFILES_DIR", "AGENT_PROFILES_ROOT", "AGENT_SANDBOX_DIR"):
+    assert "spurious" not in os.environ[name], (name, os.environ[name])
+print("STALE_MARKERS_RESET_OK")
+' "$prof_dir" "$storage_dir"
+  assert_success
+  assert_output_contains "STALE_MARKERS_RESET_OK"
+
+  # A marker that names a different identity is a live mismatch, not staleness.
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    AGENT_PROFILES_SESSION="spurious" \
+    AGENT_PROFILES_NAME="spurious" \
+    AGENT_PROFILES_DIR="$spurious/profile" \
+    AGENT_PROFILES_ROOT="$spurious/storage" \
+    bash "$AP_HELPER" run --profile target -- echo should_not_run
+  assert_failure
+  assert_equal "$status" 75
+  assert_output_contains "nested execution"
+  assert_output_not_contains "should_not_run"
+
+  # The marker is workflow bookkeeping, never unforgeable evidence: a caller
+  # that fabricates every matching value is treated as a live nested session.
+  # A nested session takes the same-profile path and records no new run line.
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run --profile target -- true
+  assert_success
+  local runs_file="$repo/.agent-profiles/.locks/target.runs"
+  local records_before
+  records_before=$(grep -c '' "$runs_file")
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    AGENT_PROFILES_SESSION="target" \
+    AGENT_PROFILES_NAME="target" \
+    AGENT_PROFILES_DIR="$prof_dir" \
+    AGENT_PROFILES_ROOT="$storage_dir" \
+    bash "$AP_HELPER" run --profile target -- sh -c 'printf "forged_nested\n"'
+  assert_success
+  assert_output_contains "forged_nested"
+  assert_equal "$(grep -c '' "$runs_file")" "$records_before"
+}
