@@ -143,6 +143,27 @@ ap_lock_fd_release() {
   AP_LOCK_FDS=("${kept[@]:-}")
 }
 
+# Prints the parent PID of a live process. Linux keeps reading procfs exactly
+# as before (AP_PROC_ROOT stays a fault-injection seam); Darwin has no procfs
+# and asks ps instead.
+ap_platform_process_ppid() {
+  local pid="$1"
+  if ap_platform_is_darwin; then
+    ap_platform ps-ppid "$pid"
+    return
+  fi
+  local proc_root="${AP_PROC_ROOT:-/proc}"
+  [[ -r "$proc_root/$pid/stat" ]] || return 1
+  cut -d' ' -f4 "$proc_root/$pid/stat" 2>/dev/null
+}
+
+# Prints "  PID <pid> (<comm>)" for every process that keeps a path open. This
+# is an advisory diagnostic for an already-busy lock: it never signals, never
+# refuses, and never prints an environment value or a command line.
+ap_platform_process_holders() {
+  ap_platform proc-holders "$1" "$2" "$3"
+}
+
 # Applies a shared or exclusive non-blocking lock to an inherited descriptor.
 ap_platform_lock() {
   ap_platform lock "$1" "$2"

@@ -19,6 +19,30 @@ import subprocess
 import sys
 
 
+def _tool_path(override_var, candidates):
+    """Resolves a base-system tool, honouring an internal test seam first.
+
+    The seams (AP_DARWIN_PS, AP_DARWIN_LSOF) exist so the Darwin inspector can
+    be proven unavailable, or driven from a fixture, inside the test suite.
+    They are never user-facing options.
+    """
+    override = os.environ.get(override_var)
+    if override:
+        return override
+    for candidate in candidates:
+        if os.access(candidate, os.X_OK):
+            return candidate
+    return shutil.which(os.path.basename(candidates[-1]))
+
+
+def _ps_bin():
+    return _tool_path("AP_DARWIN_PS", ("/bin/ps", "/usr/bin/ps", "ps"))
+
+
+def _lsof_bin():
+    return _tool_path("AP_DARWIN_LSOF", ("/usr/sbin/lsof", "/usr/bin/lsof", "lsof"))
+
+
 def _usage(message):
     sys.stderr.write("platform.py: %s\n" % message)
     return 2
@@ -259,6 +283,156 @@ def _copy_tree(source, destination):
     shutil.copystat(source, destination, follow_symlinks=False)
 
 
+def _path_under_targets(name, targets):
+    if not name or not name.startswith("/"):
+        return False
+    try:
+        resolved = os.path.realpath(name)
+    except OSError:
+        resolved = name
+    for target in targets:
+        if resolved == target or resolved.startswith(target + "/"):
+            return True
+    return False
+
+
+def _lsof_entries(uid):
+    """Maps PID to {comm, names} for the given UID, or None when unavailable."""
+    binary = _lsof_bin()
+    if not binary:
+        return None
+    entries = {}
+    pid = None
+    try:
+        proc = subprocess.run(
+            [binary, "-n", "-P", "-u", str(uid), "-F", "pcn"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        )
+    except OSError:
+        return None
+    # lsof exits 1 when it could not list every open file, which happens
+    # routinely for unreadable files and volumes. Anything above that is a real
+    # inspection failure and callers must fail closed.
+    if proc.returncode not in (0, 1):
+        return None
+    for line in proc.stdout.splitlines():
+        if not line:
+            continue
+        tag, value = line[0], line[1:]
+        if tag == "p":
+            pid = int(value) if value.isdigit() else None
+            if pid is not None:
+                entries.setdefault(pid, {"comm": "", "names": []})
+        elif tag == "c" and pid is not None:
+            entries[pid]["comm"] = value
+        elif tag == "n" and pid is not None:
+            entries[pid]["names"].append(value)
+    return entries
+
+
+def _proc_comm(pid):
+    try:
+        with open("/proc/%d/comm" % pid, "r") as handle:
+            return handle.read().strip()
+    except OSError:
+        return "?"
+
+
+def _proc_open_names(pid, proc_root):
+    """Prints the fd, cwd and exe targets of one process from procfs."""
+    names = []
+    for entry in (
+        os.path.join(proc_root, "%d" % pid, "cwd"),
+        os.path.join(proc_root, "%d" % pid, "exe"),
+    ):
+        try:
+            names.append(os.readlink(entry))
+        except OSError:
+            pass
+    fd_dir = os.path.join(proc_root, "%d" % pid, "fd")
+    try:
+        handles = os.listdir(fd_dir)
+    except OSError:
+        handles = []
+    for handle in handles:
+        try:
+            names.append(os.readlink(os.path.join(fd_dir, handle)))
+        except OSError:
+            pass
+    return names
+
+
+def cmd_ps_ppid(args):
+    """Prints the parent PID of a live process from ps, for Darwin ancestry."""
+    if len(args) != 1:
+        return _usage("ps-ppid requires a PID")
+    binary = _ps_bin()
+    if not binary:
+        return 1
+    try:
+        proc = subprocess.run(
+            [binary, "-o", "ppid=", "-p", args[0]],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        )
+    except OSError:
+        return 1
+    value = proc.stdout.strip()
+    if not value.isdigit():
+        return 1
+    sys.stdout.write(value + "\n")
+    return 0
+
+
+def cmd_proc_holders(args):
+    """Prints "  PID <pid> (<comm>)" for each process that keeps a path open.
+
+    Advisory diagnostic only: it never signals, never refuses and never prints
+    an environment value or command line. Callers use it to name the holder of
+    an already-busy lock. Procfs is used on Linux (AP_PROC_ROOT aware) and
+    ps/lsof on Darwin.
+    """
+    if len(args) != 3:
+        return _usage("proc-holders requires a platform, a path and caller PIDs")
+    family, path, caller_csv = args
+    targets = [os.path.realpath(path)]
+    callers = set(int(value) for value in caller_csv.split() if value.isdigit())
+    holders = []
+
+    if family == "Darwin":
+        entries = _lsof_entries(os.getuid())
+        if entries is None:
+            return 1
+        for pid in sorted(entries):
+            if pid in callers:
+                continue
+            if any(_path_under_targets(name, targets) for name in entries[pid]["names"]):
+                holders.append((pid, entries[pid]["comm"] or "?"))
+    else:
+        proc_root = os.environ.get("AP_PROC_ROOT") or "/proc"
+        try:
+            candidates = sorted(
+                int(name)
+                for name in os.listdir(proc_root)
+                if name.isdigit()
+            )
+        except OSError:
+            return 1
+        for pid in candidates:
+            if pid in callers:
+                continue
+            names = _proc_open_names(pid, proc_root)
+            if any(_path_under_targets(name, targets) for name in names):
+                holders.append((pid, _proc_comm(pid)))
+
+    for pid, comm in holders:
+        sys.stdout.write("  PID %d (%s)\n" % (pid, comm))
+    return 0
+
+
 def cmd_lock(args):
     if len(args) != 2:
         return _usage("lock requires a mode and a descriptor")
@@ -289,6 +463,8 @@ def main(argv):
         "sha256sum": cmd_sha256sum,
         "copy-preserve": cmd_copy_preserve,
         "lock": cmd_lock,
+        "proc-holders": cmd_proc_holders,
+        "ps-ppid": cmd_ps_ppid,
         "manifest": cmd_manifest,
         "manifest-verify": cmd_manifest_verify,
         "realpath": cmd_realpath,

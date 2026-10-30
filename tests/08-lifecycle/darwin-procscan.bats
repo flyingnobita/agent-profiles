@@ -79,7 +79,7 @@ spawn_lease_session() {
   assert_output_contains "PID $holder_pid"
   assert_output_contains "$lease_file"
   # The refused mutation changed nothing.
-  assert_file_exists "$repo/.agent-profiles/leased/home"
+  assert_dir_exists "$repo/.agent-profiles/leased/home"
 
   # A second profile's live lease is unrelated and must not refuse this one.
   local other_pid_file="$TEST_TMPDIR/other-holder.pid"

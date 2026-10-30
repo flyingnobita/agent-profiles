@@ -38,12 +38,19 @@ ap_maybe_lock_fault() {
 }
 
 # Opens a persistent lock file on an allocated descriptor and locks it.
-# ap_lock_file_into <varname> <lock-file> <shared|exclusive> <busy-message>
+# ap_lock_file_into <varname> <lock-file> <shared|exclusive> <busy-message> \
+#   [report-holders]
+# When report-holders is 1, a busy lock also names the processes that keep the
+# file open. That refusal diagnostic is advisory: the exit status and message
+# are unchanged, no process is signalled, and only PID and command name are
+# printed. It matters most on Darwin, where the inherited profile lease
+# descriptor is the strongest run marker.
 ap_lock_file_into() {
   local __ap_var="$1"
   local __ap_lock_file="$2"
   local __ap_mode="$3"
   local __ap_message="$4"
+  local __ap_report_holders="${5:-0}"
   local __ap_lock_fd
 
   ap_maybe_lock_fault "$__ap_lock_file"
@@ -51,6 +58,14 @@ ap_lock_file_into() {
     ap_die "$EX_LAYOUT" "lock file '$__ap_lock_file' could not be opened"
   fi
   if ! ap_platform_lock "$__ap_mode" "$__ap_lock_fd"; then
+    if [[ "$__ap_report_holders" == "1" ]] && declare -F ap_report_process_holders >/dev/null 2>&1; then
+      local __ap_holders
+      __ap_holders=$(ap_report_process_holders "$__ap_lock_file" || true)
+      if [[ -n "$__ap_holders" ]]; then
+        printf "agent-profiles: note: lock file '%s' is held open by:\n%s\n" \
+          "$__ap_lock_file" "$__ap_holders" >&2
+      fi
+    fi
     ap_lock_fd_release "$__ap_lock_fd"
     ap_die "$EX_BUSY" "$__ap_message"
   fi
@@ -119,7 +134,7 @@ ap_lock_profile_exclusive() {
   ap_prepare_lock_file "$lock_file" "profile lock file"
 
   ap_lock_file_into AP_PROFILE_EXCLUSIVE_FD "$lock_file" exclusive \
-    "cannot acquire exclusive lock for profile '$profile' (profile is in use)"
+    "cannot acquire exclusive lock for profile '$profile' (profile is in use)" 1
 }
 
 ap_unlock_profile() {
@@ -152,7 +167,7 @@ ap_lock_profiles_exclusive() {
 
     # All descriptors stay open together, in sorted name order.
     ap_lock_file_into fd "$lock_file" exclusive \
-      "cannot acquire exclusive lock for profile '$name' (profile is in use)"
+      "cannot acquire exclusive lock for profile '$name' (profile is in use)" 1
     AP_PROFILE_EXCLUSIVE_FDS+=("$fd")
   done < <(printf "%s\n" "$@" | LC_ALL=C sort -u)
 }
