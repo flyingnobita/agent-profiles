@@ -504,6 +504,13 @@ def cmd_darwin_proc_scan(args):
     entries = _lsof_entries(uid)
     if entries is None:
         return _inspection_unavailable("lsof")
+    # A probe that reports success but cannot describe even the inspector's own
+    # open descriptors has produced incomplete information, not an empty
+    # process table. Destructive lifecycle must never read that as "no process".
+    if os.getpid() not in entries:
+        return _inspection_unavailable(
+            "lsof reported no information about the inspector process"
+        )
 
     parents = {row["pid"]: row["ppid"] for row in rows}
     excluded = set(int(value) for value in caller_csv.split() if value.isdigit())
