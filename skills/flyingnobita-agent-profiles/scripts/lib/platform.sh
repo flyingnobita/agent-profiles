@@ -33,6 +33,22 @@ ap_platform_script_dir() {
   ap_platform script-dir "$1"
 }
 
+# Prints the operating-system family the helper is running on. Production
+# behaviour is always decided by the real platform: AP_TEST_PLATFORM_OS is an
+# internal seam that is only honoured when the Bats test runner is present, so
+# it cannot be selected through a normal user-facing command.
+ap_platform_os() {
+  if [[ -n "${AP_TEST_PLATFORM_OS:-}" && -n "${BATS_TEST_FILENAME:-}" ]]; then
+    printf "%s\n" "$AP_TEST_PLATFORM_OS"
+    return 0
+  fi
+  uname -s
+}
+
+ap_platform_is_darwin() {
+  [[ "$(ap_platform_os)" == "Darwin" ]]
+}
+
 # Canonicalizes a path whose final component must already exist.
 ap_platform_realpath_existing() {
   ap_platform realpath --existing "$1"

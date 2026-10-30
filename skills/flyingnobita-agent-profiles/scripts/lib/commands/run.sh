@@ -90,12 +90,20 @@ ap_cmd_run() {
   # 5. Release storage lock before exec (profile lease fd stays open)
   ap_unlock_storage
 
-  ap_check_bwrap_readiness
+  ap_check_run_readiness
 
   # Capture effective mise directories BEFORE resetting managed environment variables
   ap_capture_effective_mise_dirs
 
   ap_prepare_profile_env "$repo_root" "$profile"
+
+  # Exactly one execution adapter. Darwin redirects by environment only: no
+  # bubblewrap, no mount table and never a host mountpoint creation.
+  if ap_platform_is_darwin; then
+    ap_agent_command "$@"
+    exec "${AP_COMMAND[@]}"
+  fi
+
   ap_build_bwrap_mounts "$repo_root" "$profile"
   ap_agent_command "$@"
 

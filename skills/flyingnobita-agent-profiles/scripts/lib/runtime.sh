@@ -451,8 +451,10 @@ ap_agent_command() {
 }
 
 ap_check_bwrap_readiness() {
-  if [[ "$(uname -s)" != "Linux" ]]; then
-    ap_die "$EX_UNAVAILABLE" "operating system '$(uname -s)' is not qualified (Linux is required)"
+  local os
+  os=$(ap_platform_os)
+  if [[ "$os" != "Linux" ]]; then
+    ap_die "$EX_UNAVAILABLE" "operating system '$os' is not qualified (Linux is required)"
   fi
 
   if ! command -v bwrap >/dev/null 2>&1; then
@@ -462,6 +464,16 @@ ap_check_bwrap_readiness() {
   if ! bwrap --dev-bind / / true >/dev/null 2>&1; then
     ap_die "$EX_UNAVAILABLE" "bubblewrap namespace setup failed. Ensure unprivileged user namespaces are enabled (check kernel.unprivileged_userns_clone sysctl, AppArmor apparmor_restrict_unprivileged_userns, or container seccomp profiles)."
   fi
+}
+
+# Selects the prerequisites for exactly one execution adapter. Linux needs
+# bubblewrap readiness; Darwin executes the child directly with profile
+# environment redirection and must never require or probe bubblewrap.
+ap_check_run_readiness() {
+  if ap_platform_is_darwin; then
+    return 0
+  fi
+  ap_check_bwrap_readiness
 }
 
 ap_build_bwrap_mounts() {
