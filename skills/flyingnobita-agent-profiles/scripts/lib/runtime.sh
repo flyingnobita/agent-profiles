@@ -470,14 +470,21 @@ ap_build_bwrap_mounts() {
   local validated_sources=()
   local validated_targets=()
 
-  local real_storage
-  real_storage=$(realpath -m "$storage_dir" 2>/dev/null || echo "$storage_dir")
-  local real_repo
-  real_repo=$(realpath -m "$repo_root" 2>/dev/null || echo "$repo_root")
-  local real_prof
-  real_prof=$(realpath -m "$prof_dir" 2>/dev/null || echo "$prof_dir")
-  local real_home
-  real_home=$(realpath -m "$HOME" 2>/dev/null || echo "$HOME")
+  local real_storage real_repo real_prof real_home
+  # A canonicalization failure must stop the mount table validation instead of
+  # silently checking unordered paths.
+  if ! real_storage=$(ap_platform_realpath_missing "$storage_dir"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical path for profile storage directory '$storage_dir'"
+  fi
+  if ! real_repo=$(ap_platform_realpath_missing "$repo_root"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical path for repository root '$repo_root'"
+  fi
+  if ! real_prof=$(ap_platform_realpath_missing "$prof_dir"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical path for profile directory '$prof_dir'"
+  fi
+  if ! real_home=$(ap_platform_realpath_missing "$HOME"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical path for user home '$HOME'"
+  fi
 
   # Pass 1: Validate entire mount table before any host modifications
   for d in "${redirect_dirs[@]}"; do
@@ -495,8 +502,7 @@ ap_build_bwrap_mounts() {
 
     # Canonicalize physical target including resolving ancestors of missing targets
     local phys_target
-    phys_target=$(realpath -m "$target" 2>/dev/null || true)
-    if [[ -z "$phys_target" ]]; then
+    if ! phys_target=$(ap_platform_realpath_missing "$target"); then
       ap_die "$EX_LAYOUT" "unable to resolve physical path for mount target '$target'"
     fi
 

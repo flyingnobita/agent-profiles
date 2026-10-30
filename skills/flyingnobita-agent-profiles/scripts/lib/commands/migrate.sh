@@ -299,13 +299,17 @@ ap_cmd_migrate() {
   resolved_root=$(ap_prepare_private_backup_root "$repo_root" "$backup_root")
 
   local real_storage
-  real_storage=$(realpath -m "$repo_root/.agent-profiles")
+  if ! real_storage=$(ap_platform_realpath_missing "$repo_root/.agent-profiles"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical profile storage path '$repo_root/.agent-profiles'"
+  fi
   if ap_path_within "$resolved_root" "$real_storage"; then
     ap_die "$EX_LAYOUT" "backup path resolves into profile storage ($resolved_root)"
   fi
   if [[ $MIG_SANDBOX -eq 1 ]]; then
     local real_sandbox
-    real_sandbox=$(realpath -m "$repo_root/.agent-sandbox")
+    if ! real_sandbox=$(ap_platform_realpath_missing "$repo_root/.agent-sandbox"); then
+      ap_die "$EX_LAYOUT" "unable to resolve physical legacy storage path '$repo_root/.agent-sandbox'"
+    fi
     if ap_path_within "$resolved_root" "$real_sandbox"; then
       ap_die "$EX_LAYOUT" "backup path resolves into legacy storage ($resolved_root)"
     fi

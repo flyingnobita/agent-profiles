@@ -424,10 +424,10 @@ ap_validate_private_backup_path() {
   fi
 
   local normalized
-  normalized=$(realpath -m "$backup_root" 2>/dev/null || printf '%s\n' "$backup_root")
+  normalized=$(ap_platform_realpath_missing "$backup_root")
 
   local real_repo
-  real_repo=$(realpath -e "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
+  real_repo=$(ap_platform_realpath_existing "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
 
   if ap_path_within "$normalized" "$real_repo"; then
     ap_die "$EX_LAYOUT" "backup path cannot be inside the git checkout ($backup_root)"
@@ -435,17 +435,21 @@ ap_validate_private_backup_path() {
 
   if [[ -d "$normalized" ]]; then
     local resolved owner mode
-    if ! resolved=$(realpath -e "$normalized" 2>/dev/null); then
+    if ! resolved=$(ap_platform_realpath_existing "$normalized"); then
       ap_die "$EX_LAYOUT" "backup path '$backup_root' does not resolve to a directory"
     fi
     if ap_path_within "$resolved" "$real_repo"; then
       ap_die "$EX_LAYOUT" "backup path resolves inside the git checkout ($resolved)"
     fi
-    owner=$(stat -c "%u" "$resolved" 2>/dev/null || true)
+    if ! owner=$(ap_platform_stat_owner "$resolved"); then
+      ap_die "$EX_LAYOUT" "cannot read the ownership of backup path '$resolved'"
+    fi
     if [[ "$owner" != "$(id -u)" ]]; then
       ap_die "$EX_LAYOUT" "backup path '$resolved' is not owned by the current user"
     fi
-    mode=$(stat -c "%a" "$resolved" 2>/dev/null || true)
+    if ! mode=$(ap_platform_stat_mode "$resolved"); then
+      ap_die "$EX_LAYOUT" "cannot read the permissions of backup path '$resolved'"
+    fi
     if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
       ap_die "$EX_LAYOUT" "insecure permissions on backup path '$resolved' (must not be group or world writable, got mode $mode)"
     fi
@@ -463,10 +467,10 @@ ap_prepare_private_backup_root() {
   fi
 
   local normalized
-  normalized=$(realpath -m "$backup_root" 2>/dev/null || printf '%s\n' "$backup_root")
+  normalized=$(ap_platform_realpath_missing "$backup_root")
 
   local real_repo
-  real_repo=$(realpath -e "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
+  real_repo=$(ap_platform_realpath_existing "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
 
   if ap_path_within "$normalized" "$real_repo"; then
     ap_die "$EX_LAYOUT" "backup path cannot be inside the git checkout ($backup_root)"
@@ -496,7 +500,7 @@ ap_prepare_private_backup_root() {
   done
 
   local resolved
-  if ! resolved=$(realpath -e "$normalized" 2>/dev/null); then
+  if ! resolved=$(ap_platform_realpath_existing "$normalized"); then
     ap_die "$EX_LAYOUT" "backup path '$backup_root' does not resolve to a directory"
   fi
 
@@ -505,12 +509,16 @@ ap_prepare_private_backup_root() {
   fi
 
   local owner mode
-  owner=$(stat -c "%u" "$resolved" 2>/dev/null || true)
+  if ! owner=$(ap_platform_stat_owner "$resolved"); then
+    ap_die "$EX_LAYOUT" "cannot read the ownership of backup path '$resolved'"
+  fi
   if [[ "$owner" != "$(id -u)" ]]; then
     ap_die "$EX_LAYOUT" "backup path '$resolved' is not owned by the current user"
   fi
 
-  mode=$(stat -c "%a" "$resolved" 2>/dev/null || true)
+  if ! mode=$(ap_platform_stat_mode "$resolved"); then
+    ap_die "$EX_LAYOUT" "cannot read the permissions of backup path '$resolved'"
+  fi
   if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
     ap_die "$EX_LAYOUT" "insecure permissions on backup path '$resolved' (must not be group or world writable, got mode $mode)"
   fi
@@ -521,7 +529,7 @@ ap_prepare_private_backup_root() {
 ap_backup_run_name() {
   local repo_root="$1"
   local resolved_repo
-  resolved_repo=$(realpath -e "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
+  resolved_repo=$(ap_platform_realpath_existing "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
 
   local repo_name
   repo_name=$(basename "$resolved_repo")
@@ -909,17 +917,21 @@ ap_validate_existing_private_dir() {
   fi
 
   local resolved
-  if ! resolved=$(realpath -e "$directory" 2>/dev/null); then
+  if ! resolved=$(ap_platform_realpath_existing "$directory"); then
     ap_die "$EX_LAYOUT" "$label '$directory' does not resolve to a directory"
   fi
 
   local owner mode
-  owner=$(stat -c "%u" "$resolved" 2>/dev/null || true)
+  if ! owner=$(ap_platform_stat_owner "$resolved"); then
+    ap_die "$EX_LAYOUT" "cannot read the ownership of $label '$resolved'"
+  fi
   if [[ "$owner" != "$(id -u)" ]]; then
     ap_die "$EX_LAYOUT" "$label '$resolved' is not owned by the current user"
   fi
 
-  mode=$(stat -c "%a" "$resolved" 2>/dev/null || true)
+  if ! mode=$(ap_platform_stat_mode "$resolved"); then
+    ap_die "$EX_LAYOUT" "cannot read the permissions of $label '$resolved'"
+  fi
   if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
     ap_die "$EX_LAYOUT" "$label '$resolved' is group or world writable (mode $mode)"
   fi

@@ -161,11 +161,15 @@ ap_recover_validate_content_manifest() {
   fi
 
   local owner mode
-  owner=$(stat -c "%u" "$manifest" 2>/dev/null || true)
+  if ! owner=$(ap_platform_stat_owner "$manifest"); then
+    ap_die "$EX_LAYOUT" "cannot read the ownership of content manifest '$manifest'"
+  fi
   if [[ "$owner" != "$(id -u)" ]]; then
     ap_die "$EX_LAYOUT" "content manifest '$manifest' is not owned by the current user"
   fi
-  mode=$(stat -c "%a" "$manifest" 2>/dev/null || true)
+  if ! mode=$(ap_platform_stat_mode "$manifest"); then
+    ap_die "$EX_LAYOUT" "cannot read the permissions of content manifest '$manifest'"
+  fi
   if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
     ap_die "$EX_LAYOUT" "content manifest '$manifest' is group or world writable (mode $mode)"
   fi
@@ -221,7 +225,7 @@ ap_recover_migrate_operation() {
   resolved_backup=$(ap_validate_existing_private_dir "$backup_dir" "backup directory")
 
   local real_repo
-  real_repo=$(realpath -e "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
+  real_repo=$(ap_platform_realpath_existing "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
   if ap_path_within "$resolved_backup" "$real_repo"; then
     ap_die "$EX_LAYOUT" "recorded backup directory '$resolved_backup' is inside the git checkout"
   fi
