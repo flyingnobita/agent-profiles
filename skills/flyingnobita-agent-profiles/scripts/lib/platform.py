@@ -12,7 +12,9 @@ import errno
 import fcntl
 import hashlib
 import os
+import signal
 import stat
+import subprocess
 import sys
 
 
@@ -176,6 +178,43 @@ def cmd_manifest_verify(args):
     return 0
 
 
+def cmd_timeout(args):
+    if len(args) < 2:
+        return _usage("timeout requires a duration and a command")
+    try:
+        seconds = float(args[0])
+    except ValueError:
+        return _usage("timeout duration is not a number: %s" % args[0])
+    command = args[1:]
+    try:
+        # A new session lets a timeout kill the whole probe tree, matching GNU
+        # timeout's process-group behaviour.
+        process = subprocess.Popen(command, start_new_session=True)
+    except OSError as exc:
+        sys.stderr.write("timeout: failed to run %s: %s\n" % (command[0], exc))
+        return 127
+    try:
+        code = process.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        _kill_group(process, signal.SIGTERM)
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            _kill_group(process, signal.SIGKILL)
+            process.wait()
+        return 124
+    if code < 0:
+        return 128 + abs(code)
+    return code
+
+
+def _kill_group(process, sig):
+    try:
+        os.killpg(process.pid, sig)
+    except OSError:
+        pass
+
+
 def cmd_lock(args):
     if len(args) != 2:
         return _usage("lock requires a mode and a descriptor")
@@ -209,6 +248,7 @@ def main(argv):
         "manifest-verify": cmd_manifest_verify,
         "realpath": cmd_realpath,
         "stat": cmd_stat,
+        "timeout": cmd_timeout,
     }
     handler = handlers.get(command)
     if handler is None:

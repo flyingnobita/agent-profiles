@@ -163,7 +163,8 @@ ap_doctor_check_codex_profile() {
             fi
           done
 
-          probe_out=$(env -i "${probe_env[@]}" timeout 5 "$codex_bin" login status 2>&1) || probe_rc=$?
+          probe_out=$(env -i "${probe_env[@]}" \
+            "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 5 "$codex_bin" login status 2>&1) || probe_rc=$?
           probe_exit="$probe_rc"
 
           if [[ "$probe_rc" -eq 124 ]]; then

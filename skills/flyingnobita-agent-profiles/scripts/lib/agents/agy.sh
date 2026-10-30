@@ -73,7 +73,7 @@ ap_agy_os_credential_service() {
     return 0
   fi
 
-  out=$(timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+  out=$(ap_platform_timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus \
     /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
     string:org.freedesktop.secrets 2>/dev/null) || rc=$?
 

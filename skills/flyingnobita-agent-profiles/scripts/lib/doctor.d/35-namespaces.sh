@@ -10,7 +10,7 @@ ap_doctor_check_namespaces() {
     status="missing"
     detail="bubblewrap is not installed; profile namespaces cannot run"
     hint="Install bubblewrap with your package manager and rerun doctor."
-  elif timeout 10 bwrap --dev-bind / / true >/dev/null 2>&1; then
+  elif ap_platform_timeout 10 bwrap --dev-bind / / true >/dev/null 2>&1; then
     status="available"
     detail="bubblewrap unprivileged namespaces work; the profile wrapper can run commands"
     hint=""

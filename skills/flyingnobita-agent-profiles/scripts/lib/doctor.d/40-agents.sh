@@ -29,7 +29,7 @@ ap_probe_agent_synthetic() {
   if [[ -z "${MISE_DATA_DIR:-}" ]] && command -v mise >/dev/null 2>&1; then
     local extracted_dirs
     extracted_dirs=$(
-      cd "$temp_dir" && env -i PATH="$PATH" HOME="$temp_dir" timeout 2 mise doctor --json 2>/dev/null | python3 -c '
+      cd "$temp_dir" && env -i PATH="$PATH" HOME="$temp_dir" "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 2 mise doctor --json 2>/dev/null | python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin).get("dirs", {})
@@ -60,7 +60,7 @@ except Exception:
         CLAUDE_CONFIG_DIR="$temp_dir/.claude" \
         CODEX_HOME="$temp_dir/.codex" \
         OPENCODE_CONFIG_DIR="$temp_dir/.opencode" \
-        timeout 3 "$agent_cmd" "${agent_args[@]}" 2>&1
+        "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 3 "$agent_cmd" "${agent_args[@]}" 2>&1
   ) || probe_exit=$?
 
   rm -rf "$temp_dir"

@@ -157,3 +157,9 @@ ap_platform_manifest_verify() {
 ap_platform_stat_size() {
   ap_platform stat size "$1"
 }
+
+# Runs a command with a wall-clock limit, exiting 124 on timeout exactly like
+# GNU timeout so callers keep their existing classification.
+ap_platform_timeout() {
+  ap_platform timeout "$@"
+}
