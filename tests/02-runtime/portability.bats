@@ -115,3 +115,50 @@ SHIM
   assert_failure 73
   assert_output_contains "aliases existing profile"
 }
+
+@test "portability: canonical path checks resolve existing and missing symlink ancestors" {
+  local shim="$TEST_TMPDIR/bsd-bin"
+  reject_gnu_options "$shim" realpath
+  export PATH="$shim:$AP_HOST_PATH"
+
+  # Storage and the not-yet-created host mount targets are canonicalized before
+  # the profile runs.
+  local repo_run="$TEST_TMPDIR/repo-realpath-run"
+  create_fixture_repo "$repo_run"
+  cd "$repo_run"
+  run bash "$AP_HELPER" init --profile default
+  assert_success
+  run bash "$AP_HELPER" run -- true
+  assert_success
+
+  # A backup root whose tail does not exist yet is resolved through its real
+  # ancestors and created outside the checkout.
+  local repo_migrate="$TEST_TMPDIR/repo-realpath-migrate"
+  create_fixture_repo "$repo_migrate"
+  cd "$repo_migrate"
+  mkdir -p "$repo_migrate/.agent-sandbox/home"
+  printf 'legacy\n' >"$repo_migrate/.agent-sandbox/home/legacy.txt"
+
+  local backups="$TEST_TMPDIR/backups/nested/deep"
+  run bash "$AP_HELPER" migrate --yes --backup-root "$backups"
+  assert_success
+  assert_output_contains "Migration completed successfully"
+
+  local run_dir
+  run_dir=$(find "$backups" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  [[ -n "$run_dir" ]]
+  assert_file_exists "$run_dir/legacy/agent-sandbox/home/legacy.txt"
+
+  # An existing symlink ancestor that resolves inside the checkout must be
+  # refused even though the backup path itself does not exist.
+  local repo_link="$TEST_TMPDIR/repo-realpath-link"
+  create_fixture_repo "$repo_link"
+  cd "$repo_link"
+  mkdir -p "$repo_link/.agent-sandbox/home"
+  printf 'legacy\n' >"$repo_link/.agent-sandbox/home/legacy.txt"
+  ln -s "$repo_link" "$TEST_TMPDIR/repo-link"
+
+  run bash "$AP_HELPER" migrate --backup-root "$TEST_TMPDIR/repo-link/backups"
+  assert_failure 73
+  assert_output_contains "inside the git checkout"
+}
