@@ -261,3 +261,93 @@ SHIM
   run bash "$AP_HELPER" run --profile default -- true
   assert_success
 }
+
+@test "portability: setup manifests and release checksums verify without sha256sum" {
+  local repo="$TEST_TMPDIR/repo-hash"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  # Only the released toolchain is available: no GNU coreutils hashing.
+  local shim="$TEST_TMPDIR/no-sha-bin"
+  mask_command "$shim" sha256sum
+  export PATH="$shim:$AP_HOST_PATH"
+
+  export MISE_CONFIG_DIR="$TEST_TMPDIR/mise/config"
+  export MISE_DATA_DIR="$TEST_TMPDIR/mise/data"
+  export MISE_STATE_DIR="$TEST_TMPDIR/mise/state"
+  export MISE_CACHE_DIR="$TEST_TMPDIR/mise/cache"
+  export MISE_TRUSTED_CONFIG_PATHS="$TEST_TMPDIR"
+  export AP_OS_RELEASE="$TEST_TMPDIR/os-release"
+  mkdir -p "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR"
+  printf 'ID=arch\nID_LIKE=arch\nPRETTY_NAME="Arch Linux"\n' >"$AP_OS_RELEASE"
+
+  run bash "$AP_HELPER" setup --apply
+  assert_success
+
+  local release
+  release=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
+  assert_dir_exists "$release"
+  assert_file_exists "$release/manifest.sha256"
+
+  # Byte compatibility: the manifest still lists every shipped script and
+  # VERSION in sorted order with the two-space "hash  path" text format.
+  local expected="$TEST_TMPDIR/expected.sha256"
+  python3 - "$AP_SKILL_DIR" "$expected" <<'PY'
+import hashlib
+import os
+import sys
+
+skill, destination = sys.argv[1], sys.argv[2]
+files = []
+for current, _dirs, names in os.walk(os.path.join(skill, "scripts")):
+    for name in names:
+        path = os.path.join(current, name)
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        files.append(os.path.relpath(path, skill))
+files.sort(key=lambda value: value.encode())
+
+
+def digest(path):
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+lines = ["%s  %s" % (digest(os.path.join(skill, rel)), rel) for rel in files]
+lines.append("%s  VERSION" % digest(os.path.join(skill, "VERSION")))
+with open(destination, "w") as handle:
+    handle.write("\n".join(lines) + "\n")
+PY
+  run cmp "$expected" "$release/manifest.sha256"
+  assert_success
+
+  run grep -Eq '^# managed-by: flyingnobita-agent-profiles [0-9]+\.[0-9]+\.[0-9]+ sha256:[0-9a-f]{64}$' "$MISE_CONFIG_DIR/tasks/agent-profiles"
+  assert_success
+
+  # doctor verifies that released manifest without the GNU checker.
+  run bash "$AP_HELPER" doctor --json
+  assert_success
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+tasks = [c for c in data["checks"] if c.get("id") == "tasks"]
+assert tasks, "doctor did not report a tasks check"
+assert tasks[0]["status"] == "available", tasks[0]
+' "$output"
+
+  # A tampered release is still detected and reported as broken.
+  printf 'tampered\n' >>"$release/scripts/lib/common.sh"
+  run bash "$AP_HELPER" doctor --json
+  assert_success
+  python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+tasks = [c for c in data["checks"] if c.get("id") == "tasks"]
+assert tasks, "doctor did not report a tasks check"
+assert tasks[0]["status"] == "error", tasks[0]
+assert "manifest verification failed" in tasks[0]["detail"], tasks[0]
+' "$output"
+}
