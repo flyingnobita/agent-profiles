@@ -405,15 +405,16 @@ import sys
 
 prof = sys.argv[1]
 storage = sys.argv[2]
+spurious = sys.argv[3]
 assert os.environ["AGENT_PROFILES_NAME"] == "target"
 assert os.environ["AGENT_PROFILES_DIR"] == prof
 assert os.environ["AGENT_PROFILES_ROOT"] == storage
 assert os.environ["AGENT_PROFILES_SESSION"] == "target"
 assert os.environ["AGENT_SANDBOX_PROFILE"] == "target"
 for name in ("AGENT_PROFILES_DIR", "AGENT_PROFILES_ROOT", "AGENT_SANDBOX_DIR"):
-    assert "spurious" not in os.environ[name], (name, os.environ[name])
+    assert not os.environ[name].startswith(spurious), (name, os.environ[name])
 print("STALE_MARKERS_RESET_OK")
-' "$prof_dir" "$storage_dir"
+' "$prof_dir" "$storage_dir" "$spurious"
   assert_success
   assert_output_contains "STALE_MARKERS_RESET_OK"
 
