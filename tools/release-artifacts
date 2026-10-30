@@ -11,6 +11,13 @@ set -euo pipefail
 
 ROOT_DIR="$PWD"
 OUTPUT_DIR=""
+# Portable hashing/stat: stock macOS has neither sha256sum nor stat -c.
+PLATFORM_PY="$ROOT_DIR/skills/flyingnobita-agent-profiles/scripts/lib/platform.py"
+PYTHON="$(command -v python3 || true)"
+if [[ -z "$PYTHON" || ! -f "$PLATFORM_PY" ]]; then
+  echo "release-artifacts: FAIL: python3 and the internal platform helper are required" >&2
+  exit 1
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,7 +86,7 @@ tar -C "$WORK" \
 
 (
   cd "$OUTPUT_DIR"
-  sha256sum "$TARBALL" >"$TARBALL.sha256"
+  "$PYTHON" "$PLATFORM_PY" sha256sum "$TARBALL" >"$TARBALL.sha256"
 )
 
 cp "$NOTES" "$OUTPUT_DIR/RELEASE_NOTES.md"
@@ -89,7 +96,7 @@ cp "$NOTES" "$OUTPUT_DIR/RELEASE_NOTES.md"
 bash "$ROOT_DIR/tests/tools/check-release" "$ROOT_DIR" --artifacts "$OUTPUT_DIR"
 
 CHECKSUM=$(cut -d' ' -f1 "$OUTPUT_DIR/$TARBALL.sha256")
-SIZE=$(stat -c %s "$OUTPUT_DIR/$TARBALL")
+SIZE=$("$PYTHON" "$PLATFORM_PY" stat size "$OUTPUT_DIR/$TARBALL")
 
 echo "release-artifacts: version: $VERSION"
 echo "release-artifacts: tarball: $OUTPUT_DIR/$TARBALL ($SIZE bytes)"

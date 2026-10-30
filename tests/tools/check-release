@@ -225,7 +225,8 @@ verify_artifacts() (
 
   require_file "$tarball"
   require_file "$tarball.sha256"
-  (cd "$dir" && sha256sum -c "$(basename "$tarball").sha256" >/dev/null) \
+  python3 "$ROOT_DIR/skills/flyingnobita-agent-profiles/scripts/lib/platform.py" \
+    manifest-verify "$dir" "$dir/$(basename "$tarball").sha256" >/dev/null \
     || fail "artifact checksum verification failed for $(basename "$tarball")"
   pass "artifact checksum verifies: $(basename "$tarball").sha256"
 

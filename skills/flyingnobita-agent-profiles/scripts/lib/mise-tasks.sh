@@ -319,22 +319,14 @@ ap_setup_version() {
 
 ap_setup_manifest_content() {
   local skill_dir="$1"
-  (
-    cd "$skill_dir" || exit 1
-    {
-      find scripts -type f -print | LC_ALL=C sort | while IFS= read -r file; do
-        sha256sum "$file"
-      done
-      sha256sum VERSION
-    }
-  )
+  ap_platform_manifest "$skill_dir"
 }
 
 ap_setup_current_digest() {
   local content
   content="$(ap_setup_manifest_content "$(ap_setup_skill_dir)")" || return 1
   [[ -n "$content" ]] || return 1
-  printf "%s\n" "$content" | sha256sum | cut -d' ' -f1
+  printf "%s\n" "$content" | ap_platform_sha256_text
 }
 
 ap_setup_release_root() {
@@ -354,12 +346,12 @@ ap_setup_deploy_release() {
   if ! content="$(ap_setup_manifest_content "$skill_dir")" || [[ -z "$content" ]]; then
     return 1
   fi
-  digest="$(printf "%s\n" "$content" | sha256sum | cut -d' ' -f1)"
+  digest="$(printf "%s\n" "$content" | ap_platform_sha256_text)"
   sha8="${digest:0:8}"
   root="$(ap_setup_release_root)"
   final="$root/$version-$sha8"
 
-  if [[ -d "$final" ]] && (cd "$final" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+  if [[ -d "$final" ]] && ap_platform_manifest_verify "$final" "$final/manifest.sha256" >/dev/null 2>&1; then
     AP_SETUP_RELEASE_DIR="$final"
     AP_SETUP_VERSION="$version"
     AP_SETUP_MANIFEST_DIGEST="$digest"
@@ -374,7 +366,7 @@ ap_setup_deploy_release() {
   cp -a "$skill_dir/VERSION" "$tmp/VERSION"
   printf "%s\n" "$content" >"$tmp/manifest.sha256"
 
-  if ! (cd "$tmp" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+  if ! ap_platform_manifest_verify "$tmp" "$tmp/manifest.sha256" >/dev/null 2>&1; then
     rm -rf "$tmp"
     return 1
   fi

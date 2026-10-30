@@ -131,3 +131,29 @@ ap_lock_fd_release() {
 ap_platform_lock() {
   ap_platform lock "$1" "$2"
 }
+
+# Prints "hash  path" exactly like GNU sha256sum, so every existing manifest
+# keeps its text format.
+ap_platform_sha256sum() {
+  ap_platform sha256sum "$1"
+}
+
+# Prints the SHA-256 of standard input as a bare hex digest.
+ap_platform_sha256_text() {
+  ap_platform sha256-text
+}
+
+# Prints the setup manifest for a skill directory: every shipped script in
+# sorted order, then VERSION.
+ap_platform_manifest() {
+  ap_platform manifest "$1"
+}
+
+# Verifies a manifest against a deployed tree. Returns non-zero on any mismatch.
+ap_platform_manifest_verify() {
+  ap_platform manifest-verify "$1" "$2"
+}
+
+ap_platform_stat_size() {
+  ap_platform stat size "$1"
+}

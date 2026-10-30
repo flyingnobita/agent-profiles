@@ -10,6 +10,7 @@ Python standard library is used: ``os.path``, ``os.stat``, ``hashlib``,
 
 import errno
 import fcntl
+import hashlib
 import os
 import stat
 import sys
@@ -66,7 +67,9 @@ def cmd_stat(args):
         info = os.stat(path)
     except OSError:
         return 1
-    if fmt == "mode":
+    if fmt == "size":
+        sys.stdout.write("%d\n" % info.st_size)
+    elif fmt == "mode":
         sys.stdout.write("%o\n" % stat.S_IMODE(info.st_mode))
     elif fmt == "owner":
         sys.stdout.write("%d\n" % info.st_uid)
@@ -76,6 +79,100 @@ def cmd_stat(args):
         sys.stdout.write("%d:%d\n" % (info.st_dev, info.st_ino))
     else:
         return _usage("unknown stat format: %s" % fmt)
+    return 0
+
+
+def _hash_stream(handle):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(65536), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def cmd_sha256sum(args):
+    if len(args) != 1:
+        return _usage("sha256sum requires a path")
+    path = args[0]
+    try:
+        with open(path, "rb") as handle:
+            digest = _hash_stream(handle)
+    except OSError as exc:
+        sys.stderr.write("sha256sum: %s: %s\n" % (path, exc))
+        return 1
+    # Same single-line text as GNU sha256sum, so existing manifests stay valid.
+    sys.stdout.write("%s  %s\n" % (digest, path))
+    return 0
+
+
+def cmd_sha256_text(args):
+    if args:
+        return _usage("sha256-text reads standard input")
+    digest = _hash_stream(sys.stdin.buffer)
+    sys.stdout.write(digest + "\n")
+    return 0
+
+
+def cmd_manifest(args):
+    if len(args) != 1:
+        return _usage("manifest requires a skill directory")
+    skill_dir = args[0]
+    scripts = os.path.join(skill_dir, "scripts")
+    files = []
+    for current, _dirs, names in os.walk(scripts):
+        for name in names:
+            path = os.path.join(current, name)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            files.append(os.path.relpath(path, skill_dir))
+    # Byte order of the full relative path, matching LC_ALL=C sort on find
+    # output.
+    files.sort(key=lambda value: value.encode())
+    lines = []
+    for relative in files:
+        with open(os.path.join(skill_dir, relative), "rb") as handle:
+            lines.append("%s  %s" % (_hash_stream(handle), relative))
+    with open(os.path.join(skill_dir, "VERSION"), "rb") as handle:
+        lines.append("%s  VERSION" % _hash_stream(handle))
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def cmd_manifest_verify(args):
+    if len(args) != 2:
+        return _usage("manifest-verify requires a base directory and a manifest")
+    base, manifest = args
+    failures = []
+    try:
+        handle = open(manifest, "r")
+    except OSError as exc:
+        sys.stderr.write("manifest-verify: %s: %s\n" % (manifest, exc))
+        return 1
+    with handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            fields = line.split(None, 1)
+            if len(fields) != 2:
+                failures.append("%s: improperly formatted manifest line" % manifest)
+                continue
+            expected, relative = fields[0], fields[1].lstrip("*")
+            path = os.path.join(base, relative)
+            if os.path.islink(path) or not os.path.isfile(path):
+                failures.append("%s: No such file or directory" % path)
+                continue
+            try:
+                with open(path, "rb") as file_handle:
+                    actual = _hash_stream(file_handle)
+            except OSError as exc:
+                failures.append("%s: %s" % (path, exc))
+                continue
+            if actual != expected:
+                failures.append("%s: FAILED" % path)
+    if failures:
+        for failure in failures:
+            sys.stderr.write(failure + "\n")
+        return 1
     return 0
 
 
@@ -105,7 +202,11 @@ def main(argv):
     command, args = argv[1], argv[2:]
     handlers = {
         "script-dir": cmd_script_dir,
+        "sha256-text": cmd_sha256_text,
+        "sha256sum": cmd_sha256sum,
         "lock": cmd_lock,
+        "manifest": cmd_manifest,
+        "manifest-verify": cmd_manifest_verify,
         "realpath": cmd_realpath,
         "stat": cmd_stat,
     }

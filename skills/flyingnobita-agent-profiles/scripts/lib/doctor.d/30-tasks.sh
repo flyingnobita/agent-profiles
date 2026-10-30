@@ -51,7 +51,7 @@ ap_doctor_check_tasks() {
       details+=("broken: release directory '$release' is missing")
       continue
     fi
-    if ! (cd "$release" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+    if ! ap_platform_manifest_verify "$release" "$release/manifest.sha256" >/dev/null 2>&1; then
       broken=1
       details+=("broken: release manifest verification failed at '$release'")
       continue

@@ -546,7 +546,7 @@ ap_backup_run_name() {
   local repo_name
   repo_name=$(basename "$resolved_repo")
   local repo_sha8
-  repo_sha8=$(printf "%s" "$resolved_repo" | sha256sum | cut -c1-8)
+  repo_sha8=$(printf "%s" "$resolved_repo" | ap_platform_sha256_text | cut -c1-8)
   local utc_ts
   utc_ts=$(date -u +"%Y%m%dT%H%M%SZ" 2>/dev/null || date +"%Y%m%d%H%M%S")
 
