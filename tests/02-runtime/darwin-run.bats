@@ -486,3 +486,45 @@ print("DARWIN_ARGS_OK")
   assert_success
   assert_output_contains "darwin_status_ok"
 }
+@test "darwin run: shared lease is inherited by background descendants and blocks reset" {
+  local repo="$TEST_TMPDIR/repo-darwin-lease"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init --profile leased
+  assert_success
+
+  local pid_file="$TEST_TMPDIR/descendant.pid"
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin \
+    bash "$AP_HELPER" run --profile leased -- sh -c 'sleep 30 >/dev/null 2>&1 & echo $! > "'"$pid_file"'"'
+  assert_success
+  assert_file_exists "$pid_file"
+
+  local child_pid
+  child_pid=$(cat "$pid_file")
+  [[ -n "$child_pid" ]]
+
+  # The descendant outlived the direct parent, so the shared lease can only
+  # still be held by the inherited descriptor.
+  run kill -0 "$child_pid"
+  assert_success
+
+  run bash "$AP_HELPER" reset --profile leased --yes
+  assert_failure
+  assert_equal "$status" 75
+  # Refused by the inherited exclusive-lock contention, not by a process scan.
+  assert_output_contains "cannot acquire exclusive lock for profile 'leased'"
+
+  # Once the descendant is gone it releases the lease and reset proceeds.
+  kill -9 "$child_pid" 2>/dev/null || true
+  local attempt=0
+  while [[ "$attempt" -lt 60 ]]; do
+    run bash "$AP_HELPER" reset --profile leased --yes
+    [[ "$status" -eq 0 ]] && break
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  kill -9 "$child_pid" 2>/dev/null || true
+
+  assert_success
+  assert_output_contains "Reset profile 'leased' successfully"
+}
