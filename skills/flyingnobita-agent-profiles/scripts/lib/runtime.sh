@@ -382,6 +382,7 @@ ap_prepare_profile_env() {
 
   # 2. Reset managed variables
   unset AGENT_PROFILES_NAME AGENT_PROFILES_DIR AGENT_PROFILES_ROOT AGENT_PROFILES_BASE_PATH
+  unset AGENT_PROFILES_SESSION
   unset AGENT_SANDBOX_DIR AGENT_SANDBOX_PROFILE
   unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
   unset NPM_CONFIG_PREFIX NPM_CONFIG_CACHE
@@ -394,6 +395,10 @@ ap_prepare_profile_env() {
   export AGENT_PROFILES_DIR="$prof_dir"
   export AGENT_PROFILES_ROOT="$repo_root/.agent-profiles"
   export AGENT_PROFILES_BASE_PATH="$base_path"
+  # Explicit marker that this environment belongs to a live profile session.
+  # Workflow bookkeeping only: it keeps stale exported values apart from a real
+  # nested run and is not unforgeable evidence.
+  export AGENT_PROFILES_SESSION="$profile"
 
   # Legacy output-only aliases
   export AGENT_SANDBOX_PROFILE="$profile"
@@ -414,6 +419,15 @@ ap_prepare_profile_env() {
   export CARGO_INSTALL_ROOT="$prof_dir/cargo-global"
   export GOBIN="$prof_dir/bin"
   export PYTHONUSERBASE="$prof_dir/python-user"
+
+  # Darwin redirects by environment only, so HOME itself becomes the profile
+  # root: every HOME-relative agent path ($HOME/.claude, .codex, .gemini,
+  # .agents) then lands in profile storage without a mount table. The existing
+  # home/ directory stays the initialization marker and is not HOME. Linux
+  # keeps the host HOME and binds the agent directories over it instead.
+  if ap_platform_is_darwin; then
+    export HOME="$prof_dir"
+  fi
 
   # Profile binaries prepended to PATH
   local prof_bins="$prof_dir/npm-global/bin:$prof_dir/bin:$prof_dir/cargo-global/bin:$prof_dir/python-user/bin"
