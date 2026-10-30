@@ -77,9 +77,10 @@ ap_agent_args_opencode() {
 
 # Reports whether the shared OpenCode background-service port is listening. The
 # default port is fixed by the installed CLI, so a listener there belongs to a
-# host-wide service outside any profile. Read-only: /proc/net is inspected and no
-# service is started. AP_OPENCODE_SERVICE_PORT exists only so tests can exercise
-# this classification against a test-owned socket.
+# host-wide service outside any profile. Read-only: Linux inspects /proc/net and
+# Darwin asks lsof for the listening socket table; no service is started or
+# stopped. AP_OPENCODE_SERVICE_PORT exists only so tests can exercise this
+# classification against a test-owned socket.
 ap_opencode_service_port_status() {
   local port="${1:-${AP_OPENCODE_SERVICE_PORT:-49374}}"
   local hex="" readable=0 listening=0 file status
@@ -87,6 +88,12 @@ ap_opencode_service_port_status() {
   if [[ ! "$port" =~ ^[0-9]+$ ]]; then
     OPENCODE_SERVICE_PORT_STATUS="unverified"
     OPENCODE_SERVICE_PORT_DETAIL="service port '$port' is not numeric"
+    return 0
+  fi
+
+  if ap_platform_is_darwin; then
+    ap_opencode_service_port_status_darwin "$port"
+    OPENCODE_SERVICE_PORT="$port"
     return 0
   fi
 
@@ -119,6 +126,40 @@ ap_opencode_service_port_status() {
 
   OPENCODE_SERVICE_PORT="$port"
   return 0
+}
+
+# Darwin has no procfs. lsof reports the listening socket table in read-only
+# mode, so the shared port is classified without starting or stopping a service
+# and without /proc. lsof exits 0 when it finds a match and 1 when it finds
+# none; any other result means the probe itself failed and stays unverified
+# instead of being reported as "no listener".
+ap_opencode_service_port_status_darwin() {
+  local port="$1"
+  local lsof_bin rc=0
+
+  lsof_bin=$(command -v lsof 2>/dev/null || true)
+  if [[ -z "$lsof_bin" && -x /usr/sbin/lsof ]]; then
+    lsof_bin="/usr/sbin/lsof"
+  fi
+
+  if [[ -z "$lsof_bin" ]]; then
+    OPENCODE_SERVICE_PORT_STATUS="unverified"
+    OPENCODE_SERVICE_PORT_DETAIL="lsof is unavailable; the shared service port was not classified"
+    return 0
+  fi
+
+  ap_platform_timeout 10 "$lsof_bin" -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 || rc=$?
+
+  if [[ "$rc" -eq 0 ]]; then
+    OPENCODE_SERVICE_PORT_STATUS="listening"
+    OPENCODE_SERVICE_PORT_DETAIL="lsof reports a listener on the shared default port, which belongs to a service outside this profile"
+  elif [[ "$rc" -eq 1 ]]; then
+    OPENCODE_SERVICE_PORT_STATUS="not_listening"
+    OPENCODE_SERVICE_PORT_DETAIL="lsof reports no listener on the shared default port"
+  else
+    OPENCODE_SERVICE_PORT_STATUS="unverified"
+    OPENCODE_SERVICE_PORT_DETAIL="lsof could not inspect the socket table (exit $rc); the shared service port was not classified"
+  fi
 }
 
 # Reads provider integration ids from the profile database in read-only mode.
