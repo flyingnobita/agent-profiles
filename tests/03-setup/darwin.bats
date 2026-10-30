@@ -113,8 +113,11 @@ PY
   cd "$TEST_TMPDIR/work" || exit 1
 
   local bin="$DARWIN_BIN:$NO_INSTALL_BIN"
+  # Setup-owned roots only: mise keeps its own bookkeeping in MISE_STATE_DIR,
+  # MISE_DATA_DIR and MISE_CACHE_DIR while it answers read-only queries, and
+  # those disposable roots are already scoped to the test tree.
   local roots=("$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" \
-    "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$TEST_TMPDIR/work")
+    "$MISE_CONFIG_DIR" "$TEST_TMPDIR/work")
 
   # No /etc/os-release equivalent exists on macOS: the identity must come from
   # sw_vers and a missing os-release file must not be a requirement.
