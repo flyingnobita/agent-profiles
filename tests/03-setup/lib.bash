@@ -11,6 +11,11 @@ setup_mise_env() {
   export MISE_CACHE_DIR="$TEST_TMPDIR/mise/cache"
   export MISE_TRUSTED_CONFIG_PATHS="$TEST_TMPDIR"
   export AP_OS_RELEASE="$TEST_TMPDIR/os-release"
+  # The Arch and Debian fixtures in this directory describe Linux machines.
+  # Pin the platform probe to Linux so their detection, package-manager and
+  # prerequisite paths stay testable on a macOS test host too. darwin.bats
+  # selects Darwin itself, and on a Linux host this input matches the real OS.
+  export AP_TEST_PLATFORM_OS="${AP_TEST_PLATFORM_OS:-Linux}"
   mkdir -p "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR"
 }
 
