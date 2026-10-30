@@ -48,6 +48,26 @@ SHIM
   chmod +x "$dir/$name"
 }
 
+# reject_gnu_long_option <dir> <name> <option>: only that exact long option is
+# rejected, so the rest of the BSD tool's behaviour is preserved.
+reject_gnu_long_option() {
+  local dir="$1"
+  local name="$2"
+  local option="$3"
+  mkdir -p "$dir"
+  cat >"$dir/$name" <<SHIM
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [[ "\$arg" == "$option" ]]; then
+    printf '${name}: illegal option -- %s\\n' "\$arg" >&2
+    exit 1
+  fi
+done
+exec /usr/bin/${name} "\$@"
+SHIM
+  chmod +x "$dir/$name"
+}
+
 @test "portability: helper resolves its installed path without GNU readlink" {
   local repo="$TEST_TMPDIR/repo-readlink"
   create_fixture_repo "$repo"
@@ -384,4 +404,51 @@ assert agent["status"] == "unverified", agent
 assert agent["version_probe"] == "timeout", agent
 assert agent["version"] is None, agent
 ' "$output"
+}
+
+@test "portability: migration copy preserves symlinks without GNU cp options" {
+  local shim="$TEST_TMPDIR/bsd-bin"
+  reject_gnu_long_option "$shim" cp --no-dereference
+  export PATH="$shim:$AP_HOST_PATH"
+
+  local repo="$TEST_TMPDIR/repo-copy"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  mkdir -p "$repo/.agent-sandbox/home"
+  printf 'legacy\n' >"$repo/.agent-sandbox/home/legacy.txt"
+  ln -s home/legacy.txt "$repo/.agent-sandbox/link.txt"
+
+  local backups="$TEST_TMPDIR/copy-backups"
+  run env AP_FORCE_COPY=1 bash "$AP_HELPER" migrate --yes --backup-root "$backups"
+  assert_success
+  assert_output_contains "Cross-device copy verified"
+
+  local run_dir
+  run_dir=$(find "$backups" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  [[ -n "$run_dir" ]]
+  [[ -L "$run_dir/legacy/agent-sandbox/link.txt" ]]
+  assert_equal "$(readlink "$run_dir/legacy/agent-sandbox/link.txt")" "home/legacy.txt"
+  assert_file_exists "$run_dir/legacy/agent-sandbox/home/legacy.txt"
+
+  # Originals are removed only after the symlink-preserving copy verified.
+  [[ ! -d "$repo/.agent-sandbox" ]]
+  assert_dir_exists "$repo/.agent-profiles/default/home"
+
+  # A verified-content mismatch still aborts and leaves the original tree,
+  # including its symlink, untouched.
+  local repo_mismatch="$TEST_TMPDIR/repo-copy-mismatch"
+  create_fixture_repo "$repo_mismatch"
+  cd "$repo_mismatch"
+  mkdir -p "$repo_mismatch/.agent-sandbox/home"
+  printf 'legacy\n' >"$repo_mismatch/.agent-sandbox/home/legacy.txt"
+  ln -s home/legacy.txt "$repo_mismatch/.agent-sandbox/link.txt"
+
+  run env AP_FORCE_COPY=1 AP_CORRUPT_STAGED=1 bash "$AP_HELPER" migrate --yes \
+    --backup-root "$TEST_TMPDIR/copy-backups-mismatch"
+  assert_failure 77
+  assert_output_contains "checksum mismatch"
+  [[ -L "$repo_mismatch/.agent-sandbox/link.txt" ]]
+  assert_equal "$(readlink "$repo_mismatch/.agent-sandbox/link.txt")" "home/legacy.txt"
+  assert_file_exists "$repo_mismatch/.agent-sandbox/home/legacy.txt"
 }
