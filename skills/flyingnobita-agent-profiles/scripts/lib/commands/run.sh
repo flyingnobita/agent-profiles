@@ -63,7 +63,7 @@ ap_cmd_run() {
   live_context=$(ap_check_live_profile_context "$repo_root" "$profile")
 
   if [[ "$live_context" == "DIFFERENT" ]]; then
-    ap_die "$EX_BUSY" "nested execution inside another profile or checkout is prohibited (active profile mount mismatch)"
+    ap_die "$EX_BUSY" "nested execution inside another profile or checkout is prohibited (active profile identity mismatch)"
   elif [[ "$live_context" == "SAME" ]]; then
     # Same-profile nested execution: do not re-wrap with bwrap
     # Take an additional compatible shared lease

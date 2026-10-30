@@ -21,6 +21,13 @@ ap_check_live_profile_context() {
   local repo_root="$1"
   local profile="$2"
 
+  # Darwin has no mount namespace to inspect, so nesting is decided by the
+  # profile identity a live run exported rather than by /proc/self/mountinfo.
+  if ap_platform_is_darwin; then
+    ap_check_session_profile_context "$repo_root" "$profile"
+    return 0
+  fi
+
   if [[ ! -r /proc/self/mountinfo ]]; then
     printf "NONE\n"
     return 0
@@ -79,6 +86,51 @@ for root, mp in live_mounts:
 
 print("SAME")
 ' "$repo_root" "$profile" 2>/dev/null || echo "NONE"
+}
+
+# Darwin nesting identity. Without mount evidence a live session is recognised
+# from the profile name, profile directory and storage root the outer run
+# exported, each validated against the current checkout before it is trusted.
+ap_check_session_profile_context() {
+  local repo_root="$1"
+  local profile="$2"
+  local prof_dir="$repo_root/.agent-profiles/$profile"
+  local storage_dir="$repo_root/.agent-profiles"
+
+  if [[ -z "${AGENT_PROFILES_NAME:-}" || -z "${AGENT_PROFILES_DIR:-}" || -z "${AGENT_PROFILES_ROOT:-}" ]]; then
+    printf "NONE\n"
+    return 0
+  fi
+
+  if [[ "${AGENT_PROFILES_NAME}" != "$profile" ]]; then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+
+  local current_root current_dir env_root env_dir
+  if ! current_root=$(ap_platform_realpath_existing "$storage_dir"); then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+  if ! current_dir=$(ap_platform_realpath_existing "$prof_dir"); then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+  if ! env_root=$(ap_platform_realpath_existing "${AGENT_PROFILES_ROOT}"); then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+  if ! env_dir=$(ap_platform_realpath_existing "${AGENT_PROFILES_DIR}"); then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+
+  if [[ "$env_root" != "$current_root" || "$env_dir" != "$current_dir" ]]; then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+
+  printf "SAME\n"
 }
 
 ap_check_profile_aliasing() {
