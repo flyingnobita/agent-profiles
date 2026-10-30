@@ -131,11 +131,14 @@ def cmd_manifest(args):
     # output.
     files.sort(key=lambda value: value.encode())
     lines = []
-    for relative in files:
-        with open(os.path.join(skill_dir, relative), "rb") as handle:
-            lines.append("%s  %s" % (_hash_stream(handle), relative))
-    with open(os.path.join(skill_dir, "VERSION"), "rb") as handle:
-        lines.append("%s  VERSION" % _hash_stream(handle))
+    for relative in files + ["VERSION"]:
+        path = os.path.join(skill_dir, relative)
+        try:
+            with open(path, "rb") as handle:
+                lines.append("%s  %s" % (_hash_stream(handle), relative))
+        except OSError as exc:
+            sys.stderr.write("manifest: %s: %s\n" % (path, exc))
+            return 1
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
