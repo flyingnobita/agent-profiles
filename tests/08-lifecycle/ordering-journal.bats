@@ -152,28 +152,21 @@ JOURNAL
   assert_success
   echo "keep" >"$fixture_repo/.agent-profiles/raceprof/home/keep.txt"
 
-  # A PATH wrapper interleaves a competing removal exactly when the first
-  # command is about to acquire the profile lock, after its pre-checks.
-  local wrap_dir="$TEST_TMPDIR/flock-wrap"
-  mkdir -p "$wrap_dir"
-  local real_flock
-  real_flock=$(command -v flock)
-  cat >"$wrap_dir/flock" <<WRAP
+  # An explicit lock-acquisition hook interleaves a competing removal exactly
+  # when the first command is about to acquire the profile lock, after its
+  # pre-checks.
+  local hook="$TEST_TMPDIR/lock-hook"
+  cat >"$hook" <<HOOK
 #!/usr/bin/env bash
-last="\${*: -1}"
-if [[ "\$last" =~ ^[0-9]+\$ ]]; then
-  target=\$(readlink "/proc/self/fd/\$last" 2>/dev/null || true)
-  if [[ -n "\${RACE_TRIGGER:-}" && "\$target" == *"/.locks/\${RACE_PROFILE}.lock" && ! -e "\$RACE_TRIGGER" ]]; then
-    : >"\$RACE_TRIGGER"
-    rm -rf "\$RACE_REPO/.agent-profiles/\$RACE_PROFILE"
-  fi
-fi
-exec "$real_flock" "\$@"
-WRAP
-  chmod +x "$wrap_dir/flock"
+[[ "\$AP_FAULT_LOCK_FILE" == *"/.locks/\${RACE_PROFILE}.lock" ]] || exit 0
+[[ -e "\$RACE_TRIGGER" ]] && exit 0
+: >"\$RACE_TRIGGER"
+rm -rf "\$RACE_REPO/.agent-profiles/\$RACE_PROFILE"
+HOOK
+  chmod +x "$hook"
 
   local trigger="$TEST_TMPDIR/race-triggered"
-  run env PATH="$wrap_dir:$PATH" \
+  run env AP_FAULT_BEFORE_LOCK="$hook" \
     RACE_REPO="$fixture_repo" RACE_PROFILE="raceprof" RACE_TRIGGER="$trigger" \
     bash "$AP_HELPER" remove --profile raceprof --yes
   assert_failure 66
@@ -276,31 +269,23 @@ WRAP
   assert_success
   echo "keep" >"$fixture_repo/.agent-profiles/concurrent/home/keep.txt"
 
-  # The wrapper plants a concurrent crash journal exactly when the profile lock
-  # is acquired, after the first preflight already ran.
-  local wrap_dir="$TEST_TMPDIR/flock-wrap"
-  mkdir -p "$wrap_dir"
-  local real_flock
-  real_flock=$(command -v flock)
-  cat >"$wrap_dir/flock" <<WRAP
+  # The lock-acquisition hook plants a concurrent crash journal exactly when the
+  # profile lock is acquired, after the first preflight already ran.
+  local hook="$TEST_TMPDIR/lock-hook"
+  cat >"$hook" <<HOOK
 #!/usr/bin/env bash
-last="\${*: -1}"
-if [[ "\$last" =~ ^[0-9]+\$ ]]; then
-  target=\$(readlink "/proc/self/fd/\$last" 2>/dev/null || true)
-  if [[ -n "\${RACE_TRIGGER:-}" && "\$target" == *"/.locks/\${RACE_PROFILE}.lock" && ! -e "\$RACE_TRIGGER" ]]; then
-    : >"\$RACE_TRIGGER"
-    mkdir -p "\$RACE_REPO/.agent-profiles/.journal"
-    cat >"\$RACE_REPO/.agent-profiles/.journal/reset-\$RACE_PROFILE.json" <<JOURNAL
+[[ "\$AP_FAULT_LOCK_FILE" == *"/.locks/\${RACE_PROFILE}.lock" ]] || exit 0
+[[ -e "\$RACE_TRIGGER" ]] && exit 0
+: >"\$RACE_TRIGGER"
+mkdir -p "\$RACE_REPO/.agent-profiles/.journal"
+cat >"\$RACE_REPO/.agent-profiles/.journal/reset-\$RACE_PROFILE.json" <<JOURNAL
 {"op":"reset","profile":"\$RACE_PROFILE","state":"planned","profile_dir":"\$RACE_REPO/.agent-profiles/\$RACE_PROFILE","trash_path":"","assume_unrelated":[],"boot_id":"00000000-0000-0000-0000-000000000000"}
 JOURNAL
-  fi
-fi
-exec "$real_flock" "\$@"
-WRAP
-  chmod +x "$wrap_dir/flock"
+HOOK
+  chmod +x "$hook"
 
   local trigger="$TEST_TMPDIR/lock-triggered"
-  run env PATH="$wrap_dir:$PATH" \
+  run env AP_FAULT_BEFORE_LOCK="$hook" \
     RACE_REPO="$fixture_repo" RACE_PROFILE="concurrent" RACE_TRIGGER="$trigger" \
     bash "$AP_HELPER" remove --profile concurrent --yes
   assert_failure 77

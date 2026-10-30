@@ -28,6 +28,15 @@ ap_ensure_locks_dir() {
   fi
 }
 
+# Test-only fault injection point, run immediately before a lock is acquired.
+# It replaces wrapping an external flock binary, which the portable lock path no
+# longer calls. Internal test hook, never a user option.
+ap_maybe_lock_fault() {
+  local lock_file="$1"
+  [[ -n "${AP_FAULT_BEFORE_LOCK:-}" ]] || return 0
+  AP_FAULT_LOCK_FILE="$lock_file" "$AP_FAULT_BEFORE_LOCK"
+}
+
 # Opens a persistent lock file on an allocated descriptor and locks it.
 # ap_lock_file_into <varname> <lock-file> <shared|exclusive> <busy-message>
 ap_lock_file_into() {
@@ -37,6 +46,7 @@ ap_lock_file_into() {
   local __ap_message="$4"
   local __ap_lock_fd
 
+  ap_maybe_lock_fault "$__ap_lock_file"
   if ! ap_lock_fd_open_into __ap_lock_fd "$__ap_lock_file"; then
     ap_die "$EX_LAYOUT" "lock file '$__ap_lock_file' could not be opened"
   fi
