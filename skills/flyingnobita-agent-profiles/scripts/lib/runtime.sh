@@ -89,20 +89,30 @@ print("SAME")
 }
 
 # Darwin nesting identity. Without mount evidence a live session is recognised
-# from the profile name, profile directory and storage root the outer run
-# exported, each validated against the current checkout before it is trusted.
+# from the explicit active-session marker plus the profile name, profile
+# directory and storage root the outer run exported, each validated against the
+# current checkout before it is trusted. The marker is workflow bookkeeping, not
+# unforgeable evidence: it keeps stale exported variables apart from a real
+# nested run, and a caller that fabricates every matching value is treated as
+# nested.
 ap_check_session_profile_context() {
   local repo_root="$1"
   local profile="$2"
   local prof_dir="$repo_root/.agent-profiles/$profile"
   local storage_dir="$repo_root/.agent-profiles"
 
-  if [[ -z "${AGENT_PROFILES_NAME:-}" || -z "${AGENT_PROFILES_DIR:-}" || -z "${AGENT_PROFILES_ROOT:-}" ]]; then
+  if [[ -z "${AGENT_PROFILES_SESSION:-}" ]]; then
     printf "NONE\n"
     return 0
   fi
 
-  if [[ "${AGENT_PROFILES_NAME}" != "$profile" ]]; then
+  # A live marker that names another profile is a real mismatch, not staleness.
+  if [[ "${AGENT_PROFILES_SESSION}" != "$profile" ]]; then
+    printf "DIFFERENT\n"
+    return 0
+  fi
+
+  if [[ "${AGENT_PROFILES_NAME:-}" != "$profile" ]]; then
     printf "DIFFERENT\n"
     return 0
   fi
@@ -116,11 +126,11 @@ ap_check_session_profile_context() {
     printf "DIFFERENT\n"
     return 0
   fi
-  if ! env_root=$(ap_platform_realpath_existing "${AGENT_PROFILES_ROOT}"); then
+  if ! env_root=$(ap_platform_realpath_existing "${AGENT_PROFILES_ROOT:-}"); then
     printf "DIFFERENT\n"
     return 0
   fi
-  if ! env_dir=$(ap_platform_realpath_existing "${AGENT_PROFILES_DIR}"); then
+  if ! env_dir=$(ap_platform_realpath_existing "${AGENT_PROFILES_DIR:-}"); then
     printf "DIFFERENT\n"
     return 0
   fi
