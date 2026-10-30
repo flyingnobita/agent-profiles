@@ -220,11 +220,15 @@ ap_ensure_exclude() {
     ap_die "$EX_LAYOUT" "exclude lock file '$lock_file' is a symbolic link"
   fi
   (
-    exec 9>>"$lock_file"
+    local lock_fd
+    if ! ap_lock_fd_open_into lock_fd "$lock_file"; then
+      printf "agent-profiles: error: exclude lock '%s' could not be opened\n" "$lock_file" >&2
+      exit "$EX_LAYOUT"
+    fi
     # The approved policy is non-blocking acquisition: retry briefly, then
     # report the lock as busy instead of waiting indefinitely.
     local attempt=0
-    until flock -x -n 9; do
+    until ap_platform_lock exclusive "$lock_fd"; do
       attempt=$((attempt + 1))
       [[ $attempt -lt 50 ]] || {
         echo "agent-profiles: error: busy: exclude lock '$lock_file' is held by another operation" >&2

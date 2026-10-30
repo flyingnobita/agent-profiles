@@ -8,6 +8,8 @@ Python standard library is used: ``os.path``, ``os.stat``, ``hashlib``,
 ``subprocess``, ``shutil`` and ``fcntl``.
 """
 
+import errno
+import fcntl
 import os
 import stat
 import sys
@@ -77,12 +79,33 @@ def cmd_stat(args):
     return 0
 
 
+def cmd_lock(args):
+    if len(args) != 2:
+        return _usage("lock requires a mode and a descriptor")
+    mode, descriptor = args
+    try:
+        fd = int(descriptor)
+    except ValueError:
+        return _usage("lock descriptor is not a number: %s" % descriptor)
+    flags = fcntl.LOCK_SH if mode == "shared" else fcntl.LOCK_EX
+    try:
+        fcntl.flock(fd, flags | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EAGAIN):
+            return 1
+        return 3
+    # The lock lives on the open file description shared with the shell, so it
+    # stays held after this process exits.
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         return _usage("missing command")
     command, args = argv[1], argv[2:]
     handlers = {
         "script-dir": cmd_script_dir,
+        "lock": cmd_lock,
         "realpath": cmd_realpath,
         "stat": cmd_stat,
     }

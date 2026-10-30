@@ -59,3 +59,75 @@ ap_platform_stat_dev() {
 ap_platform_stat_devino() {
   ap_platform stat devino "$1"
 }
+
+# --- Lock descriptors -------------------------------------------------------
+# Stock bash 3.2 has no dynamic {varname} redirection, so the shell keeps an
+# explicit table of the descriptors it opened. The kernel lock is applied to one
+# of those descriptors by platform.py, which shares the open file description
+# with the shell: the lock therefore survives the helper exiting and is
+# inherited by exec'd children and descendants exactly like a plain redirect.
+AP_LOCK_FD_BASE="${AP_LOCK_FD_BASE:-30}"
+AP_LOCK_FD_MAX="${AP_LOCK_FD_MAX:-59}"
+AP_LOCK_FDS=()
+
+ap_fd_tracked() {
+  local candidate="$1"
+  local tracked
+  for tracked in "${AP_LOCK_FDS[@]:-}"; do
+    [[ -n "$tracked" && "$tracked" == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
+ap_fd_is_open() {
+  local candidate="$1"
+  ( : >&"$candidate" ) 2>/dev/null
+}
+
+# Prints the lowest descriptor that is neither tracked nor already open.
+ap_lock_fd_alloc() {
+  local candidate="$AP_LOCK_FD_BASE"
+  while [[ "$candidate" -le "$AP_LOCK_FD_MAX" ]]; do
+    if ! ap_fd_tracked "$candidate" && ! ap_fd_is_open "$candidate"; then
+      printf "%s\n" "$candidate"
+      return 0
+    fi
+    candidate=$((candidate + 1))
+  done
+  return 1
+}
+
+# ap_lock_fd_open_into <varname> <file>: opens the lock file read-write on a
+# fixed descriptor and records it. Returns 2 when no descriptor could be opened.
+ap_lock_fd_open_into() {
+  local __ap_var="$1"
+  local __ap_file="$2"
+  local __ap_fd
+  if ! __ap_fd=$(ap_lock_fd_alloc); then
+    return 2
+  fi
+  if ! eval "exec ${__ap_fd}<>\"\$__ap_file\"" 2>/dev/null; then
+    return 2
+  fi
+  AP_LOCK_FDS+=("$__ap_fd")
+  eval "$__ap_var=\$__ap_fd"
+  return 0
+}
+
+ap_lock_fd_release() {
+  local fd="${1:-}"
+  local kept=()
+  local tracked
+  [[ -n "$fd" ]] || return 0
+  eval "exec ${fd}>&-" 2>/dev/null || true
+  for tracked in "${AP_LOCK_FDS[@]:-}"; do
+    [[ -n "$tracked" && "$tracked" != "$fd" ]] || continue
+    kept+=("$tracked")
+  done
+  AP_LOCK_FDS=("${kept[@]:-}")
+}
+
+# Applies a shared or exclusive non-blocking lock to an inherited descriptor.
+ap_platform_lock() {
+  ap_platform lock "$1" "$2"
+}
