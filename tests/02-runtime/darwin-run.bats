@@ -449,3 +449,40 @@ print("STALE_MARKERS_RESET_OK")
   assert_output_contains "forged_nested"
   assert_equal "$(grep -c '' "$runs_file")" "$records_before"
 }
+@test "darwin run: child status and complex argument forwarding match Linux" {
+  local repo="$TEST_TMPDIR/repo-darwin-args"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init
+  assert_success
+
+  local multi_line="line 1
+line 2"
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run -- python3 -c '
+import sys
+
+args = sys.argv[1:]
+assert len(args) == 6, f"expected 6 args, got {len(args)}: {args!r}"
+assert args[0] == "", repr(args[0])
+assert args[1] == "  ", repr(args[1])
+assert args[2] == "line 1\nline 2", repr(args[2])
+assert args[3] == "--profile", repr(args[3])
+assert args[4] == "-x", repr(args[4])
+assert args[5] == "--", repr(args[5])
+print("DARWIN_ARGS_OK")
+' "" "  " "$multi_line" "--profile" "-x" "--"
+  assert_success
+  assert_output_contains "DARWIN_ARGS_OK"
+
+  # The exact child status is the run status.
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run -- sh -c 'exit 42'
+  assert_failure 42
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run -- python3 -c 'import sys; sys.exit(23)'
+  assert_failure 23
+
+  run env PATH="$NO_BWRAP_BIN" AP_TEST_PLATFORM_OS=Darwin bash "$AP_HELPER" run -- sh -c 'printf "darwin_status_ok\n"; exit 0'
+  assert_success
+  assert_output_contains "darwin_status_ok"
+}
