@@ -83,7 +83,7 @@ sys.exit(2)
   local tasks
   tasks=$(doctor_check "$output" tasks)
   [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "warning" ]]
-  [[ "${tasks,,}" == *"stale"* ]]
+  [[ "$(ap_test_lower "$tasks")" == *"stale"* ]]
 }
 
 @test "doctor: a project-level task shadows the global task and is reported" {
@@ -100,7 +100,7 @@ sys.exit(2)
   local tasks
   tasks=$(doctor_check "$output" tasks)
   [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "warning" ]]
-  [[ "${tasks,,}" == *"project"* ]]
+  [[ "$(ap_test_lower "$tasks")" == *"project"* ]]
 }
 
 @test "doctor: task and namespace checks are read-only" {
@@ -137,5 +137,6 @@ BWRAP
   local namespaces
   namespaces=$(doctor_check "$output" namespaces)
   [[ "$(printf '%s\n' "$namespaces" | sed -n '1p')" == "error" ]]
-  [[ "${namespaces,,}" == *"seccomp"* || "${namespaces,,}" == *"userns"* || "${namespaces,,}" == *"apparmor"* ]]
+  namespaces=$(ap_test_lower "$namespaces")
+  [[ "$namespaces" == *"seccomp"* || "$namespaces" == *"userns"* || "$namespaces" == *"apparmor"* ]]
 }

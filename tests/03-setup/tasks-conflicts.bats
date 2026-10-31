@@ -24,12 +24,12 @@ teardown() {
   local releases="$XDG_DATA_HOME/flyingnobita-agent-profiles/releases"
   local backups="$XDG_STATE_HOME/flyingnobita-agent-profiles/backups"
   local tasks_before
-  tasks_before=$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)
+  tasks_before=$(ap_test_sha256_files "$MISE_CONFIG_DIR"/tasks/agent-profiles*)
 
   run bash "$AP_HELPER" setup --apply
   assert_success
 
-  assert_equal "$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)" "$tasks_before"
+  assert_equal "$(ap_test_sha256_files "$MISE_CONFIG_DIR"/tasks/agent-profiles*)" "$tasks_before"
   [[ "$(find "$releases" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ]]
   if [[ -d "$backups" ]]; then
     [[ -z "$(find "$backups" -type f)" ]]
@@ -41,13 +41,13 @@ teardown() {
   printf '#!/usr/bin/env bash\necho foreign task\n' >"$MISE_CONFIG_DIR/tasks/agent-profiles"
   chmod +x "$MISE_CONFIG_DIR/tasks/agent-profiles"
   local before
-  before=$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles")
+  before=$(ap_test_sha256 "$MISE_CONFIG_DIR/tasks/agent-profiles")
 
   run bash "$AP_HELPER" setup --apply
   assert_success
   assert_output_contains "conflict"
   assert_output_contains "agent-profiles"
-  assert_equal "$(sha256sum "$MISE_CONFIG_DIR/tasks/agent-profiles")" "$before"
+  assert_equal "$(ap_test_sha256 "$MISE_CONFIG_DIR/tasks/agent-profiles")" "$before"
   [[ "$(cat "$MISE_CONFIG_DIR/tasks/agent-profiles")" == *"foreign task"* ]]
 }
 
@@ -55,13 +55,13 @@ teardown() {
   mkdir -p "$MISE_CONFIG_DIR"
   printf '[tasks.agent-profiles]\nrun = "echo foreign-inline"\n' >"$MISE_CONFIG_DIR/config.toml"
   local before
-  before=$(sha256sum "$MISE_CONFIG_DIR/config.toml")
+  before=$(ap_test_sha256 "$MISE_CONFIG_DIR/config.toml")
 
   run bash "$AP_HELPER" setup --apply
   assert_success
   assert_output_contains "conflict"
   assert_output_contains "agent-profiles"
-  assert_equal "$(sha256sum "$MISE_CONFIG_DIR/config.toml")" "$before"
+  assert_equal "$(ap_test_sha256 "$MISE_CONFIG_DIR/config.toml")" "$before"
   [[ ! -e "$MISE_CONFIG_DIR/tasks/agent-profiles" ]]
 }
 
@@ -101,8 +101,8 @@ teardown() {
   [[ "$release_one" != "$release_two" ]]
   assert_dir_exists "$release_one"
   assert_dir_exists "$release_two"
-  (cd "$release_one" && sha256sum -c manifest.sha256 --quiet)
-  (cd "$release_two" && sha256sum -c manifest.sha256 --quiet)
+  ap_platform_manifest_verify "$release_one" "$release_one/manifest.sha256"
+  ap_platform_manifest_verify "$release_two" "$release_two/manifest.sha256"
 }
 
 @test "setup apply: repeated setup stays idempotent without cmp or diffutils" {
@@ -112,12 +112,12 @@ teardown() {
   run env PATH="$bin" bash "$AP_HELPER" setup --apply
   assert_success
   local tasks_before
-  tasks_before=$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)
+  tasks_before=$(ap_test_sha256_files "$MISE_CONFIG_DIR"/tasks/agent-profiles*)
 
   run env PATH="$bin" bash "$AP_HELPER" setup --apply
   assert_success
 
-  assert_equal "$(sha256sum "$MISE_CONFIG_DIR"/tasks/agent-profiles* | LC_ALL=C sort)" "$tasks_before"
+  assert_equal "$(ap_test_sha256_files "$MISE_CONFIG_DIR"/tasks/agent-profiles*)" "$tasks_before"
   if [[ -d "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" ]]; then
     [[ -z "$(find "$XDG_STATE_HOME/flyingnobita-agent-profiles/backups" -type f)" ]]
   fi

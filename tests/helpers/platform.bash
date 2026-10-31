@@ -121,3 +121,192 @@ ap_test_ci_action_uses() {
 ap_test_pty() {
   python3 "${AP_TEST_PTY_EXEC:-$AP_TEST_HELPERS_DIR/../live/pty-exec.py}" -- "$@"
 }
+# ap_test_sha256 <file>: bare lowercase hex digest, exactly what
+# `sha256sum <file> | cut -d' ' -f1` returned.
+ap_test_sha256() {
+  ap_platform_sha256sum "$1" | cut -d' ' -f1
+}
+
+# ap_test_sha256_files <file...>: "hash  path" lines in byte order, the portable
+# replacement for `sha256sum <glob> | LC_ALL=C sort`.
+ap_test_sha256_files() {
+  local file
+  for file in "$@"; do
+    [[ -e "$file" ]] || continue
+    printf '%s  %s\n' "$(ap_test_sha256 "$file")" "$file"
+  done | LC_ALL=C sort
+}
+
+# ap_test_snapshot_tree <path...>: deterministic description of directory
+# entries, modes, symlink targets and regular-file hashes. GNU find -printf,
+# sort -z and xargs -r all misbehave on BSD, so the traversal is Python.
+ap_test_snapshot_tree() {
+  python3 - "$@" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+lines = []
+
+
+def describe(path):
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode):
+        kind = "l"
+    elif stat.S_ISDIR(info.st_mode):
+        kind = "d"
+    elif stat.S_ISREG(info.st_mode):
+        kind = "f"
+    else:
+        kind = "?"
+    lines.append("%s %o %s" % (kind, stat.S_IMODE(info.st_mode), path))
+    if kind == "l":
+        lines.append("target %s %s" % (path, os.readlink(path)))
+    elif kind == "f":
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        lines.append("%s  %s" % (digest.hexdigest(), path))
+
+
+for root in sys.argv[1:]:
+    if not os.path.lexists(root):
+        lines.append("MISSING %s" % root)
+        continue
+    describe(root)
+    for current, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(dirs) + sorted(files):
+            describe(os.path.join(current, name))
+
+sys.stdout.write("\n".join(sorted(lines, key=lambda value: value.encode())) + "\n")
+PY
+}
+
+# ap_test_stat_mode <path>: octal permission bits, like `stat -c %a`.
+ap_test_stat_mode() {
+  ap_platform_stat_mode "$1"
+}
+
+# ap_test_lower <text>: lowercase without the Bash 4 ${var,,} expansion.
+ap_test_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+# ap_test_timeout <seconds> <command...>: GNU timeout replacement with the same
+# 124 exit status, so callers keep their existing assertions.
+ap_test_timeout() {
+  local seconds="$1"
+  shift
+  ap_platform_timeout "$seconds" "$@"
+}
+
+# ap_test_try_lock <file> [shared|exclusive]: 0 when the lock was acquired and
+# the file is free, 1 when another process holds it. Uses the shipped descriptor
+# allocator and lock primitive, so no flock(1) binary is needed.
+ap_test_try_lock() {
+  local file="$1"
+  local mode="${2:-exclusive}"
+  local fd=""
+  local rc=0
+  if ! ap_lock_fd_open_into fd "$file"; then
+    printf 'ap_test_try_lock: cannot open %s\n' "$file" >&2
+    return 2
+  fi
+  ap_platform_lock "$mode" "$fd" || rc=$?
+  ap_lock_fd_release "$fd"
+  return "$rc"
+}
+
+# ap_test_hold_lock <file> [seconds]: holds an exclusive lock in a detached
+# session for the given time and prints its pid (also its process-group id).
+# Run it in the background, then wait for ap_test_try_lock to report contention
+# before exercising the helper.
+ap_test_hold_lock() {
+  local file="$1"
+  local seconds="${2:-30}"
+  python3 - "$file" "$seconds" <<'PY'
+import fcntl
+import os
+import sys
+import time
+
+path, seconds = sys.argv[1], float(sys.argv[2])
+os.setsid()
+with open(path, "r+") as handle:
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    sys.stdout.write("%d\n" % os.getpid())
+    sys.stdout.flush()
+    time.sleep(seconds)
+PY
+}
+
+# ap_test_spawn_detached <seconds> [NAME=VALUE...]: a daemon-like process in its
+# own session with every standard descriptor closed, so process scanning sees it
+# only through its environment. Prints its pid (also its process-group id).
+ap_test_spawn_detached() {
+  local seconds="$1"
+  shift
+  python3 - "$seconds" "$@" <<'PY'
+import os
+import subprocess
+import sys
+
+seconds = sys.argv[1]
+environment = dict(os.environ)
+for pair in sys.argv[2:]:
+    name, _, value = pair.partition("=")
+    environment[name] = value
+devnull = os.open(os.devnull, os.O_RDWR)
+process = subprocess.Popen(
+    ["/bin/sh", "-c", 'exec 0<&- 1>&- 2>&-; exec sleep "$1"', "_", seconds],
+    start_new_session=True,
+    stdin=devnull,
+    stdout=devnull,
+    stderr=devnull,
+    env=environment,
+)
+sys.stdout.write("%d\n" % process.pid)
+PY
+}
+
+# ap_test_spawn_in_dir <dir> <marker> [seconds]: a process whose working
+# directory is <dir>, in its own session, that writes <marker> once it is there.
+# Prints its pid (also its process-group id) without reading procfs.
+ap_test_spawn_in_dir() {
+  local dir="$1"
+  local marker="$2"
+  local seconds="${3:-60}"
+  python3 - "$dir" "$marker" "$seconds" <<'PY'
+import os
+import subprocess
+import sys
+
+directory, marker, seconds = sys.argv[1], sys.argv[2], sys.argv[3]
+devnull = os.open(os.devnull, os.O_RDWR)
+process = subprocess.Popen(
+    ["/bin/sh", "-c", 'printf "started\\n" >"$1"; exec sleep "$2"', "_", marker, seconds],
+    cwd=directory,
+    start_new_session=True,
+    stdin=devnull,
+    stdout=devnull,
+    stderr=devnull,
+)
+sys.stdout.write("%d\n" % process.pid)
+PY
+}
+
+# ap_test_wait_for_file <path> [attempts]: waits until a fixture process has
+# signalled that it reached its state.
+ap_test_wait_for_file() {
+  local path="$1"
+  local limit="${2:-50}"
+  local i=0
+  while [[ ! -e "$path" ]]; do
+    i=$((i + 1))
+    [[ $i -lt $limit ]] || return 1
+    sleep 0.1
+  done
+}

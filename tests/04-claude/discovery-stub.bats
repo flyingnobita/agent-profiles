@@ -22,7 +22,7 @@ printf 'CONFIG_DIR=%s\n' "$cfg"
 printf 'PROFILE_JSON=%s\n' "$(cat "$cfg/.claude.json" 2>/dev/null || true)"
 printf 'PROFILE_SETTINGS=%s\n' "$(cat "$cfg/settings.json" 2>/dev/null || true)"
 printf 'HOME_SETTINGS=%s\n' "$(cat "$HOME/.claude/settings.json" 2>/dev/null || true)"
-printf 'SKILLS=%s\n' "$(find "$cfg/skills" -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null || true)"
+printf 'SKILLS=%s\n' "$(ls -1 "$cfg/skills" 2>/dev/null | tr '\n' ' ' || true)"
 printf 'SECURE=%s\n' "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-UNSET}"
 EOF
   chmod +x "$stub_bin/claude"

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Ticket 03 setup test support: temp mise configuration, os-release fixtures,
 # PATH spies, controlled PATHs, and read-only tree snapshots.
+#
+# The portable primitives (hashing, tree snapshots, portable timeouts, lock and
+# process fixtures) live in tests/helpers/platform.bash and are sourced here so
+# every setup test gets them without repeating a GNU-only pipeline.
+
+# shellcheck source=/dev/null
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../helpers/platform.bash"
 
 # Point all mise state at the disposable test tree so no host configuration is
 # read or written. The caller has already run setup_isolation.
@@ -79,19 +86,11 @@ make_restricted_bin() {
 }
 
 # snapshot_tree <path...>: stable description of directory entries, modes,
-# symlink targets and regular-file hashes for read-only assertions.
+# symlink targets and regular-file hashes for read-only assertions. The GNU
+# find -printf / sort -z / xargs -r pipeline this used to be silently produced
+# incomplete comparisons on BSD, so the traversal is the portable helper.
 snapshot_tree() {
-  {
-    local root
-    for root in "$@"; do
-      if [[ ! -e "$root" && ! -L "$root" ]]; then
-        printf 'MISSING %s\n' "$root"
-        continue
-      fi
-      find "$root" -printf '%y %m %p\n' 2>/dev/null
-      find "$root" -type f -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 -r sha256sum 2>/dev/null
-    done
-  } | LC_ALL=C sort
+  ap_test_snapshot_tree "$@"
 }
 
 # write_fake_agent <path> <version>: minimal executable that only reports a
