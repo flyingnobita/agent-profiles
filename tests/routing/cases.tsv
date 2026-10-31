@@ -32,3 +32,7 @@ pkg_mgr	How do package managers interact with agent profiles?	references/questio
 isolation_diff	Why are profiles not a substitute for VM or container isolation?	references/questions.md	### Why are profiles not a substitute for VM or container isolation?	kernel attack surface
 proc_refusal	What should I do when a lifecycle operation is refused due to active processes?	references/troubleshooting.md	## Process Scan Refusals	active processes
 bwrap_fix	How do I resolve missing bubblewrap or disabled user namespaces?	references/troubleshooting.md	## Missing Bubblewrap or User Namespaces	sysctl
+darwin_platform	Is macOS on Apple Silicon qualified?	references/compatibility.md	## Platform Support	Darwin
+darwin_redirection	How does profile redirection work on Darwin without bubblewrap?	references/questions.md	### How does profile separation work?	XDG
+darwin_agy_home	How does Antigravity CLI locate .gemini on Darwin without a config variable?	references/agents/antigravity.md	## Directory Redirection	.gemini
+darwin_keychain	Is the macOS Keychain shared with the host inside a profile?	references/agents/antigravity.md	## Shared Host Resources	shared
