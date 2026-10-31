@@ -226,6 +226,36 @@ PY
   assert_success
   assert_output_contains "artifact fingerprint matches every shipped source file"
 
+  # Mode and entry type are part of the comparison, not only content.
+  local mode
+  mode=$(ap_test_stat_mode "$shipped")
+  chmod 600 "$shipped"
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$out"
+  assert_failure
+  assert_output_contains "artifact member mode differs from source"
+  chmod "$mode" "$shipped"
+
+  mv "$shipped" "$TEST_TMPDIR/codex.saved"
+  ln -s "claude-code.md" "$shipped"
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$out"
+  assert_failure
+  assert_output_contains "artifact member type differs from source"
+  rm -f "$shipped"
+  mv "$TEST_TMPDIR/codex.saved" "$shipped"
+
+  # A shipped symlink is compared by target, not by the file it points at.
+  local link_out="$TEST_TMPDIR/dist-link"
+  local link_dir="$repo/skills/flyingnobita-agent-profiles/references/linked"
+  mkdir -p "$link_dir"
+  ln -s "../questions.md" "$link_dir/questions.md"
+  run bash "$RELEASE_TOOL" "$repo" --output-dir "$link_out"
+  assert_success
+  ln -sfn "../troubleshooting.md" "$link_dir/questions.md"
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$link_out"
+  assert_failure
+  assert_output_contains "artifact member link target differs from source"
+  rm -rf "$link_dir"
+
   # BSD grep has no -P, so a PCRE scan exits non-zero and an unchecked `if`
   # silently passes. The portable scan must still see the em dash.
   local bsd_bin="$TEST_TMPDIR/bsd-grep-bin"
