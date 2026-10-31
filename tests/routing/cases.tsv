@@ -3,7 +3,8 @@ concept	What is an agent profile?	references/questions.md	### What is an agent p
 security	Is an agent profile a security sandbox for untrusted code?	references/questions.md	### Is an agent profile a security sandbox?	not a security boundary
 credentials	How are credentials and API keys handled?	references/questions.md	### How are credentials handled?	inherited environment credentials
 resources	How are shared host resources accessed?	references/questions.md	### Is an agent profile a security sandbox?	shared host resources
-platforms	Does agent profiles support macOS or Darwin?	references/questions.md	### What platforms are supported?	not qualified
+platforms	Does agent profiles support macOS or Darwin?	references/questions.md	### What platforms are supported?	configuration redirection only
+platforms_other	Are operating systems other than Linux and macOS arm64 qualified?	references/questions.md	### What platforms are supported?	Other operating systems
 redirection	How does profile directory redirection work on Linux?	references/questions.md	### How does profile separation work?	bubblewrap
 error_64	What does exit code 64 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 64
 error_65	What does exit code 65 mean?	references/troubleshooting.md	## Common Diagnostic Codes	Exit 65

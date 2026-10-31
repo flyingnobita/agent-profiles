@@ -64,13 +64,26 @@ teardown() {
   run grep -Fi "shared host resources" "$q_file"
   assert_success
 
-  # 4. Linux evidence vs unverified macOS
+  # 4. Platform qualification: Linux with bubblewrap and unprivileged user
+  #    namespaces, macOS arm64 by configuration redirection only, and every
+  #    other operating system reported as not qualified. A bare "not
+  #    qualified" match is not enough: it also matches the retired claim that
+  #    macOS itself is unqualified, so each half is asserted on its own.
   run grep -Fi "Linux with unprivileged user namespaces" "$q_file"
   assert_success
-  run grep -Fi "macOS" "$q_file"
+  run grep -Fi "bubblewrap" "$q_file"
   assert_success
-  run grep -Fi "not qualified" "$q_file"
+  run grep -Fi "macOS arm64 is qualified with configuration redirection only" "$q_file"
   assert_success
+  run grep -Fi "Other operating systems" "$q_file"
+  assert_success
+  run grep -Fi "report the operating system as not qualified" "$q_file"
+  assert_success
+  # The retired claim that macOS behavior is unqualified must not return.
+  run grep -Fi "macOS behavior is not qualified" "$q_file"
+  assert_failure 1
+  run grep -Fi "macOS is not qualified" "$q_file"
+  assert_failure 1
 }
 
 @test "guard: reading a reference causes zero configuration or file changes" {
