@@ -45,6 +45,16 @@ agent-profiles remove --profile my-worker --assume-unrelated 12345 --yes
 
 The assertion is recorded in the operation journal. Inspectable processes that actually reference the profile cannot be vouched for. The helper never kills a process. Services started by the host outside the profile namespace (`systemd --user`, D-Bus activation) carry no marker and cannot be attributed; check them yourself with `systemctl --user` or `lsof` before forcing an operation.
 
+On macOS there is no `/proc`, so the scan uses the system `ps`, `sysctl` and
+`lsof` to identify the caller's own processes by the profile lease they inherit,
+open profile files and legacy working directories. Identity before any signal is
+UID, profile path, process group, group leader start time and boot identity. If
+that inspection is unavailable or unreadable, a mutating command fails closed
+with a clear refusal instead of assuming the profile is free, so a `reset` or
+`remove` can be refused on a machine whose process list cannot be read. Unrelated
+processes are never matched and no environment values or command lines are
+printed.
+
 ## Migrating Legacy Storage
 
 `agent-profiles migrate` converts earlier storage layouts into the current named profile format. It detects:

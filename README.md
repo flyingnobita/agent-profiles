@@ -306,6 +306,12 @@ the four supported integrations:
 | Google Antigravity CLI | `agy` | 1.4.9 | `.gemini`/`.agents` mounts, XDG roots |
 | OpenCode | `opencode` | 2.2.0 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
 
+On macOS arm64 the same four integrations use configuration redirection only:
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, the XDG roots and a
+profile `HOME`. Antigravity CLI has no configuration variable, so `.gemini`
+follows `HOME`. The macOS Keychain and other native services stay shared with
+the host.
+
 Logged-in model responses and model-driven skill use were not part of the
 verification. Sanitized results are in the
 [final QA summary](docs/evidence/linux-2026-10-29.md) and the
@@ -317,7 +323,12 @@ verification. Sanitized results are in the
 | Platform | Status | Notes |
 | --- | --- | --- |
 | Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces |
-| macOS | Not qualified | Deferred; no bubblewrap redirection layer |
+| macOS arm64 | Qualified | Requires mise, git and python3 plus the stock `/bin/bash` 3.2; configuration redirection only |
+
+On macOS a profile is redirected through each agent's own configuration
+variables plus a profile `HOME`: nothing is mounted, and host files a CLI reads
+without honoring a variable stay readable. Linux keeps its bubblewrap mount
+layer, so the two platforms do not give the same enforcement.
 
 Default Docker containers usually block unprivileged user namespaces. Setup,
 `doctor` and `init` were verified there; running a profile returns the

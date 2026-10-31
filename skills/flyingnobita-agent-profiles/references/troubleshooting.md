@@ -24,11 +24,18 @@ When performing destructive lifecycle operations (`reset`, `remove`, `migrate`),
 
 ## Missing Bubblewrap or User Namespaces
 
-Profile redirection requires `bubblewrap` and unprivileged user namespaces:
+On Linux, profile redirection requires `bubblewrap` and unprivileged user
+namespaces:
 
 - On Arch Linux / Omarchy: `sudo pacman -S bubblewrap`
 - On Ubuntu / Debian: `sudo apt install bubblewrap`
 - If unprivileged user namespaces are restricted, verify sysctl: `sysctl kernel.unprivileged_userns_clone` or check AppArmor namespace restrictions.
+
+On macOS arm64 bubblewrap is not used and does not need to be installed. A
+profile there is redirected by environment and configuration variables only;
+`doctor` reports the bubblewrap, user-namespace and namespace-hardening checks
+as not applicable rather than missing, and reports a non-arm64 Darwin build as
+unqualified.
 
 ## Diagnosing Environment Issues
 

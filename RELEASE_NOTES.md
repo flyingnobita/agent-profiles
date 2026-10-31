@@ -1,4 +1,54 @@
-# flyingnobita-agent-profiles v0.1.0
+# flyingnobita-agent-profiles v0.3.0
+
+Named agent profiles now run on macOS arm64 as well as Linux. The same four
+integrations are supported: Claude Code, OpenAI Codex CLI, Google Antigravity
+CLI and OpenCode. MIT licensed.
+
+On Linux a profile is redirected with a bubblewrap mount layer. macOS has no
+namespace to mount into, so there a profile is redirected through the agents'
+own configuration variables and a profile `HOME`, and nothing is mounted.
+Neither platform is a security sandbox for untrusted code, and the macOS layer is
+the weaker of the two because a process that ignores those variables still sees
+host paths. Inherited environment credentials and shared host resources,
+including the macOS Keychain, stay shared.
+
+Both platforms are verified differently. Linux is qualified by the 2026-10-29
+host QA plus the offline evidence summary. macOS arm64 is qualified by the
+2026-10-31 real-machine run recorded in `docs/evidence/macos-2026-10-31.md` and
+by the arm64 job in CI. Credential-dependent model behavior remains a
+credential-dependent gap on both platforms and is not claimed.
+
+The source is available at <https://github.com/flyingnobita/agent-profiles>, and
+repository-source installation in copy mode is verified in a disposable home.
+A tagged GitHub Release is **not published**. The artifact set is built and
+verified locally; tagging, publishing a release or deploying to real machines
+requires a separate explicit maintainer action.
+
+## Highlights
+
+- macOS arm64 support: environment and configuration redirection, stock
+  `/bin/bash` 3.2, and no bubblewrap prerequisite
+- A portable platform adapter replaces `flock`, GNU `readlink`, `realpath`,
+  `stat`, `sha256sum`, `timeout`, `cp --no-dereference` and `mapfile` so the same
+  helper and test suite run on BSD userland
+- Darwin process safety: lifecycle mutations fail closed when process inspection
+  is unavailable, and live harness cleanup proves UID, profile, process group and
+  start identity before any signal
+- `doctor` reports Darwin honestly: arm64 qualified, bubblewrap and namespace
+  checks not applicable, Antigravity's shared Keychain and OpenCode's listener
+  classified without procfs
+- An arm64 macOS CI job plus a guarded test tier with two named, reasoned
+  Linux-only skips
+- Release tooling builds a reproducible artifact with the Python standard library
+  and fingerprints every shipped file, rejecting stale or tampered content
+
+## Compatibility
+
+See the compatibility reference for the per-agent matrix, the tested versions and
+the evidence classes. Linux results are not evidence for macOS behavior and the
+reverse also holds.
+
+## Earlier release: flyingnobita-agent-profiles v0.1.0
 
 First local Linux release of named agent profiles for Claude Code, OpenAI Codex
 CLI, Google Antigravity CLI and OpenCode. MIT licensed.
@@ -9,7 +59,7 @@ A tagged GitHub Release is **not published**. The artifact set is built and
 verified locally; tagging, publishing a release or deploying to real machines
 requires a separate explicit maintainer action.
 
-## Highlights
+### Highlights of v0.1.0
 
 - Installable skill (`npx skills add ... --skill flyingnobita-agent-profiles`)
   that resolves its helper and references from its own installation path.
@@ -29,13 +79,13 @@ requires a separate explicit maintainer action.
 - Agent integrations for Claude Code 2.1.312, Codex CLI 0.165.0, Antigravity CLI
   1.4.9 and OpenCode 2.2.0, each with profile diagnostics and offline QA.
 
-## Platforms
+### Platforms
 
 Linux x86_64 with bubblewrap and unprivileged user namespaces is qualified.
 macOS is not qualified: it is deferred and unverified, and this release makes no
 macOS claim.
 
-## Security Boundary
+### Security Boundary
 
 Agent profiles are not a security sandbox and not a container or VM boundary.
 Profile processes keep broad remaining host access: the kernel, the filesystem
@@ -45,7 +95,7 @@ D-Bus secret service used by Antigravity CLI, and the host-wide OpenCode service
 on its default port) remain shared. Do not run untrusted code in a profile
 expecting containment.
 
-## Evidence
+### Evidence
 
 Sanitized Linux evidence is published in `docs/evidence/linux-2026-10-29.md`
 (final QA) and `docs/evidence/linux-2026-10-28.md` (historical offline evidence),
@@ -69,7 +119,7 @@ model-driven skill invocation, and command execution or sandbox denials that
 require an authenticated model turn (including the Antigravity CLI sandbox and
 OpenCode model commands).
 
-## Known Limits
+### Known Limits
 
 - Hosted CI passed at `dea1c24`: 332 tests, lint, both clean-install modes and
   release artifact checks. See [the verified run](https://github.com/flyingnobita/agent-profiles/actions/runs/40825706875).
@@ -87,7 +137,7 @@ OpenCode model commands).
   change in the Codex config was accepted as-is by the user: the current file is
   preserved with no restore, and no whole-interval equality is claimed.
 
-## Artifact Contents
+### Artifact Contents
 
 - `flyingnobita-agent-profiles-0.1.0.tar.gz` - the installable skill bundle
   (`SKILL.md`, `VERSION`, `LICENSE`, `scripts/`, `references/`).

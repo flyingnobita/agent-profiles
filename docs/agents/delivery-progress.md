@@ -148,3 +148,26 @@ and commit references. This does not establish fleet-wide deployment.
 Current follow-ups and their completion criteria are in
 [outstanding.md](outstanding.md). Tagged releases and real-host installation
 remain separate actions; no such completion is inferred from source publication.
+
+## macOS platform delivery
+
+Issue #6 asked for macOS support, previously deferred. The user approved the
+plan and seams S1-S10 on 2026-10-30: macOS arm64 becomes a qualified platform
+for the same four integrations, using environment and configuration redirection
+only (recorded in `docs/adr/0001-darwin-environment-only-redirection.md`), stock
+macOS `/bin/bash` 3.2 with no new prerequisite, verification on the real MBP-M4
+machine plus a new arm64 CI job, and a 0.3.0 release.
+
+Delivery ran as one unit in eight ordered slices, each gated by the orchestrator:
+S1 portability kernel, S2 Darwin run and redirection, S3 agent adapters and
+Darwin doctor, S4 process safety and portable live harness, S5 setup, S6 test
+tier and arm64 CI, S7 release tooling, S8 Linux and macOS qualification. Every
+slice's new tests were re-run against the base commit before being accepted, and
+Linux keeps zero skips with bubblewrap behaviour unchanged.
+
+Two plan variances are recorded rather than hidden. The four agent adapter
+modules needed no code changes, because the Darwin HOME and the existing env
+hooks already produced the required per-agent roots, so those tests are guards
+that pin behaviour instead of adding it. Three provenance groups were also
+reclassified during the gates after independent receipts showed they pass on the
+base commit.
