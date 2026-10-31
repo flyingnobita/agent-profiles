@@ -128,7 +128,7 @@ with tarfile.open(tarball, "r:gz") as archive:
 PY
 }
 
-@test "release: versioned release notes describe the local v0.1.0 scope" {
+@test "release: versioned release notes describe the local v0.3.0 scope" {
   assert_file_exists "$NOTES"
   run grep -E "^# .*flyingnobita-agent-profiles v$VERSION$" "$NOTES"
   assert_success

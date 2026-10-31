@@ -4,7 +4,7 @@ description: Named Linux agent profiles for Claude Code, Codex CLI, Antigravity 
 license: MIT
 compatibility: Linux (bash, git, python3, mise, bubblewrap); macOS not qualified
 metadata:
-  version: 0.1.0
+  version: 0.3.0
 ---
 
 # Agent Profiles

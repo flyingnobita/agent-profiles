@@ -35,7 +35,8 @@ BYTE_COUNT=$(wc -c <"$SKILL_MD")
 # Frontmatter checks
 grep -q "^name: flyingnobita-agent-profiles" "$SKILL_MD" || fail "SKILL.md missing name frontmatter"
 grep -q "^license: MIT" "$SKILL_MD" || fail "SKILL.md missing license: MIT"
-grep -q "Linux (bash, git, python3, mise, bubblewrap); macOS not qualified" "$SKILL_MD" || fail "SKILL.md missing compatibility statement"
+grep -q "^compatibility: .*Linux" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name Linux"
+grep -q "^compatibility: .*macOS" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name macOS"
 grep -q "version: $VERSION" "$SKILL_MD" || fail "SKILL.md version does not match VERSION file ($VERSION)"
 
 # Description length
