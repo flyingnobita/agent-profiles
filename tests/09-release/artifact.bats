@@ -132,11 +132,25 @@ PY
   assert_file_exists "$NOTES"
   run grep -E "^# .*flyingnobita-agent-profiles v$VERSION$" "$NOTES"
   assert_success
-  for term in "MIT" "Linux" "not qualified" "not a security sandbox" \
+
+  # Only the current scope is asserted. The archived v0.1.0 section truthfully
+  # records that macOS was not qualified in that release.
+  local scope
+  scope=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
+    /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
+    inside { print }
+  ' "$NOTES")
+  [[ -n "$scope" ]]
+
+  for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
+    "no bubblewrap prerequisite" "neither platform is a security sandbox" \
     "credential-dependent" "not published"; do
-    run grep -Fi -- "$term" "$NOTES"
-    assert_success
+    printf '%s\n' "$scope" | grep -qiF -- "$term"
   done
+
+  # A reversion to the deferred-platform claim in the current scope is refused.
+  run grep -Fi -- "macOS is not qualified" <<<"$scope"
+  assert_failure 1
 }
 
 @test "release: mise defines the release-artifacts task that verifies before building" {
