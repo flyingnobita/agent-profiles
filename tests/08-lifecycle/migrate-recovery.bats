@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -327,14 +328,9 @@ EOF
   assert_failure 137
   assert_file_exists "$fixture_repo/.agent-profiles/.journal/migrate-all.json"
 
-  setsid bash -c 'cd "$1" && exec sleep 60' _ "$fixture_repo/.agent-sandbox/.claude" &
-  local live_pid=$!
-  local i=0
-  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$fixture_repo/.agent-sandbox/.claude" && $i -lt 50 ]]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  [[ "$(readlink "/proc/$live_pid/cwd")" == "$fixture_repo/.agent-sandbox/.claude" ]]
+  local live_pid
+  live_pid=$(ap_test_spawn_in_dir "$fixture_repo/.agent-sandbox/.claude" "$TEST_TMPDIR/recover-cwd.marker" 60)
+  ap_test_wait_for_file "$TEST_TMPDIR/recover-cwd.marker"
 
   run bash "$AP_HELPER" recover --yes
   assert_failure 75

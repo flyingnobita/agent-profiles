@@ -82,9 +82,10 @@ teardown() {
 
   local prof_dir="$fixture_repo/.agent-profiles/targetprof"
 
-  # Start an fd-closing child (e.g. daemon that closes all fds)
-  AGENT_PROFILES_DIR="$prof_dir" setsid sh -c 'exec 0<&- 1>&- 2>&-; sleep 10' </dev/null >/dev/null 2>&1 &
-  local bg_pid=$!
+  # Start an fd-closing child (e.g. daemon that closes all fds) in its own
+  # session. Python start_new_session replaces setsid, which stock macOS lacks.
+  local bg_pid
+  bg_pid=$(ap_test_spawn_detached 10 "AGENT_PROFILES_DIR=$prof_dir")
   TEST_BG_PIDS+=("$bg_pid")
 
   run bash "$AP_HELPER" reset --profile targetprof
@@ -216,14 +217,9 @@ teardown() {
 
   # Old inline-layout usage: a process with its working directory inside the
   # legacy source, not the new profile storage.
-  setsid bash -c 'cd "$1" && exec sleep 60' _ "$fixture_repo/.agent-sandbox/.claude" &
-  local live_pid=$!
-  local i=0
-  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$fixture_repo/.agent-sandbox/.claude" && $i -lt 50 ]]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  [[ "$(readlink "/proc/$live_pid/cwd")" == "$fixture_repo/.agent-sandbox/.claude" ]]
+  local live_pid
+  live_pid=$(ap_test_spawn_in_dir "$fixture_repo/.agent-sandbox/.claude" "$TEST_TMPDIR/procscan-cwd.marker" 60)
+  ap_test_wait_for_file "$TEST_TMPDIR/procscan-cwd.marker"
 
   run bash "$AP_HELPER" migrate --yes
   assert_failure 75

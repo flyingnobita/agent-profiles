@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -241,14 +242,9 @@ with open(path, "w") as handle:
     }, handle)
 PY
 
-  setsid bash -c 'cd "$1" && exec sleep 60' _ "$trash_path/home" &
-  local live_pid=$!
-  local i=0
-  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$trash_path/home" && $i -lt 50 ]]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  [[ "$(readlink "/proc/$live_pid/cwd")" == "$trash_path/home" ]]
+  local live_pid
+  live_pid=$(ap_test_spawn_in_dir "$trash_path/home" "$TEST_TMPDIR/recover-trash-cwd.marker" 60)
+  ap_test_wait_for_file "$TEST_TMPDIR/recover-trash-cwd.marker"
 
   run bash "$AP_HELPER" recover --yes
   assert_failure 75
