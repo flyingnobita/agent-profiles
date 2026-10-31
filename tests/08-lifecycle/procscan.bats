@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
   TEST_BG_PIDS=()
 }
@@ -168,6 +169,11 @@ teardown() {
 }
 
 @test "procscan: detects uninspectable orphaned process under AP_PROC_ROOT as relevant-unknown" {
+  # This fixture is a synthetic procfs tree, so it only exists on Linux. Darwin
+  # has no procfs at all and its fail-closed process inspection is proven in
+  # darwin-procscan.bats.
+  ap_test_skip_darwin "Linux-only S9: synthetic procfs relevant-unknown fixture; Darwin fail-closed coverage is in darwin-procscan.bats"
+
   local fixture_repo="$TEST_TMPDIR/fixture-repo"
   create_fixture_repo "$fixture_repo"
   cd "$fixture_repo"

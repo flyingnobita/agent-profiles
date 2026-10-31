@@ -7,6 +7,7 @@ setup() {
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
   load 'lib.bash'
+  load '../helpers/platform.bash'
   setup_isolation
   setup_mise_env
   write_os_release arch arch "Arch Linux"
@@ -71,13 +72,13 @@ ap() {
 }
 
 @test "ap: in a terminal a missing profile is created only after a yes" {
-  command -v script >/dev/null 2>&1 || skip "script(1) is not available"
-
-  run script -qec "bash '$AP_HELPER' ap demo true" /dev/null <<<"n"
+  # A pseudo-terminal is required so `ap` sees an interactive stdin/stdout. The
+  # portable driver replaces util-linux script -qec, which stock macOS lacks.
+  run ap_test_pty bash "$AP_HELPER" ap demo true <<<"n"
   assert_failure
   [[ ! -e "$REPO/.agent-profiles/demo" ]]
 
-  run script -qec "bash '$AP_HELPER' ap demo true" /dev/null <<<"y"
+  run ap_test_pty bash "$AP_HELPER" ap demo true <<<"y"
   assert_success
   assert_output_contains "Create profile 'demo'"
   assert_dir_exists "$REPO/.agent-profiles/demo/home"

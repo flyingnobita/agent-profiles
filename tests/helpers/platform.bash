@@ -6,16 +6,17 @@
 # 1. The single named guard for the Linux-only tests, so every Darwin skip
 #    carries a mandatory reason that names the Linux-only seam and where the
 #    Darwin coverage lives instead. A reason-free skip is refused.
-# 2. Small readers for the CI contract test.
+# 2. Portable fixtures for tests that need a terminal, a detached lock holder or
+#    an availability probe the BSD userland can also run.
 #
 # The platform decision itself, and every path/stat/hash/timeout primitive, come
 # from the shipped internal adapter (scripts/lib/platform.sh + platform.py). This
 # file never reimplements them, so a test cannot drift away from the behaviour it
 # is qualifying.
 
+AP_TEST_HELPERS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -z "${AP_SKILL_DIR:-}" ]]; then
-  AP_TEST_PLATFORM_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-  AP_SKILL_DIR="$(cd -P "$AP_TEST_PLATFORM_DIR/../../skills/flyingnobita-agent-profiles" && pwd -P)"
+  AP_SKILL_DIR="$(cd -P "$AP_TEST_HELPERS_DIR/../../skills/flyingnobita-agent-profiles" && pwd -P)"
 fi
 export AP_SKILL_DIR
 
@@ -109,4 +110,14 @@ PY
 # Every "uses: owner/repo@ref" entry in a workflow, one per line.
 ap_test_ci_action_uses() {
   grep -E '^[[:space:]]*uses:' "$1" || true
+}
+
+# ap_test_pty <command...>
+#
+# Runs a command attached to a pseudo-terminal, forwarding the caller's stdin, so
+# an interactive prompt can be exercised on both platforms. util-linux
+# ``script -qec`` does not exist on macOS; the standard-library driver the live
+# harness already uses does.
+ap_test_pty() {
+  python3 "${AP_TEST_PTY_EXEC:-$AP_TEST_HELPERS_DIR/../live/pty-exec.py}" -- "$@"
 }
