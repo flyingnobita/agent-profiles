@@ -34,4 +34,4 @@ Agent profiles provide directory redirection using `bubblewrap` to separate conf
 
 ### What platforms are supported?
 
-Linux with unprivileged user namespaces and `bubblewrap` is supported. macOS behavior is not qualified and remains unverified. Running on non-Linux platforms reports that the operating system is not qualified.
+Linux with unprivileged user namespaces and `bubblewrap` is qualified, and macOS arm64 is qualified with configuration redirection only: no mounts, stock `/bin/bash` 3.2, and no bubblewrap prerequisite. A macOS profile therefore separates settings and tools but does not restrict what a process reads, so it is the weaker of the two guarantees. Other operating systems, and Darwin on any other architecture, report the operating system as not qualified.
