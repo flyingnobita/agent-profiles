@@ -153,7 +153,26 @@ wait_for_scan_refusal() {
   assert_output_contains "refused: active process"
   assert_output_contains "profile 'target'"
   assert_output_contains "PID $holder_pid"
-  assert_output_contains "python3"
+  # The refusal names the holder's command and nothing else. The command name a
+  # process reports is platform-specific - macOS reports the Python framework
+  # executable where Linux reports python3 - so the expected label is derived
+  # from the live process instead of hard-coding the Linux spelling. A printed
+  # label must be a prefix of the real command name, which tolerates the
+  # truncation lsof applies and still fails if no name, or a wrong one, is shown.
+  local holder_comm printed_label
+  holder_comm=$(ps -o comm= -p "$holder_pid" 2>/dev/null || true)
+  holder_comm=$(printf '%s' "$holder_comm" | sed 's#.*/##; s/^[[:space:]]*//; s/[[:space:]]*$//')
+  [[ -n "$holder_comm" ]]
+  printed_label=$(printf '%s\n' "$output" | sed -n "s/.*PID $holder_pid (\([^)]*\)).*/\1/p" | head -n 1)
+  [[ -n "$printed_label" ]]
+  case "$(printf '%s' "$holder_comm" | tr '[:upper:]' '[:lower:]')" in
+    "$(printf '%s' "$printed_label" | tr '[:upper:]' '[:lower:]')"*) ;;
+    *)
+      printf 'refusal label %s does not name the holder command %s\n' \
+        "$printed_label" "$holder_comm" >&2
+      return 1
+      ;;
+  esac
   assert_output_not_contains "$secret"
   # Nothing was mutated and the profile is still complete.
   assert_dir_exists "$prof_dir/home"

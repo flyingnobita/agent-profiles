@@ -12,12 +12,45 @@ setup() {
 
 teardown() {
   if [[ ${#TEST_BG_PIDS[@]} -gt 0 ]]; then
-    for pid in "${TEST_BG_PIDS[@]}"; do
+    for pid in ${TEST_BG_PIDS[@]+"${TEST_BG_PIDS[@]}"}; do
+      [[ -n "$pid" ]] || continue
       kill -9 "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
     done
   fi
   teardown_isolation
+}
+
+# start_open_profile_descriptor <profile-dir> [NAME=VALUE...]:
+# Starts a process that keeps a descriptor open inside the profile. On Darwin no
+# process may read another process's environment, so an open descriptor inside
+# the profile and the inherited profile lease are the markers a live profile user
+# actually leaves behind there. Prints the pid.
+start_open_profile_descriptor() {
+  local prof_dir="$1"
+  shift
+  (
+    exec 8>"$prof_dir/home/activity.marker"
+    exec env "$@" sleep 60
+  ) </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!"
+}
+
+# wait_for_active_process_refusal <helper arguments...>:
+# Runs the helper until the process scan refuses, leaving that run in
+# $status/$output. Polling replaces a sleep-based guess at how long a descriptor
+# takes to become visible to the inspector.
+wait_for_active_process_refusal() {
+  local attempt=0
+  while [[ "$attempt" -lt 80 ]]; do
+    run bash "$AP_HELPER" "$@"
+    if [[ "$status" -eq 75 && "$output" == *"refused: active process"* ]]; then
+      return 0
+    fi
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  return 1
 }
 
 @test "procscan: detects active process with AGENT_PROFILES_DIR and refuses with exit 75" {
@@ -29,6 +62,22 @@ teardown() {
   assert_success
 
   local prof_dir="$fixture_repo/.agent-profiles/targetprof"
+
+  # Darwin has no way to read another process's environment, so an environment
+  # marker alone is invisible there by design. The markers a live profile user
+  # does leave on Darwin are an open descriptor inside the profile and the
+  # inherited profile lease; prove the refusal through that evidence there.
+  if ap_test_is_darwin; then
+    local holder
+    holder=$(start_open_profile_descriptor "$prof_dir")
+    TEST_BG_PIDS+=("$holder")
+
+    wait_for_active_process_refusal reset --profile targetprof
+    assert_failure 75
+    assert_output_contains "refused: active process"
+    assert_output_contains "$holder"
+    return 0
+  fi
 
   # Start a test-owned background process simulating an active agent session
   AGENT_PROFILES_DIR="$prof_dir" sleep 10 </dev/null >/dev/null 2>&1 &
@@ -84,6 +133,22 @@ teardown() {
 
   # Start an fd-closing child (e.g. daemon that closes all fds) in its own
   # session. Python start_new_session replaces setsid, which stock macOS lacks.
+  # Darwin has no way to read another process's environment, so an environment
+  # marker alone is invisible there by design. The markers a live profile user
+  # does leave on Darwin are an open descriptor inside the profile and the
+  # inherited profile lease; prove the refusal through that evidence there.
+  if ap_test_is_darwin; then
+    local holder
+    holder=$(start_open_profile_descriptor "$prof_dir")
+    TEST_BG_PIDS+=("$holder")
+
+    wait_for_active_process_refusal reset --profile targetprof
+    assert_failure 75
+    assert_output_contains "refused: active process"
+    assert_output_contains "$holder"
+    return 0
+  fi
+
   local bg_pid
   bg_pid=$(ap_test_spawn_detached 10 "AGENT_PROFILES_DIR=$prof_dir")
   TEST_BG_PIDS+=("$bg_pid")
@@ -106,6 +171,22 @@ teardown() {
   assert_success
 
   local prof_dir="$fixture_repo/.agent-profiles/targetprof"
+
+  # Darwin has no way to read another process's environment, so an environment
+  # marker alone is invisible there by design. The markers a live profile user
+  # does leave on Darwin are an open descriptor inside the profile and the
+  # inherited profile lease; prove the refusal through that evidence there.
+  if ap_test_is_darwin; then
+    local holder
+    holder=$(start_open_profile_descriptor "$prof_dir")
+    TEST_BG_PIDS+=("$holder")
+
+    wait_for_active_process_refusal reset --profile targetprof
+    assert_failure 75
+    assert_output_contains "refused: active process"
+    assert_output_contains "$holder"
+    return 0
+  fi
 
   AGENT_SANDBOX_DIR="$prof_dir" sleep 10 </dev/null >/dev/null 2>&1 &
   local bg_pid=$!
@@ -130,6 +211,27 @@ teardown() {
 
   local prof_dir="$fixture_repo/.agent-profiles/targetprof"
   local secret_marker="SUPER_SECRET_TOKEN_DO_NOT_LEAK_12345"
+
+  if ap_test_is_darwin; then
+    # The same secret sits in the environment and in argv of a process that
+    # keeps a descriptor open inside the profile, so a leak through either the
+    # process table or the descriptor listing would be visible.
+    local holder
+    (
+      exec 8>"$prof_dir/home/activity.marker"
+      exec env SECRET_KEY="$secret_marker" sh -c 'sleep 60' sh "$secret_marker"
+    ) </dev/null >/dev/null 2>&1 &
+    holder=$!
+    TEST_BG_PIDS+=("$holder")
+
+    wait_for_active_process_refusal reset --profile targetprof
+    assert_failure 75
+    assert_output_contains "$holder"
+    # The Darwin inspector reports a pid and a command name only: no environment
+    # value and no command line. Darwin cannot read them in the first place.
+    assert_output_not_contains "$secret_marker"
+    return 0
+  fi
 
   AGENT_PROFILES_DIR="$prof_dir" SECRET_KEY="$secret_marker" sh -c "sleep 10" --with-arg="$secret_marker" </dev/null >/dev/null 2>&1 &
   local bg_pid=$!

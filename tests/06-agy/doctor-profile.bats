@@ -121,12 +121,13 @@ PY
     bash "$AP_HELPER" doctor --json --agent agy --profile fresh
   assert_success
 
-  python3 - "$output" "$repo/.agent-profiles/fresh" <<'PY'
+  python3 - "$output" "$repo/.agent-profiles/fresh" "$(ap_test_platform_os)" <<'PY'
 import json
 import sys
 
 data = json.loads(sys.argv[1])
 profile_dir = sys.argv[2]
+darwin = sys.argv[3] == "Darwin"
 profile = data["agents"]["agy"]["profile"]
 assert profile["status"] == "initialized", profile
 assert profile["config_dir"] == profile_dir + "/.gemini"
@@ -135,8 +136,18 @@ assert auth["status"] == "no_profile_credentials", auth
 assert auth["authenticated"] is None, auth
 assert auth["profile_files"] == [], auth
 assert auth["env_credentials"] == [], auth
-assert auth["os_credential_service"]["status"] == "absent", auth
-assert profile["shared"]["session_bus"] is False, profile["shared"]
+shared = profile["shared"]
+assert shared["session_bus"] is False, shared
+service = auth["os_credential_service"]
+if darwin:
+    # macOS exposes one Keychain to the whole user session, so the shared
+    # credential service is always present there and D-Bus is never consulted.
+    assert service["status"] == "present", service
+    assert "Keychain" in service["detail"], service
+    assert shared["os_credential_service"] == "present", shared
+else:
+    assert service["status"] == "absent", service
+    assert shared["os_credential_service"] == "absent", shared
 PY
 }
 
@@ -154,8 +165,10 @@ PY
 
   local stub_bin="$TEST_TMPDIR/dbus-stub"
   mkdir -p "$stub_bin"
-  cat >"$stub_bin/dbus-send" <<'STUB'
+  local dbus_marker="$TEST_TMPDIR/dbus-invoked"
+  cat >"$stub_bin/dbus-send" <<STUB
 #!/usr/bin/env bash
+printf 'invoked\n' >>"$dbus_marker"
 echo "method return time=1.0 sender=org.freedesktop.DBus -> destination=:1.1"
 echo "   boolean true"
 exit 0
@@ -166,21 +179,35 @@ STUB
     bash "$AP_HELPER" doctor --json --agent agy --profile oscred
   assert_success
 
-  python3 - "$output" <<'PY'
+  python3 - "$output" "$(ap_test_platform_os)" <<'PY'
 import json
 import sys
 
 data = json.loads(sys.argv[1])
+darwin = sys.argv[2] == "Darwin"
 auth = data["agents"]["agy"]["profile"]["auth"]
 service = auth["os_credential_service"]
+shared = data["agents"]["agy"]["profile"]["shared"]
 assert service["status"] == "present", service
 assert service["detail"], service
 assert auth["status"] == "no_profile_credentials", auth
 assert auth["authenticated"] is None, "an OS credential service is not an authenticated profile"
-shared = data["agents"]["agy"]["profile"]["shared"]
-assert shared["session_bus"] is True, shared
 assert shared["os_credential_service"] == "present", shared
+if darwin:
+    # Darwin's shared credential service is the Keychain: it is reported as a
+    # shared source without any D-Bus session bus being present or queried.
+    assert shared["session_bus"] is False, shared
+    assert "Keychain" in service["detail"], service
+else:
+    assert shared["session_bus"] is True, shared
 PY
+
+  if ap_test_is_darwin; then
+    # The D-Bus stub must never be consulted on Darwin.
+    [[ ! -e "$dbus_marker" ]]
+  else
+    assert_file_exists "$dbus_marker"
+  fi
 }
 
 @test "agy doctor profile: uninitialized profile is reported without creating it" {

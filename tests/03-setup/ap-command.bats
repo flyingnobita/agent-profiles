@@ -12,6 +12,16 @@ setup() {
   setup_mise_env
   write_os_release arch arch "Arch Linux"
 
+  # setup_mise_env pins the platform probe to Linux so the os-release fixtures
+  # above describe the machine setup is detecting. These tests also run
+  # `ap NAME CMD`, which selects the execution adapter of the host it is on:
+  # bubblewrap on Linux, environment-only redirection on Darwin. Pin the probe
+  # back to the real host so the command surface is exercised the way the
+  # machine under test actually runs it, instead of demanding bubblewrap from a
+  # macOS host.
+  AP_TEST_PLATFORM_OS="$(uname -s)"
+  export AP_TEST_PLATFORM_OS
+
   REPO="$TEST_TMPDIR/fixture-repo"
   create_fixture_repo "$REPO"
   cd "$REPO" || exit 1
