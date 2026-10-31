@@ -215,6 +215,12 @@ for current, _dirs, files in os.walk(root):
             if not reason:
                 problems.append("%s:%d: reason-free skip" % (relative, index + 1))
                 continue
+            if platform_words.search(enclosing_test(index)):
+                problems.append(
+                    "%s:%d: platform condition outside the named guard"
+                    % (relative, index + 1)
+                )
+                continue
             if platform_words.search(reason):
                 problems.append(
                     "%s:%d: platform condition outside the named guard: %s"
