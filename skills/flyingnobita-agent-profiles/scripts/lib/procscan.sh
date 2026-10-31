@@ -103,8 +103,8 @@ ap_scan_processes_for_paths() {
   # refuses with exit 69 when that inspection is unavailable. It never reads a
   # synthetic proc root, and the Linux branch below never runs on Darwin.
   if ap_platform_is_darwin; then
-    ap_platform darwin-proc-scan "$label" "$current_uid" "${caller_pids[*]}" \
-      "$assume_unrelated_csv" "${real_targets[@]}"
+    ap_platform darwin-proc-scan "$label" "$current_uid" "${caller_pids[*]:-}" \
+      "$assume_unrelated_csv" ${real_targets[@]+"${real_targets[@]}"}
     return $?
   fi
 
@@ -344,7 +344,7 @@ if refusal_lines:
     sys.exit(75)
 
 sys.exit(0)
-' "$label" "$proc_root" "$current_uid" "${caller_pids[*]}" "${assume_unrelated[*]}" "$earliest_run_ticks" "${real_targets[@]}"
+' "$label" "$proc_root" "$current_uid" "${caller_pids[*]:-}" "${assume_unrelated[*]:-}" "$earliest_run_ticks" ${real_targets[@]+"${real_targets[@]}"}
 }
 
 # Scans one profile's storage. Kept as the public entry point for reset/remove.
@@ -362,7 +362,7 @@ ap_scan_processes() {
     scan_paths+=("$lease_file")
   fi
   ap_scan_processes_for_paths "profile '$profile'" "$assume_unrelated_csv" \
-    "$earliest" "${scan_paths[@]}"
+    "$earliest" ${scan_paths[@]+"${scan_paths[@]}"}
 }
 
 # Scans arbitrary legacy sources that are not profile storage. No run record

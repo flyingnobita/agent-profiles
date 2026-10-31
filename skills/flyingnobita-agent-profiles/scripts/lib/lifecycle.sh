@@ -491,7 +491,7 @@ ap_prepare_private_backup_root() {
   local missing_chain=()
   local current="$normalized"
   while [[ ! -e "$current" && "$current" != "/" ]]; do
-    missing_chain=("$current" "${missing_chain[@]}")
+    missing_chain=("$current" ${missing_chain[@]+"${missing_chain[@]}"})
     current=$(dirname "$current")
   done
 
@@ -500,7 +500,7 @@ ap_prepare_private_backup_root() {
   fi
 
   local component
-  for component in "${missing_chain[@]}"; do
+  for component in ${missing_chain[@]+"${missing_chain[@]}"}; do
     if [[ -L "$component" ]]; then
       ap_die "$EX_LAYOUT" "backup path component '$component' is a symbolic link"
     fi

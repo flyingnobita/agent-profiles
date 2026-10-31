@@ -32,7 +32,7 @@ ap_doctor_check_tasks() {
   local -a managed_tasks=()
   local -a absent_tasks=()
   local stale=0 broken=0 foreign=0
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
     if [[ ! -e "$target" ]]; then
       absent_tasks+=("$task")
@@ -63,7 +63,7 @@ ap_doctor_check_tasks() {
     fi
     managed_tasks+=("$task")
   done
-  for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+  for task in ${AP_SETUP_RETIRED_TASKS[@]+"${AP_SETUP_RETIRED_TASKS[@]}"}; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
     if ap_setup_is_managed_task "$target"; then
       stale=1
@@ -125,7 +125,7 @@ ap_doctor_check_tasks() {
   fi
 
   local detail
-  detail="$(printf '%s; ' "${details[@]}")"
+  detail="$(printf '%s; ' ${details[@]+"${details[@]}"})"
   detail="${detail%; }"
 
   CHECKS_JSON=$(python3 -c '

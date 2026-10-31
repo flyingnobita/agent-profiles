@@ -56,7 +56,7 @@ ap_doctor_check_codex_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "codex" ]]; then
         matched=1
         break
@@ -163,7 +163,7 @@ ap_doctor_check_codex_profile() {
             fi
           done
 
-          probe_out=$(env -i "${probe_env[@]}" \
+          probe_out=$(env -i ${probe_env[@]+"${probe_env[@]}"} \
             "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 5 "$codex_bin" login status 2>&1) || probe_rc=$?
           probe_exit="$probe_rc"
 

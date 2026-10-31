@@ -91,5 +91,5 @@ ap_cmd_setup() {
     return 0
   fi
 
-  ap_setup_apply_tasks "$prepare_dir" "$tasks_only" "${requested_agents[@]}"
+  ap_setup_apply_tasks "$prepare_dir" "$tasks_only" ${requested_agents[@]+"${requested_agents[@]}"}
 }

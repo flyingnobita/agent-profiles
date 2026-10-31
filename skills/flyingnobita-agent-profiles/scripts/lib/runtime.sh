@@ -158,11 +158,20 @@ ap_check_profile_aliasing() {
   fi
 
   if [[ -d "$prof_dir" ]]; then
-    local real_pd
+    local real_pd real_storage
     if ! real_pd=$(ap_platform_realpath_existing "$prof_dir"); then
       ap_die "$EX_LAYOUT" "profile directory '$prof_dir' could not be resolved to a physical path"
     fi
-    if [[ "$real_pd" != "$prof_dir" ]]; then
+    if ! real_storage=$(ap_platform_realpath_existing "$storage_dir"); then
+      ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
+    fi
+    # Identity is physical-to-physical. The checkout, its storage root and its
+    # profile root may live beneath a symlinked ancestor that is not ours to
+    # judge - macOS serves every temporary directory through /var -> /private/var -
+    # so a lexical comparison against the unresolved path would refuse a
+    # perfectly ordinary checkout. Entries that are themselves symbolic links
+    # are still refused above and below.
+    if [[ "$real_pd" != "$real_storage/$(basename "$prof_dir")" ]]; then
       ap_die "$EX_LAYOUT" "profile directory '$prof_dir' realpath mismatch ($real_pd)"
     fi
 
@@ -193,7 +202,7 @@ ap_check_profile_aliasing() {
       .agent-profile
     )
 
-    for sub in "${managed_subdirs[@]}"; do
+    for sub in ${managed_subdirs[@]+"${managed_subdirs[@]}"}; do
       local p="$prof_dir/$sub"
       if [[ -L "$p" ]]; then
         ap_die "$EX_LAYOUT" "profile path '$p' is a symbolic link (symlinks inside profile storage are prohibited)"
@@ -243,11 +252,18 @@ ap_ensure_storage_dir() {
     (umask 077 && mkdir -p "$storage_dir")
   fi
 
-  local real_st
+  local real_st real_repo
   if ! real_st=$(ap_platform_realpath_existing "$storage_dir"); then
     ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
   fi
-  if [[ "$real_st" != "$storage_dir" ]]; then
+  if ! real_repo=$(ap_platform_realpath_existing "$repo_root"); then
+    ap_die "$EX_LAYOUT" "repository root '$repo_root' could not be resolved to a physical path"
+  fi
+  # Compare canonical to canonical: a symlinked ancestor above the checkout is
+  # not a layout error (macOS /var is /private/var), while a storage root that
+  # resolves somewhere other than the checkout's own storage is. The storage
+  # directory itself being a symlink is refused above.
+  if [[ "$real_st" != "$real_repo/.agent-profiles" ]]; then
     ap_die "$EX_LAYOUT" "profile storage directory path mismatch with realpath ($storage_dir -> $real_st)"
   fi
 }
@@ -341,7 +357,7 @@ ap_init_profile() {
   (
     umask 077
     mkdir -p "$prof_dir"
-    for sub in "${subdirs[@]}"; do
+    for sub in ${subdirs[@]+"${subdirs[@]}"}; do
       if [[ -L "$prof_dir/$sub" ]]; then
         ap_die "$EX_LAYOUT" "profile path '$prof_dir/$sub' is a symbolic link"
       fi
@@ -364,11 +380,14 @@ ap_list_profiles() {
   fi
 
   if [[ -d "$storage_dir" ]]; then
-    local real_st
+    local real_st real_repo
     if ! real_st=$(ap_platform_realpath_existing "$storage_dir"); then
       ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
     fi
-    if [[ "$real_st" != "$storage_dir" ]]; then
+    if ! real_repo=$(ap_platform_realpath_existing "$repo_root"); then
+      ap_die "$EX_LAYOUT" "repository root '$repo_root' could not be resolved to a physical path"
+    fi
+    if [[ "$real_st" != "$real_repo/.agent-profiles" ]]; then
       ap_die "$EX_LAYOUT" "profile storage directory path mismatch with realpath ($storage_dir -> $real_st)"
     fi
   fi
@@ -393,7 +412,7 @@ ap_list_profiles() {
     while IFS= read -r profile_name; do
       [[ -n "$profile_name" ]] || continue
       ordered+=("$profile_name")
-    done < <(printf "%s\n" "${profiles[@]}" | LC_ALL=C sort)
+    done < <(printf "%s\n" ${profiles[@]+"${profiles[@]}"} | LC_ALL=C sort)
   fi
 
   if [[ "$json_mode" -eq 1 ]]; then
@@ -405,7 +424,7 @@ ap_list_profiles() {
 import json, sys
 profiles = sys.argv[1:]
 print(json.dumps({"profiles": profiles}, indent=2))
-' "${ordered[@]}"
+' ${ordered[@]+"${ordered[@]}"}
   else
     local p
     for p in "${ordered[@]:-}"; do
@@ -427,7 +446,7 @@ ap_prepare_profile_env() {
   read -ra path_entries <<<"$raw_path"
   unset IFS
 
-  for entry in "${path_entries[@]}"; do
+  for entry in ${path_entries[@]+"${path_entries[@]}"}; do
     [[ -z "$entry" ]] && continue
     if [[ "$entry" != */.agent-profiles/* ]]; then
       filtered_paths+=("$entry")
@@ -438,7 +457,7 @@ ap_prepare_profile_env() {
   if [[ ${#filtered_paths[@]} -gt 0 ]]; then
     local old_ifs="${IFS:-}"
     IFS=':'
-    base_path="${filtered_paths[*]}"
+    base_path="${filtered_paths[*]:-}"
     IFS="$old_ifs"
   fi
 
@@ -451,6 +470,7 @@ ap_prepare_profile_env() {
   unset UV_TOOL_DIR UV_TOOL_BIN_DIR UV_CACHE_DIR
   unset CARGO_INSTALL_ROOT GOBIN PYTHONUSERBASE
   unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG_DIR
+  unset PYTHONDONTWRITEBYTECODE PYTHONPYCACHEPREFIX
 
   # 3. Export profile variables
   export AGENT_PROFILES_NAME="$profile"
@@ -481,6 +501,15 @@ ap_prepare_profile_env() {
   export CARGO_INSTALL_ROOT="$prof_dir/cargo-global"
   export GOBIN="$prof_dir/bin"
   export PYTHONUSERBASE="$prof_dir/python-user"
+
+  # Apple's /usr/bin/python3 caches compiled stdlib modules under $HOME
+  # (Library/Caches/com.apple.python) and follows HOME rather than XDG, so a
+  # python process inside a profile used to write into whichever home the helper
+  # had at the time. Bytecode writing is suppressed outright and any future
+  # cache is redirected into the profile, which keeps a profile run from
+  # mutating the host and keeps the cache with the tools that produced it.
+  export PYTHONDONTWRITEBYTECODE=1
+  export PYTHONPYCACHEPREFIX="$prof_dir/.cache/python"
 
   # Darwin redirects by environment only, so HOME itself becomes the profile
   # root: every HOME-relative agent path ($HOME/.claude, .codex, .gemini,
@@ -579,7 +608,7 @@ ap_build_bwrap_mounts() {
   fi
 
   # Pass 1: Validate entire mount table before any host modifications
-  for d in "${redirect_dirs[@]}"; do
+  for d in ${redirect_dirs[@]+"${redirect_dirs[@]}"}; do
     local src="$prof_dir/$d"
     if [[ -L "$src" ]]; then
       ap_die "$EX_LAYOUT" "profile source path '$src' is a symbolic link (symlinks inside profile storage are prohibited)"
@@ -626,7 +655,7 @@ ap_build_bwrap_mounts() {
     fi
 
     # Check pairwise for duplicates and ancestor/descendant overlaps
-    for seen in "${validated_targets[@]}"; do
+    for seen in ${validated_targets[@]+"${validated_targets[@]}"}; do
       if [[ "$phys_target" == "$seen" || "$phys_target" == "$seen"/* || "$seen" == "$phys_target"/* ]]; then
         ap_die "$EX_LAYOUT" "mount target overlap: '$target' ($phys_target) overlaps with previously registered target '$seen'"
       fi

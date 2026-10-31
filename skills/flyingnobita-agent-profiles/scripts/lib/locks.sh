@@ -19,11 +19,19 @@ ap_ensure_locks_dir() {
     (umask 077 && mkdir -p "$locks_dir")
   fi
 
-  local real_ld
+  local real_ld real_storage
   if ! real_ld=$(ap_platform_realpath_existing "$locks_dir"); then
     ap_die "$EX_LAYOUT" "locks directory '$locks_dir' could not be resolved to a physical path"
   fi
-  if [[ "$real_ld" != "$locks_dir" ]]; then
+  if ! real_storage=$(ap_platform_realpath_existing "$storage_dir"); then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
+  fi
+  # Both sides are canonical. A checkout reached through a symlinked ancestor
+  # is not a layout error - macOS reports /var/folders as /private/var/folders -
+  # but a locks directory that resolves to anything other than the storage
+  # root's own .locks is. Both directories being symbolic links is refused
+  # above.
+  if [[ "$real_ld" != "$real_storage/.locks" ]]; then
     ap_die "$EX_LAYOUT" "locks directory path mismatch with realpath ($locks_dir -> $real_ld)"
   fi
 }
@@ -318,7 +326,7 @@ ap_run_preflight() {
     while IFS= read -r hook_path; do
       [[ -n "$hook_path" ]] || continue
       ordered_hooks+=("$hook_path")
-    done < <(printf "%s\n" "${hooks[@]}" | LC_ALL=C sort)
+    done < <(printf "%s\n" ${hooks[@]+"${hooks[@]}"} | LC_ALL=C sort)
   fi
 
   for hook in "${ordered_hooks[@]:-}"; do

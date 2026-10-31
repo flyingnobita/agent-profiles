@@ -106,7 +106,7 @@ ap_doctor_check_agy_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "agy" ]]; then
         matched=1
         break
@@ -172,7 +172,7 @@ ap_doctor_check_agy_profile() {
     [[ -f "$config_dir/mcp_config.json" ]] && mcp_config="true"
     [[ -f "$prof_dir/.config/antigravity/plugin-secrets.json" ]] && plugin_secrets="true"
 
-    for var in "${candidate_credentials[@]}"; do
+    for var in ${candidate_credentials[@]+"${candidate_credentials[@]}"}; do
       if [[ -f "$prof_dir/$var" ]]; then
         profile_files+=("$var")
       fi

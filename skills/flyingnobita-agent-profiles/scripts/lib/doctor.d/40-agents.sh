@@ -51,7 +51,7 @@ except Exception:
   probe_raw=$(
     cd "$temp_dir" \
       && env -i PATH="$PATH" \
-        "${safe_mise_env[@]}" \
+        ${safe_mise_env[@]+"${safe_mise_env[@]}"} \
         HOME="$temp_dir" \
         XDG_CONFIG_HOME="$temp_dir/.config" \
         XDG_DATA_HOME="$temp_dir/.local/share" \
@@ -60,7 +60,7 @@ except Exception:
         CLAUDE_CONFIG_DIR="$temp_dir/.claude" \
         CODEX_HOME="$temp_dir/.codex" \
         OPENCODE_CONFIG_DIR="$temp_dir/.opencode" \
-        "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 3 "$agent_cmd" "${agent_args[@]}" 2>&1
+        "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 3 "$agent_cmd" ${agent_args[@]+"${agent_args[@]}"} 2>&1
   ) || probe_exit=$?
 
   rm -rf "$temp_dir"
@@ -85,10 +85,10 @@ ap_doctor_check_agents() {
 
   local target_agents=("claude" "codex" "agy" "opencode")
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
-    target_agents=("${SELECTED_AGENTS[@]}")
+    target_agents=(${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"})
   fi
 
-  for agent in "${target_agents[@]}"; do
+  for agent in ${target_agents[@]+"${target_agents[@]}"}; do
     local agent_path="" agent_status="" agent_ver="" agent_probe="" agent_hint=""
     local binary="$agent"
     local probe_args=("--version")
@@ -98,7 +98,7 @@ ap_doctor_check_agents() {
       "ap_agent_${agent}_info"
       binary="${AGENT_BINARY:-$agent}"
       if [[ ${#AGENT_PROBE_ARGS[@]} -gt 0 ]]; then
-        probe_args=("${AGENT_PROBE_ARGS[@]}")
+        probe_args=(${AGENT_PROBE_ARGS[@]+"${AGENT_PROBE_ARGS[@]}"})
       fi
     fi
 
@@ -113,7 +113,7 @@ ap_doctor_check_agents() {
 
       PROBE_EXIT=0
       PROBE_PARSED_VERSION=""
-      ap_probe_agent_synthetic "$agent_path" "${probe_args[@]}"
+      ap_probe_agent_synthetic "$agent_path" ${probe_args[@]+"${probe_args[@]}"}
 
       if [[ "$PROBE_EXIT" -eq 125 ]]; then
         agent_status="unverified"

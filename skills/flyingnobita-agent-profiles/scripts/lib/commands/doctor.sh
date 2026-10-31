@@ -86,7 +86,7 @@ ap_cmd_doctor() {
     done
   fi
 
-  for section_fn in "${AP_DOCTOR_SECTIONS[@]}"; do
+  for section_fn in ${AP_DOCTOR_SECTIONS[@]+"${AP_DOCTOR_SECTIONS[@]}"}; do
     "$section_fn"
   done
 

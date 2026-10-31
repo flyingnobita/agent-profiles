@@ -196,7 +196,7 @@ ap_doctor_check_opencode_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "opencode" ]]; then
         matched=1
         break
@@ -263,7 +263,7 @@ ap_doctor_check_opencode_profile() {
     OPENCODE_API_KEY
   )
 
-  for var in "${credential_env_names[@]}"; do
+  for var in ${credential_env_names[@]+"${credential_env_names[@]}"}; do
     if [[ -n "${!var:-}" ]]; then
       env_names+=("$var")
     fi
@@ -295,7 +295,7 @@ ap_doctor_check_opencode_profile() {
     [[ -d "$state_dir" ]] && state_present="true"
     [[ -d "$cache_dir" ]] && cache_present="true"
 
-    for var in "${candidate_files[@]}"; do
+    for var in ${candidate_files[@]+"${candidate_files[@]}"}; do
       if [[ -f "$prof_dir/$var" ]]; then
         legacy_auth_present="true"
         profile_files+=("$var")

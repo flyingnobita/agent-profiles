@@ -14,6 +14,15 @@ else
   AP_PLATFORM_PYTHON=""
 fi
 
+# Apple's /usr/bin/python3 writes the bytecode of every imported stdlib module
+# into ~/Library/Caches/com.apple.python, which ignores XDG and follows HOME.
+# Every python process this helper starts is short-lived work, so it must never
+# leave that cache behind: on a shared host it is a write the user did not ask
+# for, and inside a redirected profile it makes a "host unchanged" check fail.
+# It is exported rather than prefixed so that the child python processes the
+# doctor and lifecycle code start are covered as well.
+export PYTHONDONTWRITEBYTECODE=1
+
 ap_platform_require() {
   if [[ -z "$AP_PLATFORM_PYTHON" ]]; then
     ap_die "${EX_UNAVAILABLE:-69}" "python3 is required but not found on PATH"
