@@ -25,7 +25,7 @@ teardown() {
   mkdir -m 0700 -p "$backup_root"
 
   local hash_before
-  hash_before=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
 
   run env AP_FORCE_COPY=1 AP_FAULT_AFTER=staged bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
   assert_failure 137
@@ -42,7 +42,7 @@ assert data["state"] == "staged"
 
   # Originals are untouched while the journal is below verified.
   local hash_after
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
 
   # Mutating commands are blocked by the stale migrate journal.
@@ -55,7 +55,7 @@ assert data["state"] == "staged"
   assert_output_contains "interrupted 'migrate'"
 
   # The untrusted staging copy is discarded and originals stay intact.
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
   [[ ! -f "$journal_file" ]]
   [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
