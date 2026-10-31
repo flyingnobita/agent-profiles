@@ -100,7 +100,9 @@ for mode in "default" "copy"; do
 
   # Path safety check: ensure no installed symlink references disposable source or repo source
   while IFS= read -r -d '' link; do
-    target=$(readlink -f "$link" || true)
+    # GNU readlink -f does not exist on stock macOS, so resolve with the
+    # standard library this tool already requires.
+    target=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$link" 2>/dev/null || true)
     if [[ "$target" == "$T/src"* || "$target" == "$SRC"* ]]; then
       fail "installed symlink ($link -> $target) references disposable source or repository source"
     fi
