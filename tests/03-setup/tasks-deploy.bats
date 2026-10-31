@@ -30,7 +30,7 @@ teardown() {
   assert_file_exists "$release/scripts/agent-profiles"
   assert_file_exists "$release/VERSION"
   assert_file_exists "$release/manifest.sha256"
-  (cd "$release" && sha256sum -c manifest.sha256 --quiet)
+  ap_test_manifest_verify "$release" "$release/manifest.sha256"
 }
 
 @test "setup apply: installs exactly one executable global file task using the released helper" {

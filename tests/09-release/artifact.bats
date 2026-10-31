@@ -4,6 +4,7 @@ setup() {
   load '../helpers/common.bash'
   load '../helpers/assert.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
   CHECK_RELEASE="$AP_SUBJECT/tests/tools/check-release"
   RELEASE_TOOL="$AP_SUBJECT/tools/release-artifacts"
@@ -45,7 +46,7 @@ teardown() {
   assert_file_exists "$out/flyingnobita-agent-profiles-$VERSION.tar.gz.sha256"
   assert_file_exists "$out/RELEASE_NOTES.md"
 
-  run bash -c "cd '$out' && sha256sum -c 'flyingnobita-agent-profiles-$VERSION.tar.gz.sha256'"
+  run ap_test_manifest_verify "$out" "$out/flyingnobita-agent-profiles-$VERSION.tar.gz.sha256"
   assert_success
 
   # Build output must not become tracked content.

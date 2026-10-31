@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -68,7 +69,7 @@ printf "CACHE=%s\n" "$XDG_CACHE_HOME"
   run bash "$AP_HELPER" run --profile perms -- true
   assert_success
   assert_dir_exists "$repo/.agent-profiles/perms/.opencode"
-  run stat -c '%a' "$repo/.agent-profiles/perms/.opencode"
+  run ap_test_stat_mode "$repo/.agent-profiles/perms/.opencode"
   assert_success
   assert_equal "$output" "700"
 }

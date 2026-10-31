@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
   TEST_BG_PIDS=()
 }
@@ -67,7 +68,7 @@ teardown() {
   echo "prof2 tool" >"$prof2_dir/bin/tool"
 
   local prof2_hash_before
-  prof2_hash_before=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_before=$(ap_test_tree_digest "$prof2_dir")
 
   run bash "$AP_HELPER" reset --profile prof1 --yes
   assert_success
@@ -83,7 +84,7 @@ teardown() {
 
   # Verify prof2 is completely untouched
   local prof2_hash_after
-  prof2_hash_after=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_after=$(ap_test_tree_digest "$prof2_dir")
   assert_equal "$prof2_hash_before" "$prof2_hash_after"
 }
 
@@ -105,7 +106,7 @@ teardown() {
   echo "# Untracked project file" >"$fixture_repo/project_scratch.txt"
 
   local prof2_hash_before
-  prof2_hash_before=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_before=$(ap_test_tree_digest "$prof2_dir")
 
   run bash "$AP_HELPER" remove --profile prof1 --yes
   assert_success
@@ -116,7 +117,7 @@ teardown() {
   # prof2 must remain completely intact
   assert_dir_exists "$prof2_dir"
   local prof2_hash_after
-  prof2_hash_after=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_after=$(ap_test_tree_digest "$prof2_dir")
   assert_equal "$prof2_hash_before" "$prof2_hash_after"
 
   # Project files and local mise config must remain untouched

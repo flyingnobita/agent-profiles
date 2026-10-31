@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -21,7 +22,7 @@ teardown() {
   echo "legacy home file" >"$fixture_repo/.agent-sandbox/home/test.txt"
 
   local hash_before
-  hash_before=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
 
   run bash "$AP_HELPER" migrate
   assert_success
@@ -30,7 +31,7 @@ teardown() {
   assert_output_contains "Pass --yes to proceed"
 
   local hash_after
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
 }
 
@@ -121,10 +122,10 @@ teardown() {
 
   # Check permissions of backup directory (0700) and manifest (0600)
   local backup_mode
-  backup_mode=$(stat -c "%a" "$run_backup")
+  backup_mode=$(ap_test_stat_mode "$run_backup")
   assert_equal "$backup_mode" "700"
   local manifest_mode
-  manifest_mode=$(stat -c "%a" "$run_backup/manifest.json")
+  manifest_mode=$(ap_test_stat_mode "$run_backup/manifest.json")
   assert_equal "$manifest_mode" "600"
 }
 
@@ -139,7 +140,7 @@ teardown() {
   echo "pre-existing data" >"$fixture_repo/.agent-profiles/workingprof/home/important.txt"
 
   local working_hash_before
-  working_hash_before=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+  working_hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/workingprof")
 
   # Legacy named profile in .agent-sandbox
   mkdir -p "$fixture_repo/.agent-sandbox/oldworker/home"
@@ -150,7 +151,7 @@ teardown() {
 
   # Working profile must remain 100% byte-for-byte identical
   local working_hash_after
-  working_hash_after=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+  working_hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/workingprof")
   assert_equal "$working_hash_before" "$working_hash_after"
 
   # Legacy oldworker profile must be reinitialized empty under .agent-profiles/oldworker
@@ -186,7 +187,7 @@ teardown() {
   echo "original data" >"$fixture_repo/.agent-sandbox/home/file.txt"
 
   local hash_before
-  hash_before=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
 
   # Simulate digest mismatch using AP_CORRUPT_STAGED=1
   run env AP_FORCE_COPY=1 AP_CORRUPT_STAGED=1 bash "$AP_HELPER" migrate --yes
@@ -196,7 +197,7 @@ teardown() {
   # Original legacy data must remain completely intact
   assert_dir_exists "$fixture_repo/.agent-sandbox/home"
   local hash_after
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
 }
 
@@ -209,7 +210,7 @@ teardown() {
   assert_success
   echo "pre-existing data" >"$fixture_repo/.agent-profiles/workingprof/home/important.txt"
   local working_hash_before
-  working_hash_before=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+  working_hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/workingprof")
 
   # Unnamed default-profile data directly under the new storage directory.
   mkdir -p "$fixture_repo/.agent-profiles/home"
@@ -231,7 +232,7 @@ teardown() {
   [[ ! -f "$fixture_repo/.agent-profiles/default/home/unnamed.txt" ]]
 
   local working_hash_after
-  working_hash_after=$(find "$fixture_repo/.agent-profiles/workingprof" -type f -exec sha256sum {} + | sort | sha256sum)
+  working_hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/workingprof")
   assert_equal "$working_hash_before" "$working_hash_after"
 
   local run_backup
@@ -259,15 +260,15 @@ teardown() {
   printf '{"legacy":true}\n' >"$fixture_repo/.agent-profiles/.claude/projects/p1/session.jsonl"
 
   local bin_hash home_hash
-  bin_hash=$(find "$fixture_repo/.agent-profiles/bin" -type f -exec sha256sum {} + | sort | sha256sum)
-  home_hash=$(find "$fixture_repo/.agent-profiles/home" -type f -exec sha256sum {} + | sort | sha256sum)
+  bin_hash=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/bin")
+  home_hash=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/home")
 
   run bash "$AP_HELPER" migrate --yes
   assert_success
 
   local bin_hash_after home_hash_after
-  bin_hash_after=$(find "$fixture_repo/.agent-profiles/bin" -type f -exec sha256sum {} + | sort | sha256sum)
-  home_hash_after=$(find "$fixture_repo/.agent-profiles/home" -type f -exec sha256sum {} + | sort | sha256sum)
+  bin_hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/bin")
+  home_hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-profiles/home")
   assert_equal "$bin_hash" "$bin_hash_after"
   assert_equal "$home_hash" "$home_hash_after"
 

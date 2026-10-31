@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 
   unset GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_APPLICATION_CREDENTIALS GOOGLE_CLOUD_PROJECT
@@ -57,7 +58,7 @@ teardown() {
     >"$repo/.agent-profiles/dev/.config/antigravity/plugin-secrets.json"
 
   local before after
-  before=$(cd "$repo/.agent-profiles/dev" && find . -type f -exec sha256sum {} + | sort)
+  before=$(ap_test_tree_digest "$repo/.agent-profiles/dev")
 
   run env GEMINI_API_KEY="secret-env-value-913" DBUS_SESSION_BUS_ADDRESS="unix:path=$TEST_TMPDIR/absent-bus" \
     XDG_RUNTIME_DIR="$TEST_TMPDIR/run" \
@@ -103,7 +104,7 @@ assert auth["detail"], auth
 assert "not proof of account separation" in auth["note"], auth
 PY
 
-  after=$(cd "$repo/.agent-profiles/dev" && find . -type f -exec sha256sum {} + | sort)
+  after=$(ap_test_tree_digest "$repo/.agent-profiles/dev")
   assert_equal "$after" "$before"
 }
 

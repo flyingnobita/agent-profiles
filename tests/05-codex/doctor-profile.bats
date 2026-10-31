@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 
   unset OPENAI_API_KEY OPENAI_BASE_URL OPENAI_ORG_ID OPENAI_PROJECT CODEX_API_KEY
@@ -60,7 +61,7 @@ teardown() {
   printf 'bundled-marker\n' >"$codex_dir/skills/.system/marker"
 
   local before
-  before=$(cd "$codex_dir" && find . -type f -exec sha256sum {} + | sort)
+  before=$(ap_test_tree_digest "$codex_dir")
 
   run env OPENAI_API_KEY="secret-codex-key-777" \
     bash "$AP_HELPER" doctor --json --agent codex --profile dev
@@ -93,7 +94,7 @@ assert "not validated" in profile["auth"]["detail"]
 PY
 
   local after
-  after=$(cd "$codex_dir" && find . -type f -exec sha256sum {} + | sort)
+  after=$(ap_test_tree_digest "$codex_dir")
   assert_equal "$after" "$before"
 }
 
