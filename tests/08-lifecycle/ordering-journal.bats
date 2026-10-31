@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -126,16 +127,16 @@ JOURNAL
   local lock_file="$fixture_repo/.agent-profiles/.locks/.exclude.lock"
   assert_file_exists "$lock_file"
 
-  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$lock_file" &
+  ap_test_hold_lock "$lock_file" 30 &
   local holder_pid=$!
   local i=0
-  while flock -n "$lock_file" true 2>/dev/null; do
+  while ap_test_try_lock "$lock_file"; do
     sleep 0.1
     i=$((i + 1))
     [[ $i -lt 100 ]] || break
   done
 
-  run timeout 40 bash "$AP_HELPER" init --profile second
+  run ap_test_timeout 40 bash "$AP_HELPER" init --profile second
   assert_failure 75
   assert_output_contains "lock"
 
@@ -205,15 +206,15 @@ HOOK
   local sentinel="$TEST_TMPDIR/outside-sentinel.lock"
   printf 'sentinel-content\n' >"$sentinel"
   local sentinel_hash_before
-  sentinel_hash_before=$(sha256sum "$sentinel" | cut -d' ' -f1)
+  sentinel_hash_before=$(ap_test_sha256 "$sentinel")
   rm -f "$sidecar"
   ln -s "$sentinel" "$sidecar"
 
   # Even while the outside lock is held, this must be a refusal, not "live".
-  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$sentinel" &
+  ap_test_hold_lock "$sentinel" 30 &
   local holder_pid=$!
   local i=0
-  while flock -n "$sentinel" true 2>/dev/null; do
+  while ap_test_try_lock "$sentinel"; do
     sleep 0.1
     i=$((i + 1))
     [[ $i -lt 100 ]] || break
@@ -227,7 +228,7 @@ HOOK
   assert_failure 73
   assert_output_contains "journal lock"
 
-  assert_equal "$sentinel_hash_before" "$(sha256sum "$sentinel" | cut -d' ' -f1)"
+  assert_equal "$sentinel_hash_before" "$(ap_test_sha256 "$sentinel")"
   assert_file_exists "$journal"
 
   kill -TERM -"$holder_pid" 2>/dev/null || true
@@ -313,16 +314,16 @@ HOOK
 
   local storage_lock="$fixture_repo/.agent-profiles/.locks/.storage.lock"
   assert_file_exists "$storage_lock"
-  setsid bash -c 'exec 9<>"$1"; flock -x 9; sleep 30' _ "$storage_lock" &
+  ap_test_hold_lock "$storage_lock" 30 &
   local holder_pid=$!
   local i=0
-  while flock -n "$storage_lock" true 2>/dev/null; do
+  while ap_test_try_lock "$storage_lock"; do
     sleep 0.1
     i=$((i + 1))
     [[ $i -lt 100 ]] || break
   done
 
-  run timeout 20 bash "$AP_HELPER" recover --yes
+  run ap_test_timeout 20 bash "$AP_HELPER" recover --yes
   assert_failure 75
   assert_file_exists "$fixture_repo/.agent-profiles/.journal/reset-lockprof.json"
   assert_file_exists "$fixture_repo/.agent-profiles/lockprof/home/keep.txt"
@@ -363,12 +364,12 @@ HOOK
   local sentinel="$TEST_TMPDIR/outside-tmp-sentinel"
   printf 'sentinel-content\n' >"$sentinel"
   local sentinel_hash_before
-  sentinel_hash_before=$(sha256sum "$sentinel" | cut -d' ' -f1)
+  sentinel_hash_before=$(ap_test_sha256 "$sentinel")
   mkdir -p "$fixture_repo/.agent-profiles/.journal"
   ln -s "$sentinel" "$fixture_repo/.agent-profiles/.journal/reset-tmpprof.json.tmp"
 
   run bash "$AP_HELPER" reset --profile tmpprof --yes
   assert_success
 
-  assert_equal "$sentinel_hash_before" "$(sha256sum "$sentinel" | cut -d' ' -f1)"
+  assert_equal "$sentinel_hash_before" "$(ap_test_sha256 "$sentinel")"
 }

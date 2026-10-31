@@ -310,3 +310,41 @@ ap_test_wait_for_file() {
     sleep 0.1
   done
 }
+
+# ap_test_tree_digest <dir>: one digest over every regular file below dir, in
+# sorted relative order. Replaces `find -type f -exec sha256sum {} + | sort |
+# sha256sum`, which needs GNU sha256sum and makes the answer depend on absolute
+# paths.
+ap_test_tree_digest() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import sys
+
+root = sys.argv[1]
+lines = []
+for current, dirs, files in os.walk(root):
+    dirs.sort()
+    for name in files:
+        path = os.path.join(current, name)
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        lines.append("%s  %s" % (digest.hexdigest(), os.path.relpath(path, root)))
+lines.sort(key=lambda value: value.encode())
+combined = hashlib.sha256()
+for line in lines:
+    combined.update(line.encode())
+    combined.update(b"\n")
+sys.stdout.write("%s\n" % combined.hexdigest())
+PY
+}
+
+# ap_test_manifest_verify <base-dir> <manifest>: the shipped verifier, so a test
+# does not need `sha256sum -c` and cannot drift from the product's format.
+ap_test_manifest_verify() {
+  ap_platform_manifest_verify "$1" "$2"
+}

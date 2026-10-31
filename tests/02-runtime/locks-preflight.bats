@@ -5,11 +5,11 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
 teardown() {
-  rm -f "$AP_SKILL_DIR/scripts/lib/preflight.d/99-test-fail.sh"
   teardown_isolation
 }
 
@@ -23,22 +23,23 @@ teardown() {
   local lock_file="$repo/.agent-profiles/.locks/default.lock"
   assert_file_exists "$lock_file"
 
-  # Start run with sleep in background
-  bash "$AP_HELPER" run -- sleep 2 &
+  # Start run with sleep in background. The marker proves the child is already
+  # executing, so the lease is held before the probe: waiting on the marker
+  # instead of a fixed sleep cannot race a slow start on either platform.
+  local started="$TEST_TMPDIR/lease-started.marker"
+  bash "$AP_HELPER" run -- sh -c "printf 'started\n' >'$started'; sleep 2" &
   local bg_pid=$!
-
-  # Give it a moment to enter bwrap and acquire lock
-  sleep 0.4
+  ap_test_wait_for_file "$started"
 
   # Attempt exclusive lock on profile lock file - must fail while run is active
-  run flock -n -x "$lock_file" true
+  run ap_test_try_lock "$lock_file"
   assert_failure
 
   # Wait for background run to finish
   wait "$bg_pid"
 
   # Now exclusive lock must succeed
-  run flock -n -x "$lock_file" true
+  run ap_test_try_lock "$lock_file"
   assert_success
 }
 
@@ -60,7 +61,7 @@ teardown() {
   [[ -n "$child_pid" ]]
 
   # Exclusive lock must fail because child process holds inherited lease fd
-  run flock -n -x "$lock_file" true
+  run ap_test_try_lock "$lock_file"
   assert_failure
 
   # Kill child process
@@ -69,7 +70,7 @@ teardown() {
   sleep 0.2
 
   # Now exclusive lock must succeed
-  run flock -n -x "$lock_file" true
+  run ap_test_try_lock "$lock_file"
   assert_success
 }
 
@@ -149,6 +150,16 @@ teardown() {
   assert_equal "$(cat "$outside_dir/default.runs")" "original-runs"
 }
 
+# disposable_skill_copy <dir>: copies the shipped skill so a test can inject a
+# preflight hook without writing into the checkout. The suite stays safe to run
+# concurrently and leaves the source tree byte-identical.
+disposable_skill_copy() {
+  local dir="$1"
+  mkdir -p "$dir"
+  cp -a "$AP_SKILL_DIR"/* "$dir/"
+  printf '%s\n' "$dir/scripts/agent-profiles"
+}
+
 @test "preflight: executes preflight hooks and aborts if hook fails" {
   local repo="$TEST_TMPDIR/repo-preflight"
   create_fixture_repo "$repo"
@@ -156,17 +167,19 @@ teardown() {
   run bash "$AP_HELPER" init
   assert_success
 
-  # Inject a failing preflight hook into preflight.d
-  local hook_dir="$AP_SKILL_DIR/scripts/lib/preflight.d"
+  local helper
+  helper=$(disposable_skill_copy "$TEST_TMPDIR/disposable-preflight")
+
+  # Inject a failing preflight hook into the disposable copy.
+  local hook_dir="$TEST_TMPDIR/disposable-preflight/scripts/lib/preflight.d"
   mkdir -p "$hook_dir"
-  cat <<'EOF' > "$hook_dir/99-test-fail.sh"
+  cat <<'HOOK' >"$hook_dir/99-test-fail.sh"
 #!/usr/bin/env bash
 ap_die 77 "preflight test hook failed"
-EOF
+HOOK
   chmod +x "$hook_dir/99-test-fail.sh"
 
-  run bash "$AP_HELPER" run -- true
-  rm -f "$hook_dir/99-test-fail.sh"
+  run bash "$helper" run -- true
 
   assert_failure
   assert_equal "$status" 77
@@ -178,40 +191,42 @@ EOF
   create_fixture_repo "$repo"
   cd "$repo"
 
-  local hook_dir="$AP_SKILL_DIR/scripts/lib/preflight.d"
+  local helper
+  helper=$(disposable_skill_copy "$TEST_TMPDIR/disposable-preflight-lifecycle")
+
+  local hook_dir="$TEST_TMPDIR/disposable-preflight-lifecycle/scripts/lib/preflight.d"
   mkdir -p "$hook_dir"
-  cat <<'EOF' > "$hook_dir/99-test-fail.sh"
+  cat <<'HOOK' >"$hook_dir/99-test-fail.sh"
 #!/usr/bin/env bash
 ap_die 77 "preflight test hook failed"
-EOF
+HOOK
   chmod +x "$hook_dir/99-test-fail.sh"
 
   # 1. init must fail due to preflight
-  run bash "$AP_HELPER" init
+  run bash "$helper" init
   assert_failure
   assert_equal "$status" 77
   assert_output_contains "preflight test hook failed"
 
   # 2. list must fail due to preflight
-  run bash "$AP_HELPER" list
+  run bash "$helper" list
   assert_failure
   assert_equal "$status" 77
   assert_output_contains "preflight test hook failed"
 
   # Remove hook, init profile cleanly
   rm -f "$hook_dir/99-test-fail.sh"
-  run bash "$AP_HELPER" init
+  run bash "$helper" init
   assert_success
 
   # Re-inject hook; nested run must also execute preflight
-  cat <<'EOF' > "$hook_dir/99-test-fail.sh"
+  cat <<'HOOK' >"$hook_dir/99-test-fail.sh"
 #!/usr/bin/env bash
 ap_die 77 "preflight test hook failed"
-EOF
+HOOK
   chmod +x "$hook_dir/99-test-fail.sh"
 
-  run bash "$AP_HELPER" run -- bash "$AP_HELPER" run -- true
-  rm -f "$hook_dir/99-test-fail.sh"
+  run bash "$helper" run -- bash "$helper" run -- true
   assert_failure
   assert_equal "$status" 77
   assert_output_contains "preflight test hook failed"
