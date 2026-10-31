@@ -51,6 +51,11 @@ pass() {
   echo "check-release: PASS: $*"
 }
 
+# Every portable check below goes through the standard library: stock macOS has
+# no GNU tar options, no PCRE grep and no sha256sum.
+PYTHON="$(command -v python3 || true)"
+[[ -n "$PYTHON" ]] || fail "python3 is required to verify the release surface"
+
 require_file() {
   [[ -f "$1" ]] || fail "required release file is missing: ${1#"$ROOT_DIR"/}"
 }
@@ -219,7 +224,7 @@ pass "RELEASE_NOTES.md is versioned and describes the local release scope"
 
 # --- 4c. Versioned artifacts with a disposable extract and run --------------
 verify_artifacts() (
-  local dir tarball work listing helper
+  local dir tarball work helper fingerprint
   dir="$(cd "$1" && pwd)"
   tarball="$dir/flyingnobita-agent-profiles-$VERSION.tar.gz"
 
@@ -235,20 +240,126 @@ verify_artifacts() (
     || fail "artifact RELEASE_NOTES.md differs from the tracked release notes"
   pass "artifact release notes match RELEASE_NOTES.md"
 
-  listing=$(tar -tzf "$tarball")
-  if printf '%s\n' "$listing" | grep -qE '^/|(^|/)\.\.(/|$)'; then
-    fail "artifact contains an absolute or parent-traversal path"
-  fi
-  for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
-    "references/compatibility.md"; do
-    printf '%s\n' "$listing" | grep -qxF "flyingnobita-agent-profiles/$required" \
-      || fail "artifact is missing flyingnobita-agent-profiles/$required"
-  done
-  pass "artifact contains the installable skill bundle and license"
+  # Every shipped source entry is compared with the artifact: path, type, mode,
+  # content and symlink target, in both directions. A member that is stale,
+  # missing, extra or duplicated is refused, so an artifact built before a
+  # source change cannot be accepted.
+  fingerprint=$(
+    "$PYTHON" - "$SKILL_DIR" "$tarball" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+import tarfile
+
+source, tarball = sys.argv[1], sys.argv[2]
+prefix = "flyingnobita-agent-profiles"
+# Byte code is local build state, not shipped source (see tools/release-artifacts).
+skipped = ("__pycache__",)
+
+
+def digest_of(handle):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(65536), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def describe(path):
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode):
+        return ("link", 0o777, os.readlink(path))
+    mode = stat.S_IMODE(info.st_mode)
+    if stat.S_ISDIR(info.st_mode):
+        return ("dir", mode, None)
+    with open(path, "rb") as handle:
+        return ("file", mode, digest_of(handle))
+
+
+expected = {prefix: describe(source)}
+for current, dirs, files in os.walk(source):
+    dirs[:] = sorted(name for name in dirs if name not in skipped)
+    for name in sorted(dirs + [entry for entry in files if not entry.endswith(".pyc")]):
+        path = os.path.join(current, name)
+        expected[prefix + "/" + os.path.relpath(path, source)] = describe(path)
+
+actual = {}
+failures = []
+try:
+    archive = tarfile.open(tarball, "r:gz")
+except (OSError, tarfile.TarError) as exc:
+    sys.stderr.write("check-release: FAIL: artifact is not a readable gzip tarball: %s\n" % exc)
+    raise SystemExit(1)
+
+with archive:
+    for info in archive.getmembers():
+        name = info.name.rstrip("/")
+        if info.name.startswith("/") or ".." in info.name.split("/"):
+            failures.append("artifact member has an absolute or parent-traversal path: %s" % info.name)
+            continue
+        if name in actual:
+            failures.append("artifact contains a duplicate member: %s" % name)
+        if info.issym():
+            entry = ("link", 0o777, info.linkname)
+        elif info.isdir():
+            entry = ("dir", info.mode & 0o7777, None)
+        elif info.isfile():
+            handle = archive.extractfile(info)
+            entry = ("file", info.mode & 0o7777, digest_of(handle))
+        else:
+            entry = ("other", info.mode & 0o7777, None)
+        actual[name] = entry
+
+for name in sorted(expected, key=lambda value: value.encode()):
+    if name not in actual:
+        failures.append("artifact is missing shipped source: %s" % name)
+        continue
+    want, got = expected[name], actual[name]
+    if want[0] != got[0]:
+        failures.append("artifact member type differs from source: %s" % name)
+    elif want[1] != got[1]:
+        failures.append(
+            "artifact member mode differs from source: %s (%o != %o)" % (name, got[1], want[1])
+        )
+    elif want[2] != got[2]:
+        if want[0] == "file":
+            failures.append("artifact member content differs from source: %s" % name)
+        else:
+            failures.append("artifact member link target differs from source: %s" % name)
+
+for name in sorted(actual, key=lambda value: value.encode()):
+    if name not in expected:
+        failures.append("artifact contains an unexpected member: %s" % name)
+
+if failures:
+    for failure in failures:
+        sys.stderr.write("check-release: FAIL: %s\n" % failure)
+    raise SystemExit(1)
+
+sys.stdout.write("artifact fingerprint matches every shipped source file (%d entries)" % len(expected))
+PY
+  ) || fail "artifact does not match the shipped skill source"
+  pass "$fingerprint"
 
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
-  tar -xzf "$tarball" -C "$work"
+  "$PYTHON" - "$tarball" "$work" <<'PY' || fail "artifact could not be extracted"
+import sys
+import tarfile
+
+tarball, dest = sys.argv[1], sys.argv[2]
+with tarfile.open(tarball, "r:gz") as archive:
+    try:
+        archive.extractall(dest, filter="data")
+    except TypeError:
+        archive.extractall(dest)
+PY
+  for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
+    "references/compatibility.md"; do
+    [[ -f "$work/flyingnobita-agent-profiles/$required" ]] \
+      || fail "artifact is missing flyingnobita-agent-profiles/$required"
+  done
+  pass "artifact contains the installable skill bundle and license"
   helper="$work/flyingnobita-agent-profiles/scripts/agent-profiles"
 
   [[ "$(bash "$helper" --version)" == "$VERSION" ]] \
@@ -308,15 +419,35 @@ done < <(release_files)
 pass "the release surface contains no author paths or private delivery identifiers"
 
 # --- 4d. Tracked and shipped content uses standard dashes ------------------
-EM_DASH_VIOLATIONS=0
-while IFS= read -r file; do
-  if grep -qP '\x{2014}' "$file" 2>/dev/null; then
+# BSD grep has no -P: the previous PCRE scan exited non-zero there and the
+# unchecked test passed silently. The bytes are read with the standard library
+# instead, and an unreadable file fails the check rather than skipping it.
+EM_DASH_LIST=$(
+  release_files | "$PYTHON" -c '
+import sys
+
+offenders = []
+for line in sys.stdin:
+    path = line.rstrip("\n")
+    if not path:
+        continue
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        sys.stderr.write("check-release: FAIL: cannot scan %s: %s\n" % (path, exc))
+        raise SystemExit(2)
+    if b"\xe2\x80\x94" in data:
+        offenders.append(path)
+sys.stdout.write("\n".join(offenders))
+'
+) || fail "the release surface could not be scanned for em dashes"
+if [[ -n "$EM_DASH_LIST" ]]; then
+  while IFS= read -r file; do
     echo "check-release: FAIL: em dash in ${file#"$ROOT_DIR"/}" >&2
-    EM_DASH_VIOLATIONS=$((EM_DASH_VIOLATIONS + 1))
-  fi
-done < <(release_files)
-[[ "$EM_DASH_VIOLATIONS" -eq 0 ]] \
-  || fail "the release surface contains em dashes; use standard dashes"
+  done <<<"$EM_DASH_LIST"
+  fail "the release surface contains em dashes; use standard dashes"
+fi
 pass "the release surface uses standard dashes"
 
 echo "check-release: all release readiness checks passed"

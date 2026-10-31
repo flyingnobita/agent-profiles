@@ -273,6 +273,8 @@ SHIM
   run env PATH="$bin:$PATH" SOURCE_DATE_EPOCH=1700000000 \
     bash "$RELEASE_TOOL" "$repo" --output-dir "$second"
   assert_success
+  # The build verifies the artifact it wrote against the shipped source.
+  assert_output_contains "artifact fingerprint matches every shipped source file"
 
   # Same source, same SOURCE_DATE_EPOCH, same bytes.
   assert_file_exists "$first/$TARBALL_NAME"
@@ -282,10 +284,9 @@ SHIM
   run cmp -s "$first/$TARBALL_NAME" "$second/$TARBALL_NAME"
   assert_success
 
-  # The checksum written by the build verifies with the shipped verifier.
+  # The checksum the build wrote verifies with the shipped verifier.
   run ap_test_manifest_verify "$first" "$first/$TARBALL_NAME.sha256"
   assert_success
-  assert_output_contains "artifact fingerprint matches every shipped source file"
 
   # The extracted artifact runs on Darwin-shaped input with no GNU userland.
   local extract="$TEST_TMPDIR/extract"
