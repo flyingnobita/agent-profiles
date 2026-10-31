@@ -102,6 +102,40 @@ check_matrix() {
   done
 }
 
+# Verifies a platform table holds exactly the two documented platform rows and
+# reports both as Qualified. The macOS row must scope itself to configuration
+# redirection only and must not require bubblewrap, so a row that reverts to the
+# deferred claim or exports the Linux prerequisite is refused.
+check_platform_table() {
+  local file="$1" heading="$2" rows data linux_row macos_row
+  require_file "$file"
+  rows=$(section_rows "$file" "$heading")
+  [[ -n "$rows" ]] || fail "${file#"$ROOT_DIR"/} has no table under '$heading'"
+  data=$(($(printf '%s\n' "$rows" | grep -c '^|') - 2))
+  [[ "$data" -eq 2 ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly 2 (Linux and macOS)"
+
+  linux_row=$(printf '%s\n' "$rows" | grep -F -- "| Linux" || true)
+  macos_row=$(printf '%s\n' "$rows" | grep -F -- "| macOS" || true)
+  [[ -n "$linux_row" ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table does not name Linux"
+  [[ -n "$macos_row" ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table does not name macOS"
+
+  printf '%s\n' "$linux_row" | grep -qiF -- "| qualified |" \
+    || fail "${file#"$ROOT_DIR"/} does not report Linux as Qualified"
+  printf '%s\n' "$macos_row" | grep -qiF -- "| qualified |" \
+    || fail "${file#"$ROOT_DIR"/} does not report macOS as Qualified"
+  printf '%s\n' "$macos_row" | grep -qiF -- "configuration redirection only" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not state configuration redirection only"
+  if printf '%s\n' "$macos_row" | grep -qiF -- "bubblewrap"; then
+    fail "${file#"$ROOT_DIR"/} macOS row requires bubblewrap"
+  fi
+  if printf '%s\n' "$macos_row" | grep -qiF -- "not qualified"; then
+    fail "${file#"$ROOT_DIR"/} macOS row still claims macOS is not qualified"
+  fi
+}
+
 # --- 1. Version and MIT license --------------------------------------------
 require_file "$SKILL_DIR/VERSION"
 VERSION=$(tr -d '[:space:]' <"$SKILL_DIR/VERSION")
@@ -161,8 +195,14 @@ require_term "$README" "inherited environment credentials" \
 require_term "$README" "shared host resources" \
   "that host resources remain shared"
 require_term "$README" "macOS" "the macOS platform status"
-require_term "$README" "not qualified" "that macOS is not qualified"
-pass "README.md states the security and shared-resource boundaries"
+require_term "$README" "configuration redirection only" \
+  "that macOS uses configuration redirection only"
+require_term "$README" "same enforcement" \
+  "that the two platforms do not give the same enforcement"
+if grep -qiF -- "macOS is not qualified" "$README"; then
+  fail "README.md still claims macOS is not qualified"
+fi
+pass "README.md states the security, shared-resource and macOS platform boundaries"
 
 # --- 3. Dated compatibility matrix -----------------------------------------
 check_matrix "$README" "## Compatibility"
@@ -176,14 +216,8 @@ pass "README.md compatibility matrix is dated and names the four tested integrat
 
 PLATFORM_ROWS=$(section_rows "$README" "## Platforms")
 [[ -n "$PLATFORM_ROWS" ]] || fail "README.md has no '## Platforms' table"
-PLATFORM_DATA=$(($(printf '%s\n' "$PLATFORM_ROWS" | grep -c '^|') - 2))
-[[ "$PLATFORM_DATA" -eq 2 ]] \
-  || fail "README.md '## Platforms' table has $PLATFORM_DATA data rows; expected Linux and macOS"
-printf '%s\n' "$PLATFORM_ROWS" | grep -qF -- "Linux" \
-  || fail "README.md '## Platforms' table does not name Linux"
-printf '%s\n' "$PLATFORM_ROWS" | grep -qF -- "macOS" \
-  || fail "README.md '## Platforms' table does not name macOS"
-pass "README.md platform table names Linux as qualified and macOS as deferred"
+check_platform_table "$README" "## Platforms"
+pass "README.md platform table qualifies Linux and macOS arm64"
 
 require_file "$COMPAT"
 check_matrix "$COMPAT" "## Agent CLI Integration Matrix"
@@ -192,9 +226,14 @@ for version in "${VERSIONS[@]}"; do
     || fail "compatibility.md does not record tested version $version"
 done
 require_term "$COMPAT" "Linux (x86_64)" "the qualified Linux platform"
-require_term "$COMPAT" "Not Qualified" "that macOS is not qualified"
+require_term "$COMPAT" "macOS (arm64)" "the qualified macOS arm64 platform"
+require_term "$COMPAT" "weaker" "that the macOS layer is the weaker guarantee"
 require_term "$COMPAT" "2026-10-28" "the compatibility verification date"
-pass "references/compatibility.md is dated and matches the tested matrix"
+check_platform_table "$COMPAT" "## Platform Support"
+if grep -qiF -- "macOS is not qualified" "$COMPAT"; then
+  fail "compatibility.md still claims macOS is not qualified"
+fi
+pass "references/compatibility.md is dated, qualifies macOS arm64 and matches the tested matrix"
 
 # --- 4. Sanitized evidence summary ----------------------------------------
 require_file "$EVIDENCE"
@@ -213,10 +252,24 @@ pass "docs/evidence release summary is sanitized and separates the evidence clas
 require_file "$RELEASE_NOTES"
 grep -qE "^# +.*flyingnobita-agent-profiles v$VERSION$" "$RELEASE_NOTES" \
   || fail "RELEASE_NOTES.md needs a top-level heading naming flyingnobita-agent-profiles v$VERSION"
-for term in "MIT" "Linux" "macOS" "not qualified" "not a security sandbox" \
+# The current scope only. The archived v0.1.0 section truthfully records that
+# macOS was not qualified in that release, so the claim is read from the v$VERSION
+# section alone and a reversion to the deferred-platform wording is refused.
+NOTES_SCOPE=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
+  /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
+  inside { print }
+' "$RELEASE_NOTES")
+[[ -n "$NOTES_SCOPE" ]] \
+  || fail "RELEASE_NOTES.md has no v$VERSION scope section"
+for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
+  "no bubblewrap prerequisite" "neither platform is a security sandbox" \
   "credential-dependent" "not published"; do
-  require_term "$RELEASE_NOTES" "$term" "the release notes scope"
+  printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "$term" \
+    || fail "RELEASE_NOTES.md v$VERSION scope does not state: $term"
 done
+if printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "macOS is not qualified"; then
+  fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
+fi
 for agent in "${AGENTS[@]}"; do
   require_term "$RELEASE_NOTES" "$agent" "the release notes integration list"
 done

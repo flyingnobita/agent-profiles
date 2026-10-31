@@ -36,7 +36,12 @@ BYTE_COUNT=$(wc -c <"$SKILL_MD")
 grep -q "^name: flyingnobita-agent-profiles" "$SKILL_MD" || fail "SKILL.md missing name frontmatter"
 grep -q "^license: MIT" "$SKILL_MD" || fail "SKILL.md missing license: MIT"
 grep -q "^compatibility: .*Linux" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name Linux"
-grep -q "^compatibility: .*macOS" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name macOS"
+grep -q "^compatibility: .*macOS arm64" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name macOS arm64"
+grep -q "^compatibility: .*configuration redirection only" "$SKILL_MD" \
+  || fail "SKILL.md compatibility statement does not scope macOS to configuration redirection only"
+if grep -q "^compatibility: .*macOS not qualified" "$SKILL_MD"; then
+  fail "SKILL.md compatibility statement claims macOS is not qualified"
+fi
 grep -q "version: $VERSION" "$SKILL_MD" || fail "SKILL.md version does not match VERSION file ($VERSION)"
 
 # Description length
