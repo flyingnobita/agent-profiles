@@ -165,9 +165,15 @@ tier and arm64 CI, S7 release tooling, S8 Linux and macOS qualification. Every
 slice's new tests were re-run against the base commit before being accepted, and
 Linux keeps zero skips with bubblewrap behaviour unchanged.
 
-Two plan variances are recorded rather than hidden. The four agent adapter
-modules needed no code changes, because the Darwin HOME and the existing env
-hooks already produced the required per-agent roots, so those tests are guards
-that pin behaviour instead of adding it. Three provenance groups were also
-reclassified during the gates after independent receipts showed they pass on the
-base commit.
+Three plan variances are recorded rather than hidden. First, the per-agent
+env-root hooks needed no code changes, because the Darwin HOME and the existing
+env hooks already produced the required per-agent roots, so those tests are
+guards that pin behaviour instead of adding it; the doctor and diagnostics parts
+of the same modules did change, with the Darwin Keychain branch in
+`lib/agents/agy.sh`, the lsof listener classification in `lib/agents/opencode.sh`
+and the portable login probe in `lib/agents/codex.sh`. Second, `mise.toml`
+gained a `node = "22.23.4"` tool pin instead of the plan's "stays unchanged
+unless a strictly necessary alias is added": the two npm-backed tools had no
+runtime pin and macOS arm64 QA failed on a host without a system node. Third,
+three provenance groups were reclassified during the gates after independent
+receipts showed they pass on the base commit.
