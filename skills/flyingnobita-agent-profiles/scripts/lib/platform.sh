@@ -60,11 +60,13 @@ ap_platform_is_darwin() {
 
 # True when the machine that will actually execute a child process is Darwin.
 #
-# AP_TEST_PLATFORM_OS lets the test suite qualify the Darwin adapter on a Linux
-# host. It must never do the opposite: macOS ships no bubblewrap, no procfs and
-# no user namespaces, so a Linux execution path taken there can only fail. The
-# run adapter and its prerequisites therefore ask about the kernel, not about
-# the platform that was selected for a diagnostic.
+# Two things select the environment-only adapter, and either is enough: a
+# test-selected Darwin platform (AP_TEST_PLATFORM_OS under the Bats runner) or a
+# real Darwin kernel. The selection can therefore only move towards Darwin, and
+# a real Darwin host can never take the Linux path: macOS ships no bubblewrap,
+# no procfs and no user namespaces, so that path could only fail. A Linux
+# selection reaches the Linux path as before; on a real Darwin kernel the uname
+# fallback keeps it out of reach.
 ap_platform_host_is_darwin() {
   if [[ "$(ap_platform_os)" == "Darwin" ]]; then
     return 0
