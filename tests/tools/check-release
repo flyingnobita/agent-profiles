@@ -470,15 +470,84 @@ PY
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
   "$PYTHON" - "$tarball" "$work" <<'PY' || fail "artifact could not be extracted"
+import os
 import sys
 import tarfile
 
 tarball, dest = sys.argv[1], sys.argv[2]
+
+
+def under_destination(relative):
+    resolved = os.path.normpath(os.path.join(dest, relative))
+    return resolved == dest or resolved.startswith(dest + os.sep)
+
+
+# Every member is validated here, before anything is written: the artifact
+# contract must not depend on the interpreter's tarfile extraction filter,
+# which does not exist on 3.9, appears as --data-- from 3.10.12/3.11.4/3.12,
+# and becomes the default in 3.14. A rejected link would otherwise surface as
+# a filter exception raised from inside extractall rather than as the explicit
+# refusal below.
+failures = []
 with tarfile.open(tarball, "r:gz") as archive:
-    try:
-        archive.extractall(dest, filter="data")
-    except TypeError:
-        archive.extractall(dest)
+    members = archive.getmembers()
+    for info in members:
+        name = info.name.rstrip("/")
+        if name.startswith("/") or ".." in name.split("/"):
+            failures.append(
+                "artifact member has an absolute or parent-traversal path: %s" % info.name
+            )
+            continue
+        if info.isdir() or info.isfile():
+            continue
+        if info.issym():
+            if info.linkname.startswith("/"):
+                failures.append(
+                    "artifact symlink target is absolute: %s -> %s" % (name, info.linkname)
+                )
+            elif not under_destination(os.path.join(os.path.dirname(name), info.linkname)):
+                failures.append(
+                    "artifact symlink escapes the artifact: %s -> %s" % (name, info.linkname)
+                )
+            continue
+        failures.append("artifact member is not a file, directory or symlink: %s" % name)
+    if failures:
+        for failure in failures:
+            sys.stderr.write("check-release: FAIL: %s\n" % failure)
+        raise SystemExit(1)
+
+    # Only validated members are written, by this loop: no TarFile.extractall,
+    # no filter argument and no reliance on a version's default filter.
+    for info in members:
+        name = info.name.rstrip("/")
+        target = os.path.join(dest, name)
+        if info.isdir():
+            os.makedirs(target, exist_ok=True)
+        elif info.issym():
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            if os.path.lexists(target):
+                os.remove(target)
+            os.symlink(info.linkname, target)
+        else:
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            handle = archive.extractfile(info)
+            if handle is None:
+                sys.stderr.write(
+                    "check-release: FAIL: artifact member has no content: %s\n" % name
+                )
+                raise SystemExit(1)
+            with open(target, "wb") as out:
+                while True:
+                    chunk = handle.read(65536)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        if not info.issym():
+            os.chmod(target, info.mode & 0o777)
 PY
   for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
     "references/compatibility.md"; do

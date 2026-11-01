@@ -63,11 +63,12 @@ SHIM
   chmod +x "$dir/$name"
 }
 
-# repack_artifact <tarball> <drop|add> <member>: rewrites the tarball as if the
-# build had produced tampered content and refreshes its checksum, so what the
-# contract rejects is the fingerprint rather than the checksum.
+# repack_artifact <tarball> <drop|add|link> <member> [<link-target>]: rewrites
+# the tarball as if the build had produced tampered content and refreshes its
+# checksum, so what the contract rejects is the member itself rather than the
+# checksum. The "link" mode replaces a member with a symlink to <link-target>.
 repack_artifact() {
-  python3 - "$1" "$2" "$3" <<'PY'
+  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
 import gzip
 import hashlib
 import io
@@ -76,6 +77,7 @@ import sys
 import tarfile
 
 tarball, mode, member = sys.argv[1], sys.argv[2], sys.argv[3]
+link_target = sys.argv[4]
 with tarfile.open(tarball, "r:gz") as archive:
     members = []
     for info in archive.getmembers():
@@ -85,7 +87,7 @@ with tarfile.open(tarball, "r:gz") as archive:
 buffer = io.BytesIO()
 with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
     for info, data in members:
-        if mode == "drop" and info.name.rstrip("/") == member.rstrip("/"):
+        if mode in ("drop", "link") and info.name.rstrip("/") == member.rstrip("/"):
             continue
         archive.addfile(info, io.BytesIO(data) if data is not None else None)
     if mode == "add":
@@ -94,6 +96,12 @@ with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as arch
         info.size = len(payload)
         info.mode = 0o644
         archive.addfile(info, io.BytesIO(payload))
+    if mode == "link":
+        info = tarfile.TarInfo(member)
+        info.type = tarfile.SYMTYPE
+        info.linkname = link_target
+        info.mode = 0o777
+        archive.addfile(info)
 
 data = buffer.getvalue()
 with open(tarball, "wb") as raw:
@@ -195,6 +203,82 @@ PY
   assert_success
   assert_output_contains "artifact checksum verifies"
   assert_output_contains "extracted artifact runs --version and doctor --json"
+}
+
+@test "release: check-release validates artifact members before extraction on every python3" {
+  # The interpreter's tarfile extraction filter decides nothing here: 3.9 has no
+  # filter, 3.10.12/3.11.4/3.12 add --data--, and 3.14 makes it the default. A
+  # member that must be refused has to fail with this tool's own message on
+  # every one of them, never as a filter exception from inside extractall.
+  local repo="$TEST_TMPDIR/repo-member-validation"
+  local clean="$TEST_TMPDIR/dist-member-clean"
+  copy_repo "$repo"
+
+  run bash "$RELEASE_TOOL" "$repo" --output-dir "$clean"
+  assert_success
+
+  # A clean artifact extracts and runs.
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$clean"
+  assert_success
+  assert_output_contains "extracted artifact runs --version and doctor --json"
+
+  # Extraction never delegates to TarFile.extractall, so the filter behaviour
+  # cannot change the outcome. A shim that makes extractall raise proves the
+  # validated extraction path above is what actually runs.
+  local guard="$TEST_TMPDIR/no-extractall"
+  mkdir -p "$guard"
+  cat >"$guard/sitecustomize.py" <<'PY'
+import tarfile
+
+
+def _forbidden(*args, **kwargs):
+    raise AssertionError("check-release delegated extraction to tarfile")
+
+
+tarfile.TarFile.extractall = _forbidden
+tarfile.TarFile.extract = _forbidden
+PY
+  run env PYTHONPATH="$guard" bash "$CHECK_RELEASE" "$repo" --artifacts "$clean"
+  assert_success
+  assert_output_contains "extracted artifact runs --version and doctor --json"
+
+  # A shipped absolute symlink: the source and the artifact describe the same
+  # link, so the fingerprint matches and only the member validation can refuse
+  # it. Before the fix this raised AbsoluteLinkError/
+  # LinkOutsideDestinationError from inside extractall and was reported as
+  # "artifact could not be extracted".
+  local shipped="$repo/skills/flyingnobita-agent-profiles/scripts/lib/agents/claude.sh"
+  local member="flyingnobita-agent-profiles/scripts/lib/agents/claude.sh"
+  local outside="$TEST_TMPDIR/dist-member-outside"
+  rm -f "$shipped"
+  ln -s /tmp/questions.md "$shipped"
+  mkdir -p "$outside"
+  cp -p "$clean/$TARBALL_NAME" "$outside/$TARBALL_NAME"
+  cp -p "$clean/$TARBALL_NAME.sha256" "$outside/$TARBALL_NAME.sha256"
+  cp -p "$clean/RELEASE_NOTES.md" "$outside/RELEASE_NOTES.md"
+  repack_artifact "$outside/$TARBALL_NAME" link "$member" /tmp/questions.md
+
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$outside"
+  assert_failure
+  assert_output_contains "artifact fingerprint matches every shipped source file"
+  assert_output_contains "artifact symlink target is absolute: $member -> /tmp/questions.md"
+  assert_output_not_contains "Traceback"
+
+  # A relative link that still leaves the destination is refused the same way.
+  local escape="$TEST_TMPDIR/dist-member-escape"
+  rm -f "$shipped"
+  ln -s ../../../../../outside.md "$shipped"
+  mkdir -p "$escape"
+  cp -p "$clean/$TARBALL_NAME" "$escape/$TARBALL_NAME"
+  cp -p "$clean/$TARBALL_NAME.sha256" "$escape/$TARBALL_NAME.sha256"
+  cp -p "$clean/RELEASE_NOTES.md" "$escape/RELEASE_NOTES.md"
+  repack_artifact "$escape/$TARBALL_NAME" link "$member" ../../../../../outside.md
+
+  run bash "$CHECK_RELEASE" "$repo" --artifacts "$escape"
+  assert_failure
+  assert_output_contains "artifact fingerprint matches every shipped source file"
+  assert_output_contains "artifact symlink escapes the artifact: $member -> ../../../../../outside.md"
+  assert_output_not_contains "Traceback"
 }
 
 @test "release: artifact fingerprint matches every shipped source file and rejects stale content" {
