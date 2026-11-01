@@ -452,3 +452,43 @@ assert agent["version"] is None, agent
   assert_equal "$(readlink "$repo_mismatch/.agent-sandbox/link.txt")" "home/legacy.txt"
   assert_file_exists "$repo_mismatch/.agent-sandbox/home/legacy.txt"
 }
+
+@test "portability: the BSD shim delegates to the command the host resolves" {
+  # A host may keep a tool somewhere other than /usr/bin: macOS ships cp in
+  # /bin, so a shim that execs /usr/bin/cp fails with "No such file or
+  # directory" instead of copying. The shim must delegate to whatever the
+  # caller's PATH resolves before the shim is prepended. A wrapper around cp
+  # stands in for a host whose cp lives outside /usr/bin.
+  local real_cp
+  real_cp=$(command -v cp)
+  local hostbin="$TEST_TMPDIR/host-bin"
+  local delegated="$TEST_TMPDIR/host-cp-calls"
+  mkdir -p "$hostbin"
+  cat >"$hostbin/cp" <<CP
+#!/usr/bin/env bash
+printf 'host cp\n' >>"$delegated"
+exec "$real_cp" "\$@"
+CP
+  chmod +x "$hostbin/cp"
+  export PATH="$hostbin:$AP_HOST_PATH"
+
+  local shim="$TEST_TMPDIR/bsd-bin"
+  reject_gnu_long_option "$shim" cp --no-dereference
+  export PATH="$shim:$PATH"
+
+  local source="$TEST_TMPDIR/source.txt" target="$TEST_TMPDIR/target.txt"
+  printf 'shim\n' >"$source"
+
+  # The BSD rejection still wins, and nothing is delegated for it.
+  run "$shim/cp" --no-dereference "$source" "$target"
+  assert_failure
+  assert_output_contains "illegal option"
+  [[ ! -e "$target" ]]
+  [[ ! -e "$delegated" ]]
+
+  # A portable invocation runs the host's own cp, wherever it lives.
+  run "$shim/cp" "$source" "$target"
+  assert_success
+  assert_file_exists "$target"
+  [[ -s "$delegated" ]]
+}
