@@ -23,7 +23,7 @@ ap_check_live_profile_context() {
 
   # Darwin has no mount namespace to inspect, so nesting is decided by the
   # profile identity a live run exported rather than by /proc/self/mountinfo.
-  if ap_platform_is_darwin; then
+  if ap_platform_host_is_darwin; then
     ap_check_session_profile_context "$repo_root" "$profile"
     return 0
   fi
@@ -516,7 +516,7 @@ ap_prepare_profile_env() {
   # .agents) then lands in profile storage without a mount table. The existing
   # home/ directory stays the initialization marker and is not HOME. Linux
   # keeps the host HOME and binds the agent directories over it instead.
-  if ap_platform_is_darwin; then
+  if ap_platform_host_is_darwin; then
     export HOME="$prof_dir"
   fi
 
@@ -573,9 +573,11 @@ ap_check_bwrap_readiness() {
 
 # Selects the prerequisites for exactly one execution adapter. Linux needs
 # bubblewrap readiness; Darwin executes the child directly with profile
-# environment redirection and must never require or probe bubblewrap.
+# environment redirection and must never require or probe bubblewrap. The
+# machine that executes decides: a platform selected for a diagnostic cannot
+# hand a Darwin host a Linux-only prerequisite it can never satisfy.
 ap_check_run_readiness() {
-  if ap_platform_is_darwin; then
+  if ap_platform_host_is_darwin; then
     return 0
   fi
   ap_check_bwrap_readiness

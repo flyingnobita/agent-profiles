@@ -98,8 +98,10 @@ ap_cmd_run() {
   ap_prepare_profile_env "$repo_root" "$profile"
 
   # Exactly one execution adapter. Darwin redirects by environment only: no
-  # bubblewrap, no mount table and never a host mountpoint creation.
-  if ap_platform_is_darwin; then
+  # bubblewrap, no mount table and never a host mountpoint creation. The
+  # machine that executes selects it, so a Darwin host can never be sent down
+  # the Linux path by a platform selected for a diagnostic.
+  if ap_platform_host_is_darwin; then
     ap_agent_command "$@"
     exec ${AP_COMMAND[@]+"${AP_COMMAND[@]}"}
   fi
