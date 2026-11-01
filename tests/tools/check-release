@@ -288,6 +288,16 @@ for class in "Profile mechanics" "Configuration redirection" "Diagnostics" \
   "Credentialed model runs" "Filesystem enforcement"; do
   require_term "$EVIDENCE_DARWIN" "$class" "the separate Darwin $class evidence class"
 done
+# The real CLI classes are not inferred from Linux: the summary says so as the
+# class result and again with the reason, so both are required. The reason is
+# checked before the individual class names because the row that names the four
+# classes is also the row that carries the reason; a summary that drops it fails
+# here rather than with a misleading "missing class" message.
+require_term "$EVIDENCE_DARWIN" "not observed" \
+  "that some Darwin evidence classes were not observed"
+if ! grep -qiF -- "no agent CLI was installed" "$EVIDENCE_DARWIN"; then
+  fail "docs/evidence/macos-2026-10-31.md does not state that the real agent CLI classes were not observed on that host (expected text: no agent CLI was installed)"
+fi
 # The plan names the four real-CLI classes explicitly, and requires the network
 # limit to be recorded rather than left to "not observed": an env-only Darwin
 # run shares the host network, so a summary that never mentions the network
@@ -297,13 +307,6 @@ for class in "Version" "Startup" "Discovery" "Authentication"; do
 done
 require_term "$EVIDENCE_DARWIN" "network not blocked" \
   "that the Darwin run records the network as not blocked"
-# The real CLI classes are not inferred from Linux: the summary says so as the
-# class result and again with the reason, so both are required.
-require_term "$EVIDENCE_DARWIN" "not observed" \
-  "that some Darwin evidence classes were not observed"
-if ! grep -qiF -- "no agent CLI was installed" "$EVIDENCE_DARWIN"; then
-  fail "docs/evidence/macos-2026-10-31.md does not state that the real agent CLI classes were not observed on that host (expected text: no agent CLI was installed)"
-fi
 require_term "$EVIDENCE_DARWIN" "credential-dependent gap" \
   "that credentialed model runs are a credential-dependent gap"
 require_term "$EVIDENCE_DARWIN" "not observed on any platform" \
