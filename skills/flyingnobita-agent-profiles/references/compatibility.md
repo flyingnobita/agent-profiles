@@ -24,8 +24,11 @@ neither is a security boundary, and the macOS layer is the weaker of the two
 because a process that ignores those variables still sees host paths. Linux
 results are not evidence for macOS behavior and the reverse also holds.
 
-Unsupported operating systems, and Darwin builds on any other architecture,
-report the platform as unqualified (exit 69) instead of attempting a fallback.
+Unsupported operating systems report the platform as not qualified instead of
+attempting a fallback. Darwin is decided per architecture by `doctor` only: a
+Darwin build that is not arm64 is reported there as unqualified (a warning, not
+a refusal), and profile execution on such a build is unvalidated because only
+macOS arm64 was tested. `run` and `setup` do not refuse a non-arm64 Darwin host.
 
 Default Docker containers usually restrict unprivileged user namespaces. There,
 prerequisite installation, versioned deployment, the task shims, profile
