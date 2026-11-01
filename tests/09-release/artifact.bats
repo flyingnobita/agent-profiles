@@ -143,10 +143,15 @@ PY
   [[ -n "$scope" ]]
 
   for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
-    "no bubblewrap prerequisite" "neither platform is a security sandbox" \
-    "credential-dependent" "not published"; do
+    "no bubblewrap prerequisite" "credential-dependent" "not published"; do
     printf '%s\n' "$scope" | grep -qiF -- "$term"
   done
+
+  # The notes word the boundary as "neither platform is a security sandbox"; the
+  # README wording is accepted too, so either way the scope must deny that a
+  # profile is a security sandbox.
+  printf '%s\n' "$scope" | grep -qiF -- "not a security sandbox" \
+    || printf '%s\n' "$scope" | grep -qiF -- "neither platform is a security sandbox"
 
   # A reversion to the deferred-platform claim in the current scope is refused.
   run grep -Fi -- "macOS is not qualified" <<<"$scope"

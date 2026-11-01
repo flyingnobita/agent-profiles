@@ -9,6 +9,15 @@ setup() {
   README="$AP_SUBJECT/README.md"
   COMPAT="$AP_SKILL_DIR/references/compatibility.md"
   EVIDENCE="$AP_SUBJECT/docs/evidence/linux-2026-10-28.md"
+  DARWIN_EVIDENCE="$AP_SUBJECT/docs/evidence/macos-2026-10-31.md"
+}
+
+# drop_lines <source> <dest> <fixed-string>: writes the source without the lines
+# containing the fixed string. awk keeps the mutation portable; GNU sed -i does
+# not exist on stock macOS.
+drop_lines() {
+  local source="$1" dest="$2" term="$3"
+  awk -v term="$term" 'index($0, term) == 0' "$source" >"$dest"
 }
 
 teardown() {
@@ -126,6 +135,39 @@ teardown() {
   assert_success
 }
 
+@test "release: Darwin evidence records four agents and credentialed model runs as unverified" {
+  assert_file_exists "$DARWIN_EVIDENCE"
+
+  for agent in "Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode"; do
+    run grep -F -- "$agent" "$DARWIN_EVIDENCE"
+    assert_success
+  done
+
+  # The real agent CLIs were never exercised on the qualification host, so their
+  # version, startup, discovery and authentication classes are recorded as not
+  # observed instead of being inferred from the Linux run.
+  run grep -F -- "not observed" "$DARWIN_EVIDENCE"
+  assert_success
+  run grep -F -- "no agent CLI was installed" "$DARWIN_EVIDENCE"
+  assert_success
+
+  # Credentialed model runs are a gap on every platform, not only on Darwin.
+  run grep -F -- "credential-dependent gap" "$DARWIN_EVIDENCE"
+  assert_success
+  run grep -F -- "not observed on any platform" "$DARWIN_EVIDENCE"
+  assert_success
+
+  # Only a sanitized summary is published: no account names, no private host
+  # paths and no raw log content.
+  run grep -Fi -- "sanitized" "$DARWIN_EVIDENCE"
+  assert_success
+  run grep -Fi -- "raw logs" "$DARWIN_EVIDENCE"
+  assert_success
+  run grep -Eq -- "@[a-z0-9.-]+\.[a-z]{2,}|/Users/|/home/|BEGIN [A-Z ]*PRIVATE KEY|Bearer [A-Za-z0-9]" \
+    "$DARWIN_EVIDENCE"
+  assert_failure 1
+}
+
 @test "release: check-release verifies the release surface has no author paths" {
   assert_file_exists "$CHECK_RELEASE"
   run bash "$CHECK_RELEASE" "$AP_SUBJECT"
@@ -214,6 +256,126 @@ PY
   assert_output_contains "still claims macOS is not qualified"
   cp -p "$notes" "$repo/RELEASE_NOTES.md"
 
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_success
+}
+
+@test "release: check-release refuses a blanket macOS qualification without its limits" {
+  assert_file_exists "$CHECK_RELEASE"
+
+  local repo="$TEST_TMPDIR/repo-blanket-macos"
+  local readme="$TEST_TMPDIR/README-blanket.md"
+  local compat="$TEST_TMPDIR/compatibility-blanket.md"
+  mkdir -p "$repo"
+  cp -a "$AP_SUBJECT/." "$repo/"
+  rm -rf "$repo/.git" "$repo/dist"
+  local compat_path="$repo/skills/flyingnobita-agent-profiles/references/compatibility.md"
+
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_success
+
+  # The documented cells scope macOS to profile mechanics and diagnostics and
+  # name what was not observed. A row that claims the same coverage as Linux is
+  # refused: the platform status, not just the word Qualified, is the contract.
+  cp -p "$repo/README.md" "$readme"
+  python3 - "$repo/README.md" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+with open(path) as handle:
+    text = handle.read()
+text = re.sub(
+    r"(?m)^\| macOS arm64 \|.*$",
+    "| macOS arm64 | Qualified | Same as Linux, all four agent CLIs verified |",
+    text,
+)
+with open(path, "w") as handle:
+    handle.write(text)
+PY
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "profile mechanics"
+  cp -p "$readme" "$repo/README.md"
+
+  cp -p "$compat_path" "$compat"
+  python3 - "$compat_path" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+with open(path) as handle:
+    text = handle.read()
+text = re.sub(
+    r"(?m)^\| macOS \(arm64\) \|.*$",
+    "| macOS (arm64) | Qualified | Same as Linux, all four agent CLIs verified |",
+    text,
+)
+with open(path, "w") as handle:
+    handle.write(text)
+PY
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "profile mechanics"
+  cp -p "$compat" "$compat_path"
+
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_success
+}
+
+@test "release: check-release refuses a Darwin evidence summary that drops a gap" {
+  assert_file_exists "$CHECK_RELEASE"
+
+  local repo="$TEST_TMPDIR/repo-darwin-evidence"
+  local original="$TEST_TMPDIR/macos-2026-10-31.md"
+  local mutated="$TEST_TMPDIR/mutated-macos-2026-10-31.md"
+  mkdir -p "$repo"
+  cp -a "$AP_SUBJECT/." "$repo/"
+  rm -rf "$repo/.git" "$repo/dist"
+  local darwin="$repo/docs/evidence/macos-2026-10-31.md"
+  cp -p "$darwin" "$original"
+
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_success
+
+  # The host had no agent CLI, and the summary has to keep saying so rather than
+  # borrow the Linux observations for Darwin.
+  drop_lines "$original" "$mutated" "no agent CLI was installed"
+  cp -p "$mutated" "$darwin"
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "real agent CLI classes were not observed"
+
+  # Credentialed model runs stay recorded as a gap on every platform. Only the
+  # phrase is rewritten, so the class row itself still matches.
+  awk '{ gsub(/credential-dependent gap/, "gap that depends on credentials"); print }' \
+    "$original" >"$mutated"
+  cp -p "$mutated" "$darwin"
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "credential-dependent gap"
+
+  # Every integration the release claims to support is named by the evidence.
+  awk '{ gsub(/Antigravity CLI/, "Antigravity"); print }' "$original" >"$mutated"
+  cp -p "$mutated" "$darwin"
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "Antigravity CLI"
+
+  # Only a sanitized summary is published.
+  drop_lines "$original" "$mutated" "Sanitized summary"
+  cp -p "$mutated" "$darwin"
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "sanitized"
+
+  # The summary itself is a required release file.
+  rm -f "$darwin"
+  run bash "$CHECK_RELEASE" "$repo"
+  assert_failure
+  assert_output_contains "docs/evidence/macos-2026-10-31.md"
+
+  cp -p "$original" "$darwin"
   run bash "$CHECK_RELEASE" "$repo"
   assert_success
 }
