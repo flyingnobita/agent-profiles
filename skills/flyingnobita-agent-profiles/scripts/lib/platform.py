@@ -145,8 +145,15 @@ def cmd_manifest(args):
     skill_dir = args[0]
     scripts = os.path.join(skill_dir, "scripts")
     files = []
-    for current, _dirs, names in os.walk(scripts):
+    for current, dirs, names in os.walk(scripts):
+        # Bytecode is local build state, not shipped source. The release tar
+        # builder and the artifact fingerprint already exclude it, so the
+        # setup manifest uses the same file set: a stray .pyc must not change
+        # the deployed release digest.
+        dirs[:] = [name for name in dirs if name != "__pycache__"]
         for name in names:
+            if name.endswith(".pyc"):
+                continue
             path = os.path.join(current, name)
             if os.path.islink(path) or not os.path.isfile(path):
                 continue
