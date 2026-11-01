@@ -323,7 +323,7 @@ verification. Sanitized results are in the
 | Platform | Status | Notes |
 | --- | --- | --- |
 | Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces |
-| macOS arm64 | Qualified | Requires mise, git and python3 plus the stock `/bin/bash` 3.2; configuration redirection only |
+| macOS arm64 | Qualified for profile mechanics and diagnostics | Requires mise, git and python3 plus the stock `/bin/bash` 3.2; configuration redirection only; real agent CLI startup and discovery unverified there |
 
 On macOS a profile is redirected through each agent's own configuration
 variables plus a profile `HOME`: nothing is mounted, and host files a CLI reads

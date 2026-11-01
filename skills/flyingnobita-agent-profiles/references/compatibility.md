@@ -14,7 +14,7 @@ services remain.
 | Operating System | Status | Verification Notes |
 | --- | --- | --- |
 | Linux (x86_64) | Qualified | bubblewrap and unprivileged user namespaces required; host final QA 2026-10-29 |
-| macOS (arm64) | Qualified | configuration redirection only (no mounts); stock `/bin/bash` 3.2, mise, git and python3; macOS 27.2 arm64 qualification recorded in `docs/evidence/macos-2026-10-31.md` |
+| macOS (arm64) | Qualified for profile mechanics, redirection and diagnostics | configuration redirection only (no mounts); stock `/bin/bash` 3.2, mise, git and python3; macOS 27.2 arm64 run in `docs/evidence/macos-2026-10-31.md`. Real agent CLI startup, discovery and authentication on Darwin are unverified there because no agent CLI was installed |
 
 Linux redirects with a bubblewrap mount layer. On macOS there is no namespace
 to mount into, so a profile is redirected by pointing the agent CLIs and
