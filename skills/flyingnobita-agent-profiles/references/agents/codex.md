@@ -4,12 +4,45 @@ Guidance for using OpenAI Codex CLI (`codex`) inside an Agent profile.
 
 ## Directory Redirection
 
-When launched via `agent-profiles run`, the Agent integration configures dedicated profile storage:
+When launched via `agent-profiles run` on Linux, the Agent integration configures dedicated profile storage with bubblewrap bind mounts; the macOS arm64 section below describes the environment-only equivalent:
 
 - Configuration: Redirected to `<repo>/.agent-profiles/<profile>/.codex` through the exported `CODEX_HOME` environment variable and an underlying bubblewrap bind mount over `$HOME/.codex`.
 - Shared skills: Mounted from `<repo>/.agent-profiles/<profile>/.agents` over `$HOME/.agents`.
 - Profile bins: Profile binaries (`npm-global/bin`, `bin`, `cargo-global/bin`, `python-user/bin`) take precedence in `PATH`.
 - Host environment: Project repository files, inherited environment credentials, and mise tool paths are preserved. If no profile is named, the Default profile is used.
+
+## macOS arm64 (Darwin)
+
+macOS arm64 is qualified for profile mechanics, configuration redirection and
+diagnostics only. Darwin has no mount namespace, so nothing is bind-mounted over
+`~/.codex` or `~/.agents`: the profile environment is exported and the child runs
+directly with the profile `HOME` set to `<profile>`.
+
+Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
+tools. The real Codex CLI was **not installed** on the qualification host, so its
+version, startup, discovery and authentication classes are **not observed** on
+Darwin and stay Linux evidence only
+(`docs/evidence/macos-2026-10-31.md`).
+
+What is verified on Darwin (`tests/05-codex/darwin-env.bats`, synthetic `codex`
+executable plus byte-identical host canaries):
+
+- `CODEX_HOME` points at `<profile>/.codex`, and the profile `HOME` makes
+  `$HOME/.codex` and `$HOME/.agents` profile-local;
+- A/B discovery markers under `.codex` and `.agents` cannot cross profiles;
+- the doctor login probe runs in a disposable snapshot with the portable
+  timeout and keeps `login_reported`, logged-out and `unverified` separate.
+
+Observed limits on Darwin:
+
+- `~/.codex` and `~/.agents` are profile-local only because `CODEX_HOME` and
+  `HOME` are honoured. A build that resolves the account home another way reads
+  the host directories.
+- A login status report is a report, not authentication, and an auth file's
+  presence is never treated as one.
+- Codex's own sandbox (`codex sandbox`) and any app-server daemon under
+  `$CODEX_HOME` are separate mechanisms; no Darwin enforcement is claimed.
+- Network access is not blocked on Darwin.
 
 ## Skill Discovery
 

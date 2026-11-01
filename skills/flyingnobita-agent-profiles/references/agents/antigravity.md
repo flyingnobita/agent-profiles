@@ -11,8 +11,10 @@ environment credentials and OS services.
 
 ## Directory Redirection
 
-`agent-profiles run` starts `agy` with the normal profile environment and
-bubblewrap bind mounts:
+`agent-profiles run` starts `agy` with the normal profile environment. Linux
+additionally applies bubblewrap bind mounts; macOS arm64 has no mount namespace
+and redirects by environment alone (see the Darwin section below). The Linux
+mechanism is:
 
 - Configuration and state: `$HOME/.gemini` is bound to
   `<repo>/.agent-profiles/<profile>/.gemini`, which holds both the global
@@ -29,8 +31,51 @@ bubblewrap bind mounts:
   configuration, data, state and cache directories are preserved.
 - No configuration-directory environment variable is required or set: in the
   tested version the CLI resolves everything from `HOME` plus the XDG roots.
-  Redirection therefore comes from the mount and the XDG variables, and setting
-  an environment variable alone would not isolate anything.
+  On Linux, redirection therefore comes from the mount and the XDG variables,
+  and setting an environment variable alone would not isolate anything.
+
+## macOS arm64 (Darwin)
+
+macOS arm64 is qualified for profile mechanics, configuration redirection and
+diagnostics only. There is no mount namespace, so nothing is bound and the
+whole redirection is environmental.
+
+On Darwin HOME redirection is the only `.gemini` mechanism, because the tested
+version has no configuration-directory variable. The profile `HOME` is
+`<profile>` (not `<profile>/home`), so `$HOME/.gemini` resolves to
+`<repo>/.agent-profiles/<profile>/.gemini` with `config/` and
+`antigravity-cli/` inside it. `$HOME/.agents` is likewise profile-local, and the
+XDG roots still point into the profile.
+
+The macOS Keychain and native services stay shared with the host: the Keychain
+is one per user session, so a profile is not a separate account and no Keychain
+isolation is claimed.
+
+Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
+tools. The real `agy` CLI was **not installed** on the qualification host, so its
+version, startup, discovery and authentication classes are **not observed** on
+Darwin and stay Linux evidence only
+(`docs/evidence/macos-2026-10-31.md`).
+
+What is verified on Darwin (`tests/06-agy/darwin-env.bats`, synthetic `agy`
+executable plus byte-identical host canaries):
+
+- `HOME` resolves `.gemini`, the XDG plugin-secret root and `.agents` inside the
+  selected profile;
+- A/B profiles cannot see each other's `.gemini` state;
+- `doctor` reports the shared macOS OS credential service as `present` without
+  touching D-Bus, reporting `authenticated: null`, or printing a value.
+
+Observed limits on Darwin:
+
+- `.gemini` depends entirely on `HOME`. A build that resolves the account home
+  through `NSHomeDirectory`, the password database or a hard-coded path bypasses
+  the profile and reads the host `.gemini`.
+- Antigravity's OS credential storage is the shared Keychain, so a credential
+  stored outside the profile can authenticate a process running inside one.
+- Native services stay shared: FSEvents/Spotlight metadata, the Keychain, and
+  any Antigravity daemon outside the profile.
+- Network access is not blocked on Darwin.
 
 ## Skill and Customization Discovery
 
@@ -82,13 +127,16 @@ be reported separately, and presence in any of them is not proof of account sepa
    `GOOGLE_APPLICATION_CREDENTIALS` and `GOOGLE_CLOUD_PROJECT` are inherited by
    the running shell. Each environment variable name is reported as set or
    unset; a value is never printed or copied.
-3. **OS credential service.** The tested version authenticates through the
-   host session D-Bus and its secret service
-   (`org.freedesktop.secrets`). That service is outside profile storage, so a
+3. **OS credential service.** On Linux the tested version authenticates through
+   the host session D-Bus and its secret service
+   (`org.freedesktop.secrets`); on macOS arm64 the same role is played by the
+   shared macOS Keychain. Either service is outside profile storage, so a
    profile is not a separate account and a hosted token can authenticate an
-   `agy` process that runs inside a profile. Offline QA hides the session bus
-   so no host credential can be used; a session-bus-masked run reaches the
-   sign-in screen instead of the composer.
+   `agy` process that runs inside a profile. Offline Linux QA hides the session
+   bus so no host credential can be used; a session-bus-masked run reaches the
+   sign-in screen instead of the composer. Darwin QA relies on the Keychain
+   being shared, so it records the service as present rather than trying to
+   hide it.
 
 `agent-profiles doctor --json --agent agy --profile NAME` reports the profile
 directory, artifact presence, candidate credential files, environment variable
@@ -101,7 +149,9 @@ response would not be proof of account separation either.
 
 These remain shared and must be reported, not hidden:
 
-- Session D-Bus and its secret service, described above.
+- Session D-Bus and its secret service on Linux; the macOS Keychain on Darwin.
+  Native services the CLI reaches directly (Keychain, launch services,
+  FSEvents metadata) stay shared on macOS arm64.
 - The remote-control daemon: `agy remote-control` manages a user-scope
   background service (`antigravity-cli-daemon.service` when installed) that
   lives outside any profile. QA only queries its status from inside the profile
