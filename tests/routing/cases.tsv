@@ -35,5 +35,5 @@ proc_refusal	What should I do when a lifecycle operation is refused due to activ
 bwrap_fix	How do I resolve missing bubblewrap or disabled user namespaces?	references/troubleshooting.md	## Missing Bubblewrap or User Namespaces	sysctl
 darwin_platform	Is macOS on Apple Silicon qualified?	references/compatibility.md	## Platform Support	Darwin
 darwin_redirection	How does profile redirection work on Darwin without bubblewrap?	references/questions.md	### How does profile separation work?	XDG
-darwin_agy_home	How does Antigravity CLI locate .gemini on Darwin without a config variable?	references/agents/antigravity.md	## Directory Redirection	.gemini
-darwin_keychain	Is the macOS Keychain shared with the host inside a profile?	references/agents/antigravity.md	## Shared Host Resources	shared
+darwin_agy_home	How does Antigravity CLI locate .gemini on Darwin without a config variable?	references/agents/antigravity.md	## macOS arm64 (Darwin)	HOME redirection is the only
+darwin_keychain	Is the macOS Keychain shared with the host inside a profile?	references/agents/antigravity.md	## macOS arm64 (Darwin)	macOS Keychain and native services stay shared

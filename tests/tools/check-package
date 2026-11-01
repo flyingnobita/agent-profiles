@@ -44,6 +44,15 @@ if grep -q "^compatibility: .*macOS not qualified" "$SKILL_MD"; then
 fi
 grep -q "version: $VERSION" "$SKILL_MD" || fail "SKILL.md version does not match VERSION file ($VERSION)"
 
+# The description is the skill's routing metadata, so it names both qualified
+# platforms. The Linux-only wording it shipped with before macOS arm64 was
+# qualified must not come back.
+grep -q "^description: .*Linux and macOS arm64" "$SKILL_MD" \
+  || fail "SKILL.md description does not name Linux and macOS arm64"
+if grep -q "^description: .*Named Linux" "$SKILL_MD"; then
+  fail "SKILL.md description still claims Linux-only profiles"
+fi
+
 # Description length
 DESC_LEN=$(python3 -c '
 import sys, re

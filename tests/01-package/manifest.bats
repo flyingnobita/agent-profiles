@@ -57,6 +57,14 @@ teardown() {
 
   run grep "version: $ver" "$AP_SKILL_DIR/SKILL.md"
   assert_success
+
+  # The description is routing metadata, so it names both qualified platforms
+  # rather than the Linux-only wording that shipped before macOS arm64 was
+  # qualified.
+  run grep -E "^description: .*Linux and macOS arm64" "$AP_SKILL_DIR/SKILL.md"
+  assert_success
+  run grep -E "^description: .*Named Linux" "$AP_SKILL_DIR/SKILL.md"
+  assert_failure 1
 }
 
 @test "manifest: check-package refuses the retired macOS not-qualified frontmatter" {

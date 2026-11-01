@@ -288,6 +288,15 @@ for class in "Profile mechanics" "Configuration redirection" "Diagnostics" \
   "Credentialed model runs" "Filesystem enforcement"; do
   require_term "$EVIDENCE_DARWIN" "$class" "the separate Darwin $class evidence class"
 done
+# The plan names the four real-CLI classes explicitly, and requires the network
+# limit to be recorded rather than left to "not observed": an env-only Darwin
+# run shares the host network, so a summary that never mentions the network
+# would understate what was not enforced.
+for class in "Version" "Startup" "Discovery" "Authentication"; do
+  require_term "$EVIDENCE_DARWIN" "$class" "the Darwin real-CLI $class evidence class"
+done
+require_term "$EVIDENCE_DARWIN" "network not blocked" \
+  "that the Darwin run records the network as not blocked"
 # The real CLI classes are not inferred from Linux: the summary says so as the
 # class result and again with the reason, so both are required.
 require_term "$EVIDENCE_DARWIN" "not observed" \

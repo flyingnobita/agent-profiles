@@ -145,10 +145,20 @@ teardown() {
 
   # The real agent CLIs were never exercised on the qualification host, so their
   # version, startup, discovery and authentication classes are recorded as not
-  # observed instead of being inferred from the Linux run.
+  # observed instead of being inferred from the Linux run. Each class is named
+  # on its own, so a summary that drops one is refused.
+  for class in Version Startup Discovery Authentication; do
+    run grep -Fi -- "$class" "$DARWIN_EVIDENCE"
+    assert_success
+  done
   run grep -F -- "not observed" "$DARWIN_EVIDENCE"
   assert_success
   run grep -F -- "no agent CLI was installed" "$DARWIN_EVIDENCE"
+  assert_success
+
+  # The plan requires the network limit recorded explicitly (network not
+  # blocked, shared with the host), not implied by the missing namespace.
+  run grep -Fi -- "network not blocked" "$DARWIN_EVIDENCE"
   assert_success
 
   # Credentialed model runs are a gap on every platform, not only on Darwin.
