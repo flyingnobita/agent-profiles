@@ -62,6 +62,72 @@ teardown() {
   ap_test_manifest_verify "$release" "$release/manifest.sha256"
 }
 
+@test "setup apply: a stray __pycache__ does not change the release manifest" {
+  # The release tar builder and the artifact fingerprint both exclude local
+  # bytecode, so the setup manifest must use the same file set. Otherwise a
+  # stray .pyc silently changes the deployed release digest and the two gates
+  # disagree about what the shipped source is.
+  local skill_copy="$TEST_TMPDIR/skill-bytecode"
+  cp -a "$AP_SKILL_DIR" "$skill_copy"
+  local helper="$skill_copy/scripts/agent-profiles"
+
+  run bash "$helper" setup --apply
+  assert_success
+  local release_before
+  release_before=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
+  assert_file_exists "$release_before/manifest.sha256"
+
+  mkdir -p "$skill_copy/scripts/__pycache__" "$skill_copy/scripts/lib/__pycache__"
+  printf 'stray bytecode\n' >"$skill_copy/scripts/__pycache__/agent-profiles.cpython-312.pyc"
+  printf 'stray bytecode\n' >"$skill_copy/scripts/lib/common.cpython-312.pyc"
+
+  run bash "$helper" setup --apply
+  assert_success
+  local release_after
+  release_after=$(sed -n 's/^# release: //p' "$MISE_CONFIG_DIR/tasks/agent-profiles")
+  assert_equal "$release_after" "$release_before"
+
+  # The manifest byte-equals the shipped file set: every regular script in
+  # sorted byte order, then VERSION, and no bytecode entry at all.
+  local expected="$TEST_TMPDIR/expected-bytecode.sha256"
+  python3 - "$skill_copy" "$expected" <<'PY'
+import hashlib
+import os
+import sys
+
+skill, destination = sys.argv[1], sys.argv[2]
+files = []
+for current, dirs, names in os.walk(os.path.join(skill, "scripts")):
+    dirs[:] = [name for name in dirs if name != "__pycache__"]
+    for name in names:
+        if name.endswith(".pyc"):
+            continue
+        path = os.path.join(current, name)
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        files.append(os.path.relpath(path, skill))
+files.sort(key=lambda value: value.encode())
+
+
+def digest(path):
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+lines = ["%s  %s" % (digest(os.path.join(skill, rel)), rel) for rel in files]
+lines.append("%s  VERSION" % digest(os.path.join(skill, "VERSION")))
+with open(destination, "w") as handle:
+    handle.write("\n".join(lines) + "\n")
+PY
+
+  run cmp "$expected" "$release_before/manifest.sha256"
+  assert_success
+  run grep -E '(\.pyc|__pycache__)' "$release_before/manifest.sha256"
+  assert_failure 1
+}
+
 @test "setup apply: installs exactly one executable global file task using the released helper" {
   run bash "$AP_HELPER" setup --apply
   assert_success

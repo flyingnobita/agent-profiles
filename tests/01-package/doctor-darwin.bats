@@ -373,6 +373,82 @@ PY
   wait "$listener_pid" 2>/dev/null || true
 }
 
+@test "doctor darwin: opencode separates a real no-listener result from an incomplete lsof" {
+  local repo="$TEST_TMPDIR/repo-doctor-darwin-port-complete"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile port-complete
+  assert_success
+
+  # lsof exits 1 both when no socket matched and when it could not list at all,
+  # so the classification needs a completeness probe: lsof must be able to
+  # describe this inspector's own process before an empty result is trusted.
+  # LSOF_STUB_MODE selects which of the two exit-1 meanings the stub reports.
+  cat >"$STUB_BIN/lsof" <<'STUB'
+#!/usr/bin/env bash
+mode="${LSOF_STUB_MODE:-complete}"
+wants_pid=0
+for arg in "$@"; do
+  if [[ "$wants_pid" -eq 1 ]]; then
+    pid="$arg"
+    wants_pid=0
+    continue
+  fi
+  case "$arg" in
+    -p) wants_pid=1 ;;
+    -iTCP:*) want_port="${arg#-iTCP:}" ;;
+  esac
+done
+if [[ -n "${pid:-}" ]]; then
+  if [[ "$mode" == "incomplete" ]]; then
+    printf 'lsof: WARNING: can not access file system\n' >&2
+    exit 1
+  fi
+  printf 'p%s\n' "$pid"
+  exit 0
+fi
+# No listening socket on the requested port.
+[[ -n "${want_port:-}" ]]
+exit 1
+STUB
+  chmod +x "$STUB_BIN/lsof"
+
+  # A complete lsof that matched no socket is a real "no listener".
+  run env PATH="$STUB_BIN:$PATH" AP_TEST_PLATFORM_OS=Darwin LSOF_STUB_MODE=complete \
+    AP_OPENCODE_SERVICE_PORT=49374 bash "$AP_HELPER" doctor --json --agent opencode --profile port-complete
+  local complete_output="$output"
+  assert_success
+  python3 - "$complete_output" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+service = data["agents"]["opencode"]["profile"]["shared"]["background_service_port"]
+assert service["port"] == 49374, service
+assert service["status"] == "not_listening", service
+assert service["detail"], service
+PY
+
+  # The same exit status from an lsof that cannot list its own process is an
+  # unverified probe, never "no shared service".
+  run env PATH="$STUB_BIN:$PATH" AP_TEST_PLATFORM_OS=Darwin LSOF_STUB_MODE=incomplete \
+    AP_OPENCODE_SERVICE_PORT=49374 bash "$AP_HELPER" doctor --json --agent opencode --profile port-complete
+  local incomplete_output="$output"
+  assert_success
+  python3 - "$incomplete_output" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+service = data["agents"]["opencode"]["profile"]["shared"]["background_service_port"]
+assert service["port"] == 49374, service
+assert service["status"] == "unverified", service
+assert service["status"] != "not_listening", service
+assert service["detail"], service
+PY
+}
+
 @test "doctor darwin: codex login probe uses portable timeout and disposable snapshot" {
   local repo="$TEST_TMPDIR/repo-doctor-darwin-codex"
   create_fixture_repo "$repo"
