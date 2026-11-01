@@ -36,7 +36,8 @@ ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
 README="$ROOT_DIR/README.md"
 COMPAT="$SKILL_DIR/references/compatibility.md"
-EVIDENCE="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+EVIDENCE_LINUX="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+EVIDENCE_DARWIN="$ROOT_DIR/docs/evidence/macos-2026-10-31.md"
 RELEASE_NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
 AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
@@ -102,12 +103,22 @@ check_matrix() {
   done
 }
 
+# Prints the normalized status cell (the second column) of one markdown table
+# row: | platform | status | notes |
+row_status() {
+  printf '%s\n' "$1" \
+    | awk -F'|' '{ cell = $3; gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell); print cell }'
+}
+
 # Verifies a platform table holds exactly the two documented platform rows and
-# reports both as Qualified. The macOS row must scope itself to configuration
-# redirection only and must not require bubblewrap, so a row that reverts to the
-# deferred claim or exports the Linux prerequisite is refused.
+# reports both as qualified without overstating macOS. Linux must be Qualified
+# outright; the macOS cell must qualify itself for profile mechanics and
+# diagnostics, and the row must name the Darwin limits, so a blanket "Qualified"
+# row, a row that exports the Linux prerequisite or a reversion to the deferred
+# claim is refused.
 check_platform_table() {
   local file="$1" heading="$2" rows data linux_row macos_row
+  local linux_status macos_status
   require_file "$file"
   rows=$(section_rows "$file" "$heading")
   [[ -n "$rows" ]] || fail "${file#"$ROOT_DIR"/} has no table under '$heading'"
@@ -122,10 +133,26 @@ check_platform_table() {
   [[ -n "$macos_row" ]] \
     || fail "${file#"$ROOT_DIR"/} '$heading' table does not name macOS"
 
-  printf '%s\n' "$linux_row" | grep -qiF -- "| qualified |" \
-    || fail "${file#"$ROOT_DIR"/} does not report Linux as Qualified"
-  printf '%s\n' "$macos_row" | grep -qiF -- "| qualified |" \
-    || fail "${file#"$ROOT_DIR"/} does not report macOS as Qualified"
+  linux_status=$(row_status "$linux_row")
+  printf '%s\n' "$linux_status" | grep -qix -- "qualified" \
+    || fail "${file#"$ROOT_DIR"/} does not report Linux as Qualified (status: $linux_status)"
+
+  macos_status=$(row_status "$macos_row")
+  printf '%s\n' "$macos_status" | grep -qiE -- "^qualified" \
+    || fail "${file#"$ROOT_DIR"/} does not report macOS as Qualified (status: $macos_status)"
+  # The documented cell is Qualified for profile mechanics and diagnostics. A
+  # bare "Qualified" or a claim of Linux-equivalent coverage is not the same
+  # statement and is refused.
+  printf '%s\n' "$macos_status" | grep -qiF -- "profile mechanics" \
+    || fail "${file#"$ROOT_DIR"/} macOS status does not scope the qualification to profile mechanics (status: $macos_status)"
+  printf '%s\n' "$macos_status" | grep -qiF -- "diagnostics" \
+    || fail "${file#"$ROOT_DIR"/} macOS status does not name diagnostics (status: $macos_status)"
+  # The limits travel with the claim: no agent CLI was installed on that host,
+  # so the real CLI classes stay unverified there.
+  printf '%s\n' "$macos_row" | grep -qiF -- "agent cli" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not name the real agent CLI classes"
+  printf '%s\n' "$macos_row" | grep -qiF -- "unverified" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not state that the real agent CLI classes were not observed there"
   printf '%s\n' "$macos_row" | grep -qiF -- "configuration redirection only" \
     || fail "${file#"$ROOT_DIR"/} macOS row does not state configuration redirection only"
   if printf '%s\n' "$macos_row" | grep -qiF -- "bubblewrap"; then
@@ -217,7 +244,7 @@ pass "README.md compatibility matrix is dated and names the four tested integrat
 PLATFORM_ROWS=$(section_rows "$README" "## Platforms")
 [[ -n "$PLATFORM_ROWS" ]] || fail "README.md has no '## Platforms' table"
 check_platform_table "$README" "## Platforms"
-pass "README.md platform table qualifies Linux and macOS arm64"
+pass "README.md platform table qualifies Linux and scopes macOS arm64 to profile mechanics and diagnostics"
 
 require_file "$COMPAT"
 check_matrix "$COMPAT" "## Agent CLI Integration Matrix"
@@ -235,18 +262,46 @@ if grep -qiF -- "macOS is not qualified" "$COMPAT"; then
 fi
 pass "references/compatibility.md is dated, qualifies macOS arm64 and matches the tested matrix"
 
-# --- 4. Sanitized evidence summary ----------------------------------------
-require_file "$EVIDENCE"
+# --- 4. Sanitized evidence summaries --------------------------------------
+# Two summaries, one per qualified platform. Each must name the four
+# integrations and the evidence classes it actually observed, and record its
+# limits: the Linux run could not exercise credentialed model runs, and no agent
+# CLI existed on the Darwin host, so those classes stay unobserved rather than
+# borrowed across platforms.
+require_file "$EVIDENCE_LINUX"
 for agent in "${AGENTS[@]}"; do
-  require_term "$EVIDENCE" "$agent" "evidence for $agent"
+  require_term "$EVIDENCE_LINUX" "$agent" "evidence for $agent"
 done
 for class in "Version" "Startup" "Discovery" "Auth" "Sandbox"; do
-  require_term "$EVIDENCE" "$class" "the separate $class evidence class"
+  require_term "$EVIDENCE_LINUX" "$class" "the separate $class evidence class"
 done
-require_term "$EVIDENCE" "credential-dependent gap" \
+require_term "$EVIDENCE_LINUX" "credential-dependent gap" \
   "the approved credential-dependent gaps"
-require_term "$EVIDENCE" "sanitized" "that only sanitized evidence is published"
-pass "docs/evidence release summary is sanitized and separates the evidence classes"
+require_term "$EVIDENCE_LINUX" "sanitized" "that only sanitized evidence is published"
+pass "docs/evidence/linux-2026-10-28.md is sanitized and separates the evidence classes"
+
+require_file "$EVIDENCE_DARWIN"
+for agent in "${AGENTS[@]}"; do
+  require_term "$EVIDENCE_DARWIN" "$agent" "Darwin evidence for $agent"
+done
+for class in "Profile mechanics" "Configuration redirection" "Diagnostics" \
+  "Credentialed model runs" "Filesystem enforcement"; do
+  require_term "$EVIDENCE_DARWIN" "$class" "the separate Darwin $class evidence class"
+done
+# The real CLI classes are not inferred from Linux: the summary says so as the
+# class result and again with the reason, so both are required.
+require_term "$EVIDENCE_DARWIN" "not observed" \
+  "that some Darwin evidence classes were not observed"
+if ! grep -qiF -- "no agent CLI was installed" "$EVIDENCE_DARWIN"; then
+  fail "docs/evidence/macos-2026-10-31.md does not state that the real agent CLI classes were not observed on that host (expected text: no agent CLI was installed)"
+fi
+require_term "$EVIDENCE_DARWIN" "credential-dependent gap" \
+  "that credentialed model runs are a credential-dependent gap"
+require_term "$EVIDENCE_DARWIN" "not observed on any platform" \
+  "that credentialed model runs were not observed on any platform"
+require_term "$EVIDENCE_DARWIN" "sanitized" "that only sanitized evidence is published"
+require_term "$EVIDENCE_DARWIN" "raw logs" "that raw logs are not published"
+pass "docs/evidence/macos-2026-10-31.md is sanitized and records the unobserved Darwin classes"
 
 # --- 4b. Versioned release notes --------------------------------------------
 require_file "$RELEASE_NOTES"
@@ -262,11 +317,17 @@ NOTES_SCOPE=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
 [[ -n "$NOTES_SCOPE" ]] \
   || fail "RELEASE_NOTES.md has no v$VERSION scope section"
 for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
-  "no bubblewrap prerequisite" "neither platform is a security sandbox" \
-  "credential-dependent" "not published"; do
+  "no bubblewrap prerequisite" "credential-dependent" "not published"; do
   printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "$term" \
     || fail "RELEASE_NOTES.md v$VERSION scope does not state: $term"
 done
+# The notes word the boundary as "neither platform is a security sandbox"; the
+# README wording is accepted too, so either way the scope must deny that a
+# profile is a security sandbox.
+if ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "not a security sandbox" \
+  && ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "neither platform is a security sandbox"; then
+  fail "RELEASE_NOTES.md v$VERSION scope does not state: not a security sandbox"
+fi
 if printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "macOS is not qualified"; then
   fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
 fi
