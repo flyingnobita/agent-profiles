@@ -32,18 +32,34 @@ SHIM
   chmod +x "$dir/$name"
 }
 
+# shim_delegate <name>: the command the caller's PATH resolves right now, before
+# a shim directory is prepended. A host may keep a tool outside /usr/bin (macOS
+# ships cp in /bin), so a shim must never hardcode a path prefix.
+shim_delegate() {
+  local name="$1"
+  local real
+  real=$(command -v "$name" || true)
+  if [[ -z "$real" ]]; then
+    printf 'shim_delegate: %s is not on PATH\n' "$name" >&2
+    return 1
+  fi
+  printf '%s\n' "$real"
+}
+
 # reject_gnu_options <dir> <name>: the command exists but rejects an option
 # argument, which is how BSD/macOS userland answers a GNU-only flag.
 reject_gnu_options() {
   local dir="$1"
   local name="$2"
+  local real
+  real=$(shim_delegate "$name") || return 1
   mkdir -p "$dir"
   cat >"$dir/$name" <<SHIM
 #!/usr/bin/env bash
 case "\${1:-}" in
   -*) printf '${name}: illegal option -- %s\\n' "\${1#-}" >&2; exit 1 ;;
 esac
-exec /usr/bin/${name} "\$@"
+exec "$real" "\$@"
 SHIM
   chmod +x "$dir/$name"
 }
@@ -54,6 +70,8 @@ reject_gnu_long_option() {
   local dir="$1"
   local name="$2"
   local option="$3"
+  local real
+  real=$(shim_delegate "$name") || return 1
   mkdir -p "$dir"
   cat >"$dir/$name" <<SHIM
 #!/usr/bin/env bash
@@ -63,7 +81,7 @@ for arg in "\$@"; do
     exit 1
   fi
 done
-exec /usr/bin/${name} "\$@"
+exec "$real" "\$@"
 SHIM
   chmod +x "$dir/$name"
 }
