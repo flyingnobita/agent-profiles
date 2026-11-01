@@ -128,11 +128,29 @@ ap_opencode_service_port_status() {
   return 0
 }
 
+# lsof exits 1 both when no socket matched and when it could not list at all, so
+# the exit status alone cannot separate "no listener" from "could not inspect".
+# Before an empty result is trusted, lsof must describe this shell's own process,
+# the same completeness probe platform.py's Darwin process inspector makes. A
+# failed probe stays unverified, never not_listening.
+ap_opencode_lsof_lists_inspector() {
+  local lsof_bin="$1"
+  local out="" rc=0
+
+  out=$(ap_platform_timeout 10 "$lsof_bin" -nP -p "$$" -F p 2>/dev/null) || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    return 1
+  fi
+  printf '%s\n' "$out" | grep -qx "p$$"
+}
+
 # Darwin has no procfs. lsof reports the listening socket table in read-only
 # mode, so the shared port is classified without starting or stopping a service
 # and without /proc. lsof exits 0 when it finds a match and 1 when it finds
 # none; any other result means the probe itself failed and stays unverified
-# instead of being reported as "no listener".
+# instead of being reported as "no listener". An exit 1 from an lsof that cannot
+# describe its own process is also unverified, because that exit status may mean
+# "could not list" rather than "no match".
 ap_opencode_service_port_status_darwin() {
   local port="$1"
   local lsof_bin rc=0
@@ -153,9 +171,12 @@ ap_opencode_service_port_status_darwin() {
   if [[ "$rc" -eq 0 ]]; then
     OPENCODE_SERVICE_PORT_STATUS="listening"
     OPENCODE_SERVICE_PORT_DETAIL="lsof reports a listener on the shared default port, which belongs to a service outside this profile"
-  elif [[ "$rc" -eq 1 ]]; then
+  elif [[ "$rc" -eq 1 ]] && ap_opencode_lsof_lists_inspector "$lsof_bin"; then
     OPENCODE_SERVICE_PORT_STATUS="not_listening"
     OPENCODE_SERVICE_PORT_DETAIL="lsof reports no listener on the shared default port"
+  elif [[ "$rc" -eq 1 ]]; then
+    OPENCODE_SERVICE_PORT_STATUS="unverified"
+    OPENCODE_SERVICE_PORT_DETAIL="lsof exited 1 but could not describe its own process; the shared service port was not classified"
   else
     OPENCODE_SERVICE_PORT_STATUS="unverified"
     OPENCODE_SERVICE_PORT_DETAIL="lsof could not inspect the socket table (exit $rc); the shared service port was not classified"
