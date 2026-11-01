@@ -177,3 +177,16 @@ unless a strictly necessary alias is added": the two npm-backed tools had no
 runtime pin and macOS arm64 QA failed on a host without a system node. Third,
 three provenance groups were reclassified during the gates after independent
 receipts showed they pass on the base commit.
+
+### Scope decision after real-machine QA
+
+The plan required real four-agent evidence on the macOS host for full
+qualification and said that, if unobtainable, the scope must return to the user.
+No agent CLI was installed on the qualification machine, so the version, startup,
+discovery and authentication classes for Claude Code, Codex CLI, Antigravity CLI
+and OpenCode could not be observed there. On 2026-11-01 the user accepted the
+narrowed claim for this release: macOS arm64 is qualified for profile mechanics,
+configuration redirection and diagnostics, while the four real-agent classes on
+Darwin are recorded as unverified and carried as a follow-up on issue #6. The
+release surface, the evidence summary and the compatibility reference state that
+boundary rather than implying parity with the Linux evidence classes.
