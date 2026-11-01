@@ -17,7 +17,10 @@ jobs:
   verify:
     name: Tests, lint, installation and release checks
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # The measured Linux job reached 28.5 minutes in `mise run ci` alone before
+    # the artifact check failed; the fixed suite then continues into
+    # `mise run release-artifacts`, so 30 minutes left no headroom.
+    timeout-minutes: 45
     env:
       MISE_YES: "1"
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
@@ -41,7 +44,10 @@ jobs:
   macos:
     name: macOS arm64 with stock Bash 3.2
     runs-on: macos-15
-    timeout-minutes: 30
+    # A full Darwin suite takes about 34 minutes on this runner (the hosted job
+    # was cancelled mid-suite after 30), so 45 leaves headroom for the suite and
+    # the release-artifact step without removing the timeout.
+    timeout-minutes: 45
     env:
       MISE_YES: "1"
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
