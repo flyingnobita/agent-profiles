@@ -337,8 +337,14 @@ import sys
 
 skill, destination = sys.argv[1], sys.argv[2]
 files = []
-for current, _dirs, names in os.walk(os.path.join(skill, "scripts")):
+for current, dirs, names in os.walk(os.path.join(skill, "scripts")):
+    # Bytecode is local build state, not shipped source: the product's manifest
+    # and the release tar builder both exclude it, so the expected manifest uses
+    # the same file set and a stray .pyc in the checkout cannot change it.
+    dirs[:] = [name for name in dirs if name != "__pycache__"]
     for name in names:
+        if name.endswith(".pyc"):
+            continue
         path = os.path.join(current, name)
         if os.path.islink(path) or not os.path.isfile(path):
             continue
@@ -388,6 +394,79 @@ assert tasks, "doctor did not report a tasks check"
 assert tasks[0]["status"] == "error", tasks[0]
 assert "manifest verification failed" in tasks[0]["detail"], tasks[0]
 ' "$output"
+}
+
+@test "portability: setup manifest ignores bytecode present in the skill tree" {
+  local repo="$TEST_TMPDIR/repo-bytecode"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  export MISE_CONFIG_DIR="$TEST_TMPDIR/mise/config"
+  export MISE_DATA_DIR="$TEST_TMPDIR/mise/data"
+  export MISE_STATE_DIR="$TEST_TMPDIR/mise/state"
+  export MISE_CACHE_DIR="$TEST_TMPDIR/mise/cache"
+  export MISE_TRUSTED_CONFIG_PATHS="$TEST_TMPDIR"
+  export AP_OS_RELEASE="$TEST_TMPDIR/os-release"
+  mkdir -p "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR"
+  printf 'ID=arch\nID_LIKE=arch\nPRETTY_NAME="Arch Linux"\n' >"$AP_OS_RELEASE"
+
+  # The manifest path is the product's own: deploy from a disposable copy of the
+  # skill, once as shipped and once with synthetic bytecode in the tree, and
+  # compare what setup wrote. The copy starts clean so a stale .pyc in this
+  # checkout cannot make the two halves agree for the wrong reason.
+  local skill_copy="$TEST_TMPDIR/skill-bytecode"
+  cp -a "$AP_SKILL_DIR" "$skill_copy"
+  find "$skill_copy" -name "__pycache__" -type d -prune -exec rm -rf {} +
+  local helper="$skill_copy/scripts/agent-profiles"
+
+  run bash "$helper" setup --apply
+  assert_success
+
+  local task="$MISE_CONFIG_DIR/tasks/agent-profiles"
+  local release_clean manifest_clean
+  release_clean=$(sed -n 's/^# release: //p' "$task")
+  assert_file_exists "$release_clean/manifest.sha256"
+  manifest_clean="$TEST_TMPDIR/manifest-clean.sha256"
+  cp "$release_clean/manifest.sha256" "$manifest_clean"
+
+  mkdir -p "$skill_copy/scripts/lib/__pycache__"
+  printf 'stray bytecode\n' >"$skill_copy/scripts/lib/__pycache__/x.cpython-315.pyc"
+
+  run bash "$helper" setup --apply
+  assert_success
+
+  # A bytecode file is not shipped source, so the digest, the release directory
+  # and the manifest bytes are unchanged: no new release is deployed.
+  local release_bytecode
+  release_bytecode=$(sed -n 's/^# release: //p' "$task")
+  assert_equal "$release_bytecode" "$release_clean"
+  run cmp "$manifest_clean" "$release_bytecode/manifest.sha256"
+  assert_success
+  run grep -E '(\.pyc|__pycache__)' "$release_bytecode/manifest.sha256"
+  assert_failure 1
+
+  # The two-space format, the sorted order and the VERSION line are unchanged.
+  run grep -Eq '^[0-9a-f]{64}  scripts/agent-profiles$' "$release_bytecode/manifest.sha256"
+  assert_success
+  run grep -Eq '^[0-9a-f]{64}  scripts/lib/common[.]sh$' "$release_bytecode/manifest.sha256"
+  assert_success
+  run grep -Eq '^[0-9a-f]{64}  VERSION$' "$release_bytecode/manifest.sha256"
+  assert_success
+  run python3 - "$release_bytecode/manifest.sha256" <<'PY'
+import sys
+
+with open(sys.argv[1]) as handle:
+    paths = [line.rstrip("\n").partition("  ")[2] for line in handle if line.strip()]
+assert paths, "empty manifest"
+# Every script in sorted order, then VERSION.
+assert paths[-1] == "VERSION", paths[-1]
+scripts = paths[:-1]
+assert scripts and all(path.startswith("scripts/") for path in scripts), scripts
+assert scripts == sorted(scripts, key=lambda value: value.encode()), (
+    "manifest script order is not byte-sorted"
+)
+PY
+  assert_success
 }
 
 @test "portability: doctor timeout handles a hanging probe without GNU timeout" {
