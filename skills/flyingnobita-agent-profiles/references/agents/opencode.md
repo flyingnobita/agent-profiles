@@ -81,7 +81,7 @@ The tested version discovers skills from these sources, and each behaves
 differently:
 
 - Profile configuration: `$OPENCODE_CONFIG_DIR/skill` and `$OPENCODE_CONFIG_DIR/skills`, i.e. `.agent-profiles/<profile>/.opencode/skill` and `.opencode/skills`.
-- Claude-compatible and `.agents` roots: `$HOME/.claude/skills` and `$HOME/.agents/skills`, which resolve to profile storage through the bind mounts.
+- Claude-compatible and `.agents` roots: `$HOME/.claude/skills` and `$HOME/.agents/skills`, which resolve to profile storage through the bind mounts on Linux and through the profile `HOME` on macOS arm64.
 - Project scope: `<repo>/.opencode/skills` (and `skill`) in the current checkout.
 - Bundled skills: shipped inside the binary and reported from `/builtin/`, available to every profile separately from profile, project and host markers.
 
