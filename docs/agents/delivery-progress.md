@@ -204,16 +204,19 @@ are kept apart instead of being merged into one count:
   tree. Neither log names a commit, so no commit binding is claimed for either,
   and the commit-derived `SOURCE_DATE_EPOCH` means those digests cannot match a
   later commit.
-- The current base `f337d2a` carries 408 tests.
+- At replacement resumption on 2026-11-02, the base `f337d2a` carried 408
+  tests.
 
-The candidate is not qualified yet. Hosted run 41361031468 reproduced exactly
-two macOS failures, both lease timing: `portability: shared and exclusive locks
-retain contention and descendant leases without flock or dynamic descriptors`
-(`tests/02-runtime/portability.bats:234`) and `execution: reset --yes is blocked
-by an active run lease on same profile with exit 75`
-(`tests/08-lifecycle/reset-remove-execution.bats:42`). The repair is in progress
-and the hosted gate is pending, so no current-green claim is made for either
-platform.
+At that checkpoint the candidate was not qualified: hosted run 41361031468 had
+reproduced exactly two macOS failures, both lease timing:
+`portability: shared and exclusive locks retain contention and descendant leases
+without flock or dynamic descriptors` (`tests/02-runtime/portability.bats:234`)
+and `execution: reset --yes is blocked by an active run lease on same profile
+with exit 75` (`tests/08-lifecycle/reset-remove-execution.bats:42`). The repair
+and the hosted gate were still pending then, so no green claim was made for
+either platform at that point. Final results for the shipped candidate are
+reported in pull request #7; this record is the checkpoint and is not updated
+to match them.
 
 The MBP-M4 run of the intermediate tree `4c68d82` had two different, correct
 refusals: `migrate recovery: refuses an original changed after verification` and
@@ -231,5 +234,6 @@ redirection and diagnostics are qualified on macOS arm64; the four real agent
 CLIs' version, startup, discovery and authentication classes on Darwin stay
 unverified with no agent CLI installed there; credentialed model runs stay a
 credential-dependent gap everywhere; filesystem enforcement is not claimed and
-the network is not blocked. Issue #6 keeps this follow-up open, so the pull
-request should reference it (`Refs`), not close it.
+the network is not blocked. At the checkpoint issue #6 still carried this
+follow-up open, so the change lands through pull request #7 with a reference
+(`Refs`), not a close.
