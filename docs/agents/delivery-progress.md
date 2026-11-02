@@ -190,3 +190,46 @@ configuration redirection and diagnostics, while the four real-agent classes on
 Darwin are recorded as unverified and carried as a follow-up on issue #6. The
 release surface, the evidence summary and the compatibility reference state that
 boundary rather than implying parity with the Linux evidence classes.
+
+### Candidate status and historical snapshots
+
+Three real-machine receipts exist and they describe three different trees. They
+are kept apart instead of being merged into one count:
+
+- `1..401` with `CI_EXIT=0` (`evidence/macos-qa/mbp-m4-ci-final.log`) and
+  artifact `sha256 8de573aa…` (`mbp-m4-release-artifacts-final.log`) is the
+  earlier 0.3.0 ship candidate.
+- `1..406` with `CI_EXIT=0` (`mbp-m4-ci-ship.log`) and artifact
+  `sha256 b08469f7…` (remote `/tmp/ap06-art8.log`) is a later intermediate
+  tree. Neither log names a commit, so no commit binding is claimed for either,
+  and the commit-derived `SOURCE_DATE_EPOCH` means those digests cannot match a
+  later commit.
+- The current base `f337d2a` carries 408 tests.
+
+The candidate is not qualified yet. Hosted run 41361031468 reproduced exactly
+two macOS failures, both lease timing: `portability: shared and exclusive locks
+retain contention and descendant leases without flock or dynamic descriptors`
+(`tests/02-runtime/portability.bats:234`) and `execution: reset --yes is blocked
+by an active run lease on same profile with exit 75`
+(`tests/08-lifecycle/reset-remove-execution.bats:42`). The repair is in progress
+and the hosted gate is pending, so no current-green claim is made for either
+platform.
+
+The MBP-M4 run of the intermediate tree `4c68d82` had two different, correct
+refusals: `migrate recovery: refuses an original changed after verification` and
+`execution: reset --yes recreates empty directories` both hit the documented
+fail-closed process scan with exit 75, because the live desktop exposed
+`mdworker_shared` and `parsec-fbf` to `ps` while `lsof` could not inspect them.
+That is the plan-accepted boundary for uninspectable same-uid daemons, not a
+product defect, and it is why those two success-path lifecycle tests are
+host-coupled on a live session: they pass on a clean CI virtual machine and
+refuse on a desktop carrying such daemons. QA guidance keeps them unskipped and
+unbypassed.
+
+The accepted narrowed scope is unchanged: profile mechanics, configuration
+redirection and diagnostics are qualified on macOS arm64; the four real agent
+CLIs' version, startup, discovery and authentication classes on Darwin stay
+unverified with no agent CLI installed there; credentialed model runs stay a
+credential-dependent gap everywhere; filesystem enforcement is not claimed and
+the network is not blocked. Issue #6 keeps this follow-up open, so the pull
+request should reference it (`Refs`), not close it.
