@@ -10,11 +10,15 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
   AP_HOST_PATH="$PATH"
 }
 
 teardown() {
+  # The lease holders below are long-lived by design. An assertion failure, an
+  # interrupted test or a readiness timeout must still leave nothing behind.
+  ap_test_teardown_owned
   teardown_isolation
 }
 
@@ -218,28 +222,42 @@ SHIM
   local lock_inode_before
   lock_inode_before=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "$lock_file")
 
-  # Two shared leases are compatible: a run starts while the first is running.
-  bash "$AP_HELPER" run -- sleep 2 &
-  local first=$!
-  sleep 0.6
+  local lease_dir="$TEST_TMPDIR/lease-fixtures"
+  local holder_script
+  holder_script=$(ap_test_lease_holder_script "$lease_dir")
+
+  # Two shared leases are compatible: a run starts while the first holds the
+  # lease. Readiness is the holder's own start plus a refused exclusive probe,
+  # never a fixed sleep: `run` needs well over 0.6 s to reach the lease on a
+  # loaded or slow host, and the hosted macOS runner proved it.
+  local first_marker="$TEST_TMPDIR/first-started"
+  local first_release="$TEST_TMPDIR/first-release"
+  ap_test_start_lease_holder "$AP_HELPER" default "$holder_script" \
+    "$first_marker" "$first_release" "$TEST_TMPDIR/first-holder.log"
+  local first=$AP_TEST_LEASE_PID
   run bash "$AP_HELPER" run -- true
   assert_success
-  wait "$first"
+  ap_test_release_lease_holder "$first_release" "$first" "$lock_file"
 
   # An exclusive lifecycle lock is refused while a shared lease is held.
-  bash "$AP_HELPER" run -- sleep 2 &
-  local holder=$!
-  sleep 0.6
+  local holder_marker="$TEST_TMPDIR/holder-started"
+  local holder_release="$TEST_TMPDIR/holder-release"
+  ap_test_start_lease_holder "$AP_HELPER" default "$holder_script" \
+    "$holder_marker" "$holder_release" "$TEST_TMPDIR/holder.log"
+  local holder=$AP_TEST_LEASE_PID
   run bash "$AP_HELPER" reset --profile default --yes
   assert_failure 75
   assert_output_contains "in use"
-  wait "$holder"
+  ap_test_release_lease_holder "$holder_release" "$holder" "$lock_file"
 
   # A background descendant keeps the inherited lease after the direct parent
-  # exits, and the persistent lock inode is never replaced.
+  # exits, and the persistent lock inode is never replaced. The descendant is
+  # registered by the fixture helper, so teardown covers it from here on.
   local pid_file="$TEST_TMPDIR/lease-child.pid"
-  bash "$AP_HELPER" run -- sh -c 'sleep 5 & echo $! >"$1"' sh "$pid_file"
-  assert_file_exists "$pid_file"
+  local child_marker="$TEST_TMPDIR/child-started"
+  local child_release="$TEST_TMPDIR/child-release"
+  ap_test_start_lease_descendant "$AP_HELPER" default "$holder_script" \
+    "$child_marker" "$child_release" "$pid_file" "$TEST_TMPDIR/descendant.log"
   local child
   child=$(cat "$pid_file")
   [[ -n "$child" ]]
@@ -252,9 +270,9 @@ SHIM
   assert_failure 75
   assert_output_contains "in use"
 
-  kill -9 "$child" 2>/dev/null || true
-  wait "$child" 2>/dev/null || true
-  sleep 0.4
+  ap_test_stop_owned_pid "$child"
+  ap_test_wait_pid_gone "$child"
+  ap_test_lease_wait_free "$lock_file"
 
   run bash "$AP_HELPER" reset --profile default --yes
   assert_success
