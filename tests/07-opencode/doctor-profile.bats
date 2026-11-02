@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 
   unset ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY GOOGLE_GENERATIVE_AI_API_KEY
@@ -57,7 +58,7 @@ teardown() {
     >"$profile_dir/.local/share/opencode/auth.json"
 
   local before after
-  before=$(cd "$profile_dir" && find . -type f -exec sha256sum {} + | sort)
+  before=$(ap_test_tree_digest "$profile_dir")
 
   run env DEEPSEEK_API_KEY="secret-env-value-913" OPENROUTER_API_KEY="secret-env-value-914" \
     bash "$AP_HELPER" doctor --json --agent opencode --profile dev
@@ -106,7 +107,7 @@ assert service["status"] in ("listening", "not_listening", "unverified"), servic
 assert "mise_managed" in shared, shared
 PY
 
-  after=$(cd "$profile_dir" && find . -type f -exec sha256sum {} + | sort)
+  after=$(ap_test_tree_digest "$profile_dir")
   assert_equal "$after" "$before"
 }
 

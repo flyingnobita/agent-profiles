@@ -89,7 +89,7 @@ MISE_WRAPPER
   mkdir -p "$MISE_CONFIG_DIR"
   printf '[tools]\nnode = "lts"\n' >"$MISE_CONFIG_DIR/config.toml"
   local config_hash_before
-  config_hash_before=$(sha256sum "$MISE_CONFIG_DIR/config.toml" | cut -d' ' -f1)
+  config_hash_before=$(ap_test_sha256 "$MISE_CONFIG_DIR/config.toml")
 
   run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex
   assert_success
@@ -100,7 +100,7 @@ MISE_WRAPPER
   backup=$(find "${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups" \
     -path '*mise*' -name config.toml | head -n 1)
   [[ -n "$backup" ]]
-  assert_equal "$config_hash_before" "$(sha256sum "$backup" | cut -d' ' -f1)"
+  assert_equal "$config_hash_before" "$(ap_test_sha256 "$backup")"
 }
 
 @test "setup apply: a managed global mise config is left untouched for a requested agent" {
@@ -110,7 +110,7 @@ MISE_WRAPPER
   printf '[tools]\nnode = "lts"\n' >"$TEST_TMPDIR/dotfiles/config.toml"
   ln -s "$TEST_TMPDIR/dotfiles/config.toml" "$MISE_CONFIG_DIR/config.toml"
   local config_hash_before
-  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/config.toml" | cut -d' ' -f1)
+  config_hash_before=$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/config.toml")
 
   run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex \
     --prepare-dir "$TEST_TMPDIR/prepared"
@@ -120,7 +120,7 @@ MISE_WRAPPER
 
   # The managed target and its symlink are untouched.
   [[ -L "$MISE_CONFIG_DIR/config.toml" ]]
-  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/config.toml" | cut -d' ' -f1)"
+  assert_equal "$config_hash_before" "$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/config.toml")"
   run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
 }
 
@@ -132,7 +132,7 @@ MISE_WRAPPER
   rmdir "$MISE_CONFIG_DIR"
   ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
   local config_hash_before
-  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)
+  config_hash_before=$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/mise/config.toml")
 
   run env PATH="$INSTALL_BIN" bash "$AP_HELPER" setup --apply --agent codex \
     --prepare-dir "$TEST_TMPDIR/prepared"
@@ -140,7 +140,7 @@ MISE_WRAPPER
   assert_output_contains "managed configuration detected"
 
   [[ -L "$MISE_CONFIG_DIR" ]]
-  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)"
+  assert_equal "$config_hash_before" "$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/mise/config.toml")"
   run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
 
   # A real prepared source artifact is produced instead of an in-place edit.
@@ -157,7 +157,7 @@ MISE_WRAPPER
   mkdir -p "$MISE_CONFIG_DIR"
   printf '[tools]\nnode = "lts"\n' >"$MISE_CONFIG_DIR/config.toml"
   local original
-  original=$(sha256sum "$MISE_CONFIG_DIR/config.toml" | cut -d' ' -f1)
+  original=$(ap_test_sha256 "$MISE_CONFIG_DIR/config.toml")
 
   # Simulate mise rewriting the global config for each install.
   cat >"$INSTALL_BIN/mise" <<MISE_WRAPPER
@@ -181,7 +181,7 @@ MISE_WRAPPER
   backups=$(find "${XDG_STATE_HOME:-$HOME/.local/state}/flyingnobita-agent-profiles/backups" \
     -path '*mise*' -name config.toml)
   [[ "$(printf '%s\n' "$backups" | grep -c .)" -eq 1 ]]
-  assert_equal "$original" "$(sha256sum "$backups" | cut -d' ' -f1)"
+  assert_equal "$original" "$(ap_test_sha256 "$backups")"
 }
 
 @test "setup apply: repeated managed installs with an arbitrary prepare dir stay byte-identical" {
@@ -192,7 +192,7 @@ MISE_WRAPPER
   rmdir "$MISE_CONFIG_DIR"
   ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
   local config_hash_before
-  config_hash_before=$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)
+  config_hash_before=$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/mise/config.toml")
 
   # Arbitrary prepare directory name, including spaces and multiple agents.
   local prepare="$TEST_TMPDIR/prepared dir with spaces"
@@ -216,6 +216,6 @@ MISE_WRAPPER
 
   # The real managed target is still untouched.
   [[ -L "$MISE_CONFIG_DIR" ]]
-  assert_equal "$config_hash_before" "$(sha256sum "$TEST_TMPDIR/dotfiles/mise/config.toml" | cut -d' ' -f1)"
+  assert_equal "$config_hash_before" "$(ap_test_sha256 "$TEST_TMPDIR/dotfiles/mise/config.toml")"
   run ! grep -Fq "mise use --global" "$AP_SPY_LOG"
 }

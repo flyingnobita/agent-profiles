@@ -6,7 +6,7 @@ for host setup, task integration, or setup troubleshooting requests.
 
 ## System Prerequisites
 
-Agent profiles require:
+Agent profiles require, on Linux:
 
 - Linux with unprivileged user namespaces enabled
 - `bubblewrap` (`bwrap`) for profile directory redirection
@@ -14,9 +14,16 @@ Agent profiles require:
 - `mise` for environment preservation and global task integration
 - `bash` to run the bundled helper
 
+On macOS arm64 the prerequisites are `mise`, `git`, `python3` and the stock
+`/bin/bash` 3.2, with no bubblewrap: redirection is configuration only. `doctor`
+reports the host prerequisites as available, not applicable or missing as
+appropriate, and `setup --apply` never offers to install bubblewrap there.
+
 The helper supports Arch-family (`pacman`) and Debian-family (`apt-get`)
 distributions for automatic prerequisite installation. Other distributions are
-reported as an unsupported automatic path rather than guessed at.
+reported as an unsupported automatic path rather than guessed at. On macOS it
+detects the platform through `sw_vers` and never invokes Homebrew, so
+prerequisites there stay a manual step.
 
 ## Detection and Preview
 

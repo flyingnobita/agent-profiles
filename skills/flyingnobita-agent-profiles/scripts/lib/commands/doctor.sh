@@ -86,7 +86,7 @@ ap_cmd_doctor() {
     done
   fi
 
-  for section_fn in "${AP_DOCTOR_SECTIONS[@]}"; do
+  for section_fn in ${AP_DOCTOR_SECTIONS[@]+"${AP_DOCTOR_SECTIONS[@]}"}; do
     "$section_fn"
   done
 
@@ -104,13 +104,15 @@ data = {
         "name": sys.argv[2],
         "distro": sys.argv[3],
         "kernel": sys.argv[4],
-        "arch": sys.argv[5]
+        "arch": sys.argv[5],
+        "status": sys.argv[6],
+        "hint": sys.argv[7]
     },
-    "checks": json.loads(sys.argv[6]),
-    "agents": json.loads(sys.argv[7])
+    "checks": json.loads(sys.argv[8]),
+    "agents": json.loads(sys.argv[9])
 }
 print(json.dumps(data, indent=2))
-' "$ver" "$OS_NAME" "$OS_DISTRO" "$OS_KERNEL" "$OS_ARCH" "$CHECKS_JSON" "$AGENTS_JSON"
+' "$ver" "$OS_NAME" "$OS_DISTRO" "$OS_KERNEL" "$OS_ARCH" "$OS_STATUS" "$OS_HINT" "$CHECKS_JSON" "$AGENTS_JSON"
     return 0
   fi
 
@@ -120,7 +122,12 @@ print(json.dumps(data, indent=2))
   printf "OS:\n"
   printf "  System: %s (%s)\n" "$OS_NAME" "$OS_DISTRO"
   printf "  Kernel: %s\n" "$OS_KERNEL"
-  printf "  Architecture: %s\n\n" "$OS_ARCH"
+  printf "  Architecture: %s\n" "$OS_ARCH"
+  printf "  Status: %s\n" "$OS_STATUS"
+  if [[ -n "$OS_HINT" ]]; then
+    printf "  Hint: %s\n" "$OS_HINT"
+  fi
+  echo
 
   printf "Dependencies:\n"
   python3 -c '

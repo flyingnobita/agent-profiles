@@ -5,7 +5,12 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
+  # Every test in this file validates bubblewrap bind mounts, which only exist on
+  # Linux. Darwin has no mount step at all: it redirects HOME and the agent/XDG
+  # environment, and that behaviour is proven in darwin-run.bats.
+  ap_test_skip_darwin "Linux-only S3: bubblewrap bind-mount validation; Darwin env-only behavior is in darwin-run.bats"
 }
 
 teardown() {

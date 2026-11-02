@@ -55,5 +55,5 @@ teardown() {
 
   run env -i PATH="$PATH" HOME="$target_home" bash "$target_home/.agents/skills/flyingnobita-agent-profiles/scripts/agent-profiles" --version
   assert_success
-  assert_output_contains "0.1.0"
+  assert_output_contains "$(tr -d '[:space:]' <"$AP_SKILL_DIR/VERSION")"
 }

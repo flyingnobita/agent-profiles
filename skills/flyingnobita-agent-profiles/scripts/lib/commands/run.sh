@@ -63,7 +63,7 @@ ap_cmd_run() {
   live_context=$(ap_check_live_profile_context "$repo_root" "$profile")
 
   if [[ "$live_context" == "DIFFERENT" ]]; then
-    ap_die "$EX_BUSY" "nested execution inside another profile or checkout is prohibited (active profile mount mismatch)"
+    ap_die "$EX_BUSY" "nested execution inside another profile or checkout is prohibited (active profile identity mismatch)"
   elif [[ "$live_context" == "SAME" ]]; then
     # Same-profile nested execution: do not re-wrap with bwrap
     # Take an additional compatible shared lease
@@ -73,7 +73,7 @@ ap_cmd_run() {
     ap_prepare_profile_env "$repo_root" "$profile"
     ap_agent_command "$@"
 
-    exec "${AP_COMMAND[@]}"
+    exec ${AP_COMMAND[@]+"${AP_COMMAND[@]}"}
   fi
 
   ap_ensure_locks_dir "$repo_root"
@@ -90,14 +90,24 @@ ap_cmd_run() {
   # 5. Release storage lock before exec (profile lease fd stays open)
   ap_unlock_storage
 
-  ap_check_bwrap_readiness
+  ap_check_run_readiness
 
   # Capture effective mise directories BEFORE resetting managed environment variables
   ap_capture_effective_mise_dirs
 
   ap_prepare_profile_env "$repo_root" "$profile"
+
+  # Exactly one execution adapter. Darwin redirects by environment only: no
+  # bubblewrap, no mount table and never a host mountpoint creation. The
+  # machine that executes selects it, so a Darwin host can never be sent down
+  # the Linux path by a platform selected for a diagnostic.
+  if ap_platform_host_is_darwin; then
+    ap_agent_command "$@"
+    exec ${AP_COMMAND[@]+"${AP_COMMAND[@]}"}
+  fi
+
   ap_build_bwrap_mounts "$repo_root" "$profile"
   ap_agent_command "$@"
 
-  exec bwrap --dev-bind / / "${BWRAP_MOUNT_ARGS[@]}" --die-with-parent -- "${AP_COMMAND[@]}"
+  exec bwrap --dev-bind / / ${BWRAP_MOUNT_ARGS[@]+"${BWRAP_MOUNT_ARGS[@]}"} --die-with-parent -- ${AP_COMMAND[@]+"${AP_COMMAND[@]}"}
 }

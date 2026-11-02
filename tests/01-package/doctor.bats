@@ -120,8 +120,17 @@ import json, sys
 data = json.loads(sys.argv[1])
 bwrap_checks = [c for c in data["checks"] if c["id"] == "bwrap"]
 assert len(bwrap_checks) > 0, "no bwrap check found"
-assert bwrap_checks[0]["status"] == "missing"
-assert len(bwrap_checks[0]["hint"]) > 0, "bwrap check has no actionable hint"
+check = bwrap_checks[0]
+if data["os"]["name"] == "Darwin":
+    # Darwin redirects agent configuration by environment only, so bubblewrap
+    # is not a missing prerequisite: it does not apply, and no hint may tell the
+    # user to install a Linux-only tool.
+    assert check["status"] == "not_applicable", check
+    assert "Linux-only" in check["detail"], check
+    assert check["hint"] == "", check
+else:
+    assert check["status"] == "missing", check
+    assert len(check["hint"]) > 0, "bwrap check has no actionable hint"
 ' "$output"
   assert_success
 }

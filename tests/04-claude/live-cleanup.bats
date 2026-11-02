@@ -5,16 +5,22 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/isolation.bash'
   setup_isolation
+  # shellcheck source=tests/live/lib.sh
+  source "$AP_SUBJECT/tests/live/lib.sh"
   # shellcheck source=tests/live/claude-cleanup.sh
   source "$AP_SUBJECT/tests/live/claude-cleanup.sh"
   OWNED_PID=""
   UNMARKED_PID=""
+  AP_LIVE_TEST_GROUPS=""
 }
 
 teardown() {
   local pid
+  for pid in ${AP_LIVE_TEST_GROUPS:-}; do
+    kill -KILL -"$pid" 2>/dev/null || true
+  done
   for pid in "$OWNED_PID" "$UNMARKED_PID"; do
-    [[ -n "$pid" ]] && kill -KILL "$pid" 2>/dev/null || true
+    [[ -n "$pid" ]] && kill -KILL -"$pid" 2>/dev/null || true
   done
   teardown_isolation
 }
@@ -32,18 +38,17 @@ wait_for_dead() {
   local work="$TEST_TMPDIR/qa-empty-work"
   local profile="$TEST_TMPDIR/qa-empty-profile"
   mkdir -p "$work" "$profile"
-  local start boot
-  start=$(ap_claude_qa_uptime_ticks)
+  local boot
   boot=$(ap_claude_qa_boot_id)
-  [[ -n "$start" && -n "$boot" ]]
+  [[ -n "$boot" ]]
 
   run bash -c '
 set -uo pipefail
 source "$1"
 cd "$2"
-found="$(ap_claude_qa_owned_pids "$3" "$4" "$5")"
+found="$(ap_claude_qa_owned_pids "$3" "$4")"
 printf "%s\n" "$found"
-' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$work" "$profile" "$start" "$boot"
+' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$work" "$profile" "$boot"
   assert_success
   assert_output_equals ""
 }
@@ -54,16 +59,17 @@ printf "%s\n" "$found"
   mkdir -p "$work" "$profile"
   cd "$work" || return 1
 
-  local start boot scan deadline
-  start=$(ap_claude_qa_uptime_ticks)
+  local boot scan deadline
   boot=$(ap_claude_qa_boot_id)
-  [[ -n "$start" && -n "$boot" ]]
+  [[ -n "$boot" ]]
 
-  env AGENT_PROFILES_DIR="$profile" setsid sleep 30 &
-  OWNED_PID=$!
-  setsid sleep 30 &
-  UNMARKED_PID=$!
-  sleep 0.2
+  # Portable owners: Python start_new_session instead of setsid, and the
+  # profile ownership evidence the harness records at spawn time.
+  OWNED_PID=$(AGENT_PROFILES_DIR="$profile" \
+    ap_live_spawn_test_process "$TEST_TMPDIR/qa-owned.marker" sleep 30)
+  UNMARKED_PID=$(env -u AGENT_PROFILES_DIR bash -c 'source "$1"; shift; ap_live_spawn_test_process "$@"' \
+    _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$TEST_TMPDIR/qa-unmarked.marker" sleep 30)
+  AP_LIVE_TEST_GROUPS="$OWNED_PID $UNMARKED_PID"
 
   deadline=$((SECONDS + 5))
   scan=""
@@ -71,15 +77,18 @@ printf "%s\n" "$found"
     scan=$(bash -c '
 set -uo pipefail
 source "$1"
-ap_claude_qa_owned_pids "$2" "$3" "$4"
-' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$profile" "$start" "$boot")
+ap_claude_qa_owned_pids "$2" "$3"
+' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$profile" "$boot")
     [[ "$scan" == *"$OWNED_PID"* ]] && break
     sleep 0.1
   done
   [[ "$scan" == *"$OWNED_PID"* ]]
   [[ "$scan" != *"$UNMARKED_PID"* ]]
 
-  run ap_claude_qa_cleanup "$profile" "$start" "$boot"
+  # The unmarked neighbour is live at decision time and is never signalled.
+  run kill -0 "$UNMARKED_PID"
+  assert_success
+  run ap_claude_qa_cleanup "$profile" "$boot"
   assert_success
   assert_output_contains "$OWNED_PID"
 
@@ -91,17 +100,24 @@ ap_claude_qa_owned_pids "$2" "$3" "$4"
   local work="$TEST_TMPDIR/qa-selfscan-work"
   local profile="$TEST_TMPDIR/qa-selfscan-profile"
   mkdir -p "$work" "$profile"
-  local start boot
-  start=$(ap_claude_qa_uptime_ticks)
+  local boot
   boot=$(ap_claude_qa_boot_id)
+
+  # A decoy that shares the scanner's working directory but carries no profile
+  # marker: a scanner must never detect itself or an unrelated neighbour.
+  local decoy
+  decoy=$(cd "$work" && env -u AGENT_PROFILES_DIR bash -c 'source "$1"; shift; ap_live_spawn_test_process "$@"' \
+    _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$TEST_TMPDIR/qa-decoy.marker" sleep 30)
+  AP_LIVE_TEST_GROUPS="$decoy"
 
   run bash -c '
 set -uo pipefail
 source "$1"
 cd "$2"
-found="$(ap_claude_qa_owned_pids "$3" "$4" "$5")"
+found="$(ap_claude_qa_owned_pids "$3" "$4")"
 printf "%s\n" "$found"
-' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$work" "$profile" "$start" "$boot"
+' _ "$AP_SUBJECT/tests/live/claude-cleanup.sh" "$work" "$profile" "$boot"
   assert_success
   assert_output_equals ""
+  assert_output_not_contains "$decoy"
 }

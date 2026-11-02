@@ -95,7 +95,7 @@ ap_migrate_compute_plan() {
 
   if [[ $has_named_sandbox -eq 1 ]]; then
     local named_target
-    for named_target in "${named_targets[@]}"; do
+    for named_target in ${named_targets[@]+"${named_targets[@]}"}; do
       MIG_TARGETS+=("$named_target")
     done
   fi
@@ -107,7 +107,11 @@ ap_migrate_compute_plan() {
     MIG_TARGETS+=("default")
 
     local entry base
-    mapfile -t MIG_UNNAMED < <(ap_list_unnamed_legacy_entries "$storage_dir")
+    MIG_UNNAMED=()
+    while IFS= read -r entry; do
+      [[ -n "$entry" ]] || continue
+      MIG_UNNAMED+=("$entry")
+    done < <(ap_list_unnamed_legacy_entries "$storage_dir")
 
     for entry in "${MIG_UNNAMED[@]:-}"; do
       [[ -n "$entry" ]] || continue
@@ -125,7 +129,13 @@ ap_migrate_compute_plan() {
     ap_die "$EX_REFUSED" "legacy layout detected but no migration targets were identified"
   fi
 
-  mapfile -t MIG_TARGETS < <(printf "%s\n" "${MIG_TARGETS[@]}" | sort -u)
+  local sorted_targets=()
+  local target_name
+  while IFS= read -r target_name; do
+    [[ -n "$target_name" ]] || continue
+    sorted_targets+=("$target_name")
+  done < <(printf "%s\n" ${MIG_TARGETS[@]+"${MIG_TARGETS[@]}"} | LC_ALL=C sort -u)
+  MIG_TARGETS=("${sorted_targets[@]:-}")
 }
 
 ap_migrate_build_sources() {
@@ -157,17 +167,21 @@ ap_migrate_build_extra_json() {
 
   local profiles_json=""
   local profile
-  for profile in "${MIG_TARGETS[@]}"; do
+  for profile in ${MIG_TARGETS[@]+"${MIG_TARGETS[@]}"}; do
     [[ -n "$profiles_json" ]] && profiles_json+=","
     profiles_json+="\"$(ap_json_escape "$profile")\""
   done
 
   local sources_json=""
   local index
-  for index in "${!MIG_SOURCE_PATHS[@]}"; do
-    [[ -n "$sources_json" ]] && sources_json+=","
-    sources_json+="{\"path\":\"$(ap_json_escape "${MIG_SOURCE_PATHS[index]}")\",\"label\":\"$(ap_json_escape "${MIG_SOURCE_LABELS[index]}")\",\"mode\":\"${MIG_SOURCE_MODES[index]}\"}"
-  done
+  # Stock bash 3.2 aborts on an empty array's index list under `set -u`, so the
+  # walk is only entered when there is something to describe.
+  if [[ ${#MIG_SOURCE_PATHS[@]} -gt 0 ]]; then
+    for index in "${!MIG_SOURCE_PATHS[@]}"; do
+      [[ -n "$sources_json" ]] && sources_json+=","
+      sources_json+="{\"path\":\"$(ap_json_escape "${MIG_SOURCE_PATHS[index]}")\",\"label\":\"$(ap_json_escape "${MIG_SOURCE_LABELS[index]}")\",\"mode\":\"${MIG_SOURCE_MODES[index]}\"}"
+    done
+  fi
 
   printf '{"backup_dir":"%s","staged_dir":"%s","legacy_dir":"%s","content_manifest":"%s","migrated_profiles":[%s],"sources":[%s]}' \
     "$(ap_json_escape "$backup_dir")" \
@@ -248,7 +262,7 @@ ap_cmd_migrate() {
     return 0
   fi
 
-  local planned_targets="${MIG_TARGETS[*]}"
+  local planned_targets="${MIG_TARGETS[*]:-}"
   local planned_layouts="$MIG_LAYOUTS"
 
   if [[ $yes_flag -eq 0 ]]; then
@@ -259,7 +273,7 @@ ap_cmd_migrate() {
     printf "Migration preview:\n"
     printf "  Detected legacy layout: %s\n" "$planned_layouts"
     printf "  Backup destination: %s\n" "$candidate"
-    printf "  Profiles to create: %s\n" "${MIG_TARGETS[*]}"
+    printf "  Profiles to create: %s\n" "${MIG_TARGETS[*]:-}"
     printf "  The original data is kept outside the checkout before any profile is rebuilt.\n"
     printf "Pass --yes to proceed with migration.\n"
     return 0
@@ -267,25 +281,28 @@ ap_cmd_migrate() {
 
   # Mutating path: storage lock first, then affected profiles in name order.
   ap_lock_storage_exclusive "$repo_root"
-  ap_lock_profiles_exclusive "$repo_root" "${MIG_TARGETS[@]}"
+  ap_lock_profiles_exclusive "$repo_root" ${MIG_TARGETS[@]+"${MIG_TARGETS[@]}"}
 
   # Re-validate while holding the locks: layout and targets may have changed.
   ap_migrate_compute_plan "$repo_root"
   if [[ -z "$MIG_LAYOUTS" ]]; then
     ap_die "$EX_REFUSED" "legacy layout disappeared while waiting for locks; rerun migrate"
   fi
-  if [[ "${MIG_TARGETS[*]}" != "$planned_targets" ]]; then
+  if [[ "${MIG_TARGETS[*]:-}" != "$planned_targets" ]]; then
     ap_die "$EX_REFUSED" "affected profiles changed while waiting for locks; rerun migrate"
   fi
 
   ap_migrate_build_sources "$repo_root"
+  if [[ ${#MIG_SOURCE_PATHS[@]} -eq 0 ]]; then
+    ap_die "$EX_REFUSED" "no legacy sources resolved while waiting for locks; rerun migrate"
+  fi
 
   # Refuse while any owned process still uses an actual legacy source, such as
   # cwd, open files, exe or environment markers under .agent-sandbox or unnamed
   # storage. Target-profile storage is scanned as well.
   local index
   ap_scan_legacy_processes "$repo_root" "legacy storage" "$assume_unrelated" \
-    "${MIG_SOURCE_PATHS[@]}"
+    ${MIG_SOURCE_PATHS[@]+"${MIG_SOURCE_PATHS[@]}"}
   for index in "${!MIG_TARGETS[@]}"; do
     ap_scan_processes "$repo_root" "${MIG_TARGETS[index]}" "$assume_unrelated"
   done
@@ -299,13 +316,17 @@ ap_cmd_migrate() {
   resolved_root=$(ap_prepare_private_backup_root "$repo_root" "$backup_root")
 
   local real_storage
-  real_storage=$(realpath -m "$repo_root/.agent-profiles")
+  if ! real_storage=$(ap_platform_realpath_missing "$repo_root/.agent-profiles"); then
+    ap_die "$EX_LAYOUT" "unable to resolve physical profile storage path '$repo_root/.agent-profiles'"
+  fi
   if ap_path_within "$resolved_root" "$real_storage"; then
     ap_die "$EX_LAYOUT" "backup path resolves into profile storage ($resolved_root)"
   fi
   if [[ $MIG_SANDBOX -eq 1 ]]; then
     local real_sandbox
-    real_sandbox=$(realpath -m "$repo_root/.agent-sandbox")
+    if ! real_sandbox=$(ap_platform_realpath_missing "$repo_root/.agent-sandbox"); then
+      ap_die "$EX_LAYOUT" "unable to resolve physical legacy storage path '$repo_root/.agent-sandbox'"
+    fi
     if ap_path_within "$resolved_root" "$real_sandbox"; then
       ap_die "$EX_LAYOUT" "backup path resolves into legacy storage ($resolved_root)"
     fi
@@ -319,10 +340,14 @@ ap_cmd_migrate() {
   (umask 077 && mkdir -m 700 "$staged_dir" "$legacy_dir")
 
   local backup_dev
-  backup_dev=$(stat -c "%d" "$run_backup")
+  if ! backup_dev=$(ap_platform_stat_dev "$run_backup"); then
+    ap_die "$EX_LAYOUT" "cannot read the filesystem identity of backup directory '$run_backup'"
+  fi
   for index in "${!MIG_SOURCE_PATHS[@]}"; do
     local source_dev
-    source_dev=$(stat -c "%d" "${MIG_SOURCE_PATHS[index]}")
+    if ! source_dev=$(ap_platform_stat_dev "${MIG_SOURCE_PATHS[index]}"); then
+      ap_die "$EX_LAYOUT" "cannot read the filesystem identity of legacy source '${MIG_SOURCE_PATHS[index]}'"
+    fi
     if [[ "$source_dev" == "$backup_dev" && "${AP_FORCE_COPY:-0}" != "1" ]]; then
       MIG_SOURCE_MODES+=("rename")
     else
@@ -349,7 +374,7 @@ ap_cmd_migrate() {
     local destination="$staged_dir/${MIG_SOURCE_LABELS[index]}"
 
     (umask 077 && mkdir -p "$(dirname "$destination")")
-    if ! cp -a --no-dereference "$source" "$destination"; then
+    if ! ap_platform_copy_preserve "$source" "$destination"; then
       ap_migrate_abort_copy "$run_backup" "$journal_file" "copy of legacy data failed; original data preserved"
     fi
 
@@ -384,7 +409,7 @@ ap_cmd_migrate() {
     fi
     manifest_pairs+=("${MIG_SOURCE_LABELS[index]}" "$manifest_tree")
   done
-  ap_write_content_manifest "$content_manifest" "${manifest_pairs[@]}" \
+  ap_write_content_manifest "$content_manifest" ${manifest_pairs[@]+"${manifest_pairs[@]}"} \
     || ap_migrate_abort_copy "$run_backup" "$journal_file" "unable to write durable content manifest; original data preserved"
 
   ap_record_journal "$journal_file" "migrate" "all" "staged" "$repo_root" "" "$assume_unrelated" "$extra_json"
@@ -422,7 +447,7 @@ ap_cmd_migrate() {
   ap_write_backup_manifest "$run_backup" \
     || ap_die "$EX_BROKEN" "unable to write backup manifest; run 'agent-profiles recover' after fixing the backup path"
 
-  for target in "${MIG_TARGETS[@]}"; do
+  for target in ${MIG_TARGETS[@]+"${MIG_TARGETS[@]}"}; do
     ap_init_profile "$repo_root" "$target"
   done
 
@@ -436,6 +461,6 @@ ap_cmd_migrate() {
 
   printf "Migration completed successfully.\n"
   printf "  Original data preserved in private backup: %s\n" "$run_backup"
-  printf "  Clean profile(s) initialized: %s\n" "${MIG_TARGETS[*]}"
+  printf "  Clean profile(s) initialized: %s\n" "${MIG_TARGETS[*]:-}"
   printf "  Note: reinstalling tools is required because shims, caches and symlinks store absolute paths; run installers again inside the new profiles (for example 'npm install -g', 'uv tool install', 'cargo install') and relink anything that pointed into the legacy directories.\n"
 }

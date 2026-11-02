@@ -209,18 +209,18 @@ agy_live_tui_startup() {
 
   local root_pid=""
   root_pid=$(
-    python3 - "$fifo" "$log" "$FIXTURE_REPO" "$profile_dir" "$inner" <<'PY'
+    python3 - "$fifo" "$log" "$FIXTURE_REPO" "$profile_dir" "$inner" "$AP_LIVE_PTY_EXEC" <<'PY'
 import os
 import subprocess
 import sys
 
-fifo, log, repo, profile_dir, inner = sys.argv[1:6]
+fifo, log, repo, profile_dir, inner, pty_exec = sys.argv[1:7]
 env = dict(os.environ)
 env["AGENT_PROFILES_DIR"] = profile_dir
 read_fd = os.open(fifo, os.O_RDONLY)
 out = open(log, "ab")
 proc = subprocess.Popen(
-    ["script", "-qfc", f"stty rows 40 cols 120; bash {inner}", "/dev/null"],
+    [sys.executable, pty_exec, "--rows", "40", "--cols", "120", "--", "bash", inner],
     cwd=repo,
     env=env,
     stdin=read_fd,
@@ -629,7 +629,7 @@ summary = {
         "version": {"status": "pass", "note": "--version is not startup evidence"},
         "startup": {
             "status": "pass",
-            "mode": "TUI in PTY via script -qfc, offline with bwrap --unshare-net and masked /run/user session bus",
+            "mode": "TUI in a Python standard-library PTY, offline with bwrap --unshare-net and masked /run/user session bus",
             "ready_marker": "sign-in screen: 'You are currently not signed in.'",
             "onboarding": "first-run onboarding screens are driven when present; a fresh profile reached the sign-in screen directly",
             "host_account_identifiers": "none",

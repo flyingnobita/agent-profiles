@@ -29,7 +29,7 @@ ap_probe_agent_synthetic() {
   if [[ -z "${MISE_DATA_DIR:-}" ]] && command -v mise >/dev/null 2>&1; then
     local extracted_dirs
     extracted_dirs=$(
-      cd "$temp_dir" && env -i PATH="$PATH" HOME="$temp_dir" timeout 2 mise doctor --json 2>/dev/null | python3 -c '
+      cd "$temp_dir" && env -i PATH="$PATH" HOME="$temp_dir" "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 2 mise doctor --json 2>/dev/null | python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin).get("dirs", {})
@@ -51,7 +51,7 @@ except Exception:
   probe_raw=$(
     cd "$temp_dir" \
       && env -i PATH="$PATH" \
-        "${safe_mise_env[@]}" \
+        ${safe_mise_env[@]+"${safe_mise_env[@]}"} \
         HOME="$temp_dir" \
         XDG_CONFIG_HOME="$temp_dir/.config" \
         XDG_DATA_HOME="$temp_dir/.local/share" \
@@ -60,7 +60,7 @@ except Exception:
         CLAUDE_CONFIG_DIR="$temp_dir/.claude" \
         CODEX_HOME="$temp_dir/.codex" \
         OPENCODE_CONFIG_DIR="$temp_dir/.opencode" \
-        timeout 3 "$agent_cmd" "${agent_args[@]}" 2>&1
+        "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 3 "$agent_cmd" ${agent_args[@]+"${agent_args[@]}"} 2>&1
   ) || probe_exit=$?
 
   rm -rf "$temp_dir"
@@ -85,10 +85,10 @@ ap_doctor_check_agents() {
 
   local target_agents=("claude" "codex" "agy" "opencode")
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
-    target_agents=("${SELECTED_AGENTS[@]}")
+    target_agents=(${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"})
   fi
 
-  for agent in "${target_agents[@]}"; do
+  for agent in ${target_agents[@]+"${target_agents[@]}"}; do
     local agent_path="" agent_status="" agent_ver="" agent_probe="" agent_hint=""
     local binary="$agent"
     local probe_args=("--version")
@@ -98,7 +98,7 @@ ap_doctor_check_agents() {
       "ap_agent_${agent}_info"
       binary="${AGENT_BINARY:-$agent}"
       if [[ ${#AGENT_PROBE_ARGS[@]} -gt 0 ]]; then
-        probe_args=("${AGENT_PROBE_ARGS[@]}")
+        probe_args=(${AGENT_PROBE_ARGS[@]+"${AGENT_PROBE_ARGS[@]}"})
       fi
     fi
 
@@ -109,11 +109,11 @@ ap_doctor_check_agents() {
     fi
 
     if [[ -n "$agent_path" ]]; then
-      agent_path=$(readlink -f "$agent_path" 2>/dev/null || echo "$agent_path")
+      agent_path=$(ap_platform_realpath_existing "$agent_path" 2>/dev/null || printf "%s\n" "$agent_path")
 
       PROBE_EXIT=0
       PROBE_PARSED_VERSION=""
-      ap_probe_agent_synthetic "$agent_path" "${probe_args[@]}"
+      ap_probe_agent_synthetic "$agent_path" ${probe_args[@]+"${probe_args[@]}"}
 
       if [[ "$PROBE_EXIT" -eq 125 ]]; then
         agent_status="unverified"

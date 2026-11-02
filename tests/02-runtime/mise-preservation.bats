@@ -6,10 +6,45 @@ setup() {
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
   setup_isolation
+  setup_mise_roots
 }
 
 teardown() {
   teardown_isolation
+}
+
+# Every test in this file exercises the real mise binary, and mise writes to its
+# own state: a `mise link`/`mise uninstall` pair would otherwise mutate whatever
+# installation the invoking user has. Each test therefore runs against
+# disposable roots, exactly like tests/03-setup/lib.bash:setup_mise_env, so a
+# crashed test cannot leave a host installation behind.
+setup_mise_roots() {
+  export MISE_CONFIG_DIR="$TEST_TMPDIR/mise/config"
+  export MISE_DATA_DIR="$TEST_TMPDIR/mise/data"
+  export MISE_STATE_DIR="$TEST_TMPDIR/mise/state"
+  export MISE_CACHE_DIR="$TEST_TMPDIR/mise/cache"
+  export MISE_TRUSTED_CONFIG_PATHS="$TEST_TMPDIR"
+  mkdir -p "$MISE_CONFIG_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR"
+}
+
+# The host installation paths mise would use when a MISE_* root is not set. None
+# of them may gain test state: the linked tool, its shim entry and the install
+# record belong to the disposable roots. (mise regenerates a system-shim cache
+# under the default data home in any invocation, so that one cache directory is
+# not by itself evidence of a mutation.)
+assert_host_mise_state_untouched() {
+  local path
+  for path in \
+    "$HOME/.config/mise" \
+    "$HOME/.local/share/mise/installs" \
+    "$HOME/.local/share/mise/shims/my-hermetic-tool" \
+    "$HOME/.local/state/mise" \
+    "$HOME/.cache/mise"; do
+    if [[ -e "$path" ]]; then
+      echo "host mise state was touched: $path" >&2
+      return 1
+    fi
+  done
 }
 
 @test "mise: preserves host effective mise dirs inside profile" {
@@ -131,8 +166,10 @@ echo "HERMETIC_TOOL_OK:cwd=$(pwd)"
 EOF
   chmod +x "$tool_dir/bin/my-hermetic-tool"
 
-  # Link as a custom local tool in mise (offline, no network or auth)
+  # Link as a custom local tool in mise (offline, no network or auth). The link
+  # lands in the disposable data root, never in a host mise installation.
   MISE_YES=1 mise link -f node@custom-test "$tool_dir"
+  assert_dir_exists "$MISE_DATA_DIR/installs/node/custom-test"
 
   # Configure repo to use this linked tool
   cat <<'EOF' > "$repo/mise.toml"
@@ -149,6 +186,14 @@ EOF
   assert_success
   assert_output_contains "HERMETIC_TOOL_OK:cwd=$repo/nested/sub"
 
-  # Clean up linked tool
+  # Clean up linked tool inside the disposable root
   MISE_YES=1 mise uninstall node@custom-test 2>/dev/null || true
+  [[ ! -e "$MISE_DATA_DIR/installs/node/custom-test" ]]
+
+  # Nothing leaked into a host mise installation: the default paths are still
+  # absent and mise still reports the disposable data root as its own.
+  assert_host_mise_state_untouched
+  local effective_data_dir
+  effective_data_dir=$(mise doctor --json | python3 -c 'import json, sys; print(json.load(sys.stdin)["dirs"]["data"])')
+  assert_equal "$effective_data_dir" "$MISE_DATA_DIR"
 }

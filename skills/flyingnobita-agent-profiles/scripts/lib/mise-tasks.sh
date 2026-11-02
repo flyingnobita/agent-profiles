@@ -7,10 +7,15 @@ AP_SETUP_TASKS=(agent-profiles)
 # while they still carry this tool's managed-by marker.
 AP_SETUP_RETIRED_TASKS=(agent-profiles-init)
 AP_SETUP_AGENTS=(claude codex agy opencode)
+# Prerequisites for the machine setup. ap_setup_detect narrows this list to the
+# configuration-redirection set on Darwin, which needs no bubblewrap because
+# macOS profiles redirect agent configuration by environment only.
 AP_SETUP_DEPS=(bash git python3 mise bwrap)
 
 ap_setup_skill_dir() {
-  printf "%s\n" "$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")")"
+  local mise_lib_dir
+  mise_lib_dir="$(ap_platform_script_dir "${BASH_SOURCE[0]}")"
+  printf "%s\n" "$(dirname "$(dirname "$mise_lib_dir")")"
 }
 
 ap_setup_read_field() {
@@ -24,8 +29,33 @@ ap_setup_read_field() {
 
 ap_setup_detect() {
   local os_name
-  os_name="$(uname -s 2>/dev/null || echo unknown)"
+  os_name="$(ap_platform_os 2>/dev/null || echo unknown)"
+
   AP_SETUP_OS_RELEASE="${AP_OS_RELEASE:-/etc/os-release}"
+  AP_SETUP_OS_ID=""
+  AP_SETUP_OS_ID_LIKE=""
+  AP_SETUP_OS_PRETTY=""
+  AP_SETUP_PKG_MANAGER=""
+
+  # macOS is a configuration-redirection platform: it publishes its identity
+  # through sw_vers, has no os-release file and needs no bubblewrap. No package
+  # manager is guessed for it either, so nothing is ever installed there.
+  if [[ "$os_name" == "Darwin" ]]; then
+    AP_SETUP_FAMILY="darwin"
+    AP_SETUP_OS_ID="macos"
+    AP_SETUP_DEPS=(bash git python3 mise)
+    local product_version=""
+    if command -v sw_vers >/dev/null 2>&1; then
+      product_version="$(sw_vers -productVersion 2>/dev/null || true)"
+    fi
+    if [[ -n "$product_version" ]]; then
+      AP_SETUP_OS_PRETTY="macOS $product_version"
+    else
+      AP_SETUP_OS_PRETTY="macOS (version unknown)"
+    fi
+    return 0
+  fi
+
   AP_SETUP_OS_ID="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" ID)"
   AP_SETUP_OS_ID_LIKE="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" ID_LIKE)"
   AP_SETUP_OS_PRETTY="$(ap_setup_read_field "$AP_SETUP_OS_RELEASE" PRETTY_NAME)"
@@ -33,6 +63,7 @@ ap_setup_detect() {
   [[ -n "$AP_SETUP_OS_ID" ]] || AP_SETUP_OS_ID="unknown"
   [[ -n "$AP_SETUP_OS_PRETTY" ]] || AP_SETUP_OS_PRETTY="unknown"
 
+  AP_SETUP_DEPS=(bash git python3 mise bwrap)
   AP_SETUP_FAMILY="unsupported"
   if [[ "$os_name" == "Linux" ]]; then
     case " $AP_SETUP_OS_ID $AP_SETUP_OS_ID_LIKE " in
@@ -41,7 +72,6 @@ ap_setup_detect() {
     esac
   fi
 
-  AP_SETUP_PKG_MANAGER=""
   case "$AP_SETUP_FAMILY" in
     arch) command -v pacman >/dev/null 2>&1 && AP_SETUP_PKG_MANAGER="pacman" ;;
     debian) command -v apt-get >/dev/null 2>&1 && AP_SETUP_PKG_MANAGER="apt-get" ;;
@@ -63,7 +93,7 @@ ap_setup_resolve() {
   local found
   found="$(command -v "$name" 2>/dev/null || true)"
   [[ -n "$found" ]] || return 1
-  readlink -f "$found" 2>/dev/null || printf "%s\n" "$found"
+  ap_platform_realpath_existing "$found" 2>/dev/null || printf "%s\n" "$found"
 }
 
 ap_setup_package_for() {
@@ -140,18 +170,22 @@ ap_setup_print_detection() {
 
   if [[ -n "$AP_SETUP_PKG_MANAGER" ]]; then
     printf "Package manager: %s (%s family)\n" "$AP_SETUP_PKG_MANAGER" "$AP_SETUP_FAMILY"
+  elif [[ "$AP_SETUP_FAMILY" == "darwin" ]]; then
+    printf "Package manager: none (macOS uses no automatic package installation)\n"
   else
     printf "Package manager: none detected\n"
   fi
   if [[ "$AP_SETUP_FAMILY" == "unsupported" ]]; then
     printf "  [UNSUPPORTED] unsupported automatic path: distribution family '%s' is not supported\n" \
       "$AP_SETUP_OS_ID"
+  elif [[ "$AP_SETUP_FAMILY" == "darwin" ]]; then
+    printf "  [NOTE] macOS redirects agent configuration by environment; only bash, git, python3 and mise are required\n"
   fi
   printf "\n"
 
   printf "Dependencies:\n"
   local dep path install_command
-  for dep in "${AP_SETUP_DEPS[@]}"; do
+  for dep in ${AP_SETUP_DEPS[@]+"${AP_SETUP_DEPS[@]}"}; do
     if path="$(ap_setup_resolve "$dep")"; then
       printf "  [OK] %s: %s\n" "$dep" "$path"
     elif [[ "$dep" == "mise" ]]; then
@@ -166,7 +200,7 @@ ap_setup_print_detection() {
 
   printf "Agents:\n"
   local agent
-  for agent in "${AP_SETUP_AGENTS[@]}"; do
+  for agent in ${AP_SETUP_AGENTS[@]+"${AP_SETUP_AGENTS[@]}"}; do
     if path="$(ap_setup_resolve "$agent")"; then
       printf "  [FOUND] %s: %s\n" "$agent" "$path"
     elif ap_setup_mise_registry_has "$agent"; then
@@ -182,7 +216,7 @@ ap_setup_print_detection() {
   config_dir="$(ap_mise_config_dir)"
   printf "Global tasks:\n"
   printf "  config dir: %s\n" "$config_dir"
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     if [[ -f "$(ap_setup_task_path "$config_dir" "$task")" ]]; then
       printf "  %s: present\n" "$task"
     else
@@ -221,7 +255,7 @@ ap_setup_print_plan() {
     printf "  tasks: managed configuration detected: %s\n" "$reason"
   fi
 
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
     if [[ $tasks_managed -eq 1 ]]; then
       if [[ -n "$prepare_dir" ]]; then
@@ -242,7 +276,7 @@ ap_setup_print_plan() {
     fi
   done
   if [[ $tasks_managed -eq 0 ]]; then
-    for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+    for task in ${AP_SETUP_RETIRED_TASKS[@]+"${AP_SETUP_RETIRED_TASKS[@]}"}; do
       target="$(ap_setup_task_path "$config_dir" "$task")"
       if ap_setup_is_managed_task "$target"; then
         printf "  task: %s (retired task removed on --apply, after a backup)\n" "$target"
@@ -259,7 +293,8 @@ ap_setup_print_plan() {
   if [[ "$tasks_only" -eq 1 ]]; then
     printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
   fi
-  for dep in bash git python3 bwrap; do
+  for dep in "${AP_SETUP_DEPS[@]:-}"; do
+    [[ -n "$dep" ]] || continue
     if [[ "$tasks_only" -eq 1 ]]; then
       break
     fi
@@ -274,9 +309,6 @@ ap_setup_print_plan() {
       printf "  prerequisite: %s (unsupported automatic path)\n" "$dep"
     fi
   done
-  if ! ap_setup_resolve mise >/dev/null 2>&1; then
-    printf "  prerequisite: mise (manual installation required; no curl)\n"
-  fi
 
   for agent in "${requested_agents[@]:-}"; do
     [[ -n "$agent" ]] || continue
@@ -317,22 +349,14 @@ ap_setup_version() {
 
 ap_setup_manifest_content() {
   local skill_dir="$1"
-  (
-    cd "$skill_dir" || exit 1
-    {
-      find scripts -type f -print | LC_ALL=C sort | while IFS= read -r file; do
-        sha256sum "$file"
-      done
-      sha256sum VERSION
-    }
-  )
+  ap_platform_manifest "$skill_dir"
 }
 
 ap_setup_current_digest() {
   local content
   content="$(ap_setup_manifest_content "$(ap_setup_skill_dir)")" || return 1
   [[ -n "$content" ]] || return 1
-  printf "%s\n" "$content" | sha256sum | cut -d' ' -f1
+  printf "%s\n" "$content" | ap_platform_sha256_text
 }
 
 ap_setup_release_root() {
@@ -352,12 +376,12 @@ ap_setup_deploy_release() {
   if ! content="$(ap_setup_manifest_content "$skill_dir")" || [[ -z "$content" ]]; then
     return 1
   fi
-  digest="$(printf "%s\n" "$content" | sha256sum | cut -d' ' -f1)"
+  digest="$(printf "%s\n" "$content" | ap_platform_sha256_text)"
   sha8="${digest:0:8}"
   root="$(ap_setup_release_root)"
   final="$root/$version-$sha8"
 
-  if [[ -d "$final" ]] && (cd "$final" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+  if [[ -d "$final" ]] && ap_platform_manifest_verify "$final" "$final/manifest.sha256" >/dev/null 2>&1; then
     AP_SETUP_RELEASE_DIR="$final"
     AP_SETUP_VERSION="$version"
     AP_SETUP_MANIFEST_DIGEST="$digest"
@@ -372,7 +396,7 @@ ap_setup_deploy_release() {
   cp -a "$skill_dir/VERSION" "$tmp/VERSION"
   printf "%s\n" "$content" >"$tmp/manifest.sha256"
 
-  if ! (cd "$tmp" && sha256sum -c manifest.sha256 --quiet >/dev/null 2>&1); then
+  if ! ap_platform_manifest_verify "$tmp" "$tmp/manifest.sha256" >/dev/null 2>&1; then
     rm -rf "$tmp"
     return 1
   fi
@@ -530,19 +554,49 @@ ap_setup_config_file_managed_reason() {
   return 1
 }
 
+# Prints the first component of <target> below <base> that is a symbolic link.
+# Dotfiles management links the config directory or one of its parents inside the
+# home directory. A symlinked ancestor *above* the home directory is not
+# evidence of dotfiles management: macOS serves every temporary directory, and
+# many homes, through /var -> /private/var, and comparing a resolved path with
+# an unresolved one used to report those config directories as managed.
+ap_setup_symlinked_component() {
+  local base="$1"
+  local target="$2"
+  [[ -n "$base" && "$target" == "$base"/* ]] || return 1
+
+  local rest="${target#"$base"/}"
+  local current="$base"
+  local part
+  local old_ifs="$IFS"
+  IFS='/'
+  for part in $rest; do
+    [[ -n "$part" ]] || continue
+    current="$current/$part"
+    if [[ -L "$current" ]]; then
+      IFS="$old_ifs"
+      printf "%s\n" "$current"
+      return 0
+    fi
+  done
+  IFS="$old_ifs"
+  return 1
+}
+
 # Detects a global mise configuration directory that is itself a symlink or
-# resolves through a symlinked parent, which indicates dotfiles management.
+# resolves through a symlinked parent inside the home directory, which indicates
+# dotfiles management.
 ap_setup_config_dir_managed_reason() {
   local config_dir="$1"
-  local resolved_dir
+  local linked
 
   if [[ -L "$config_dir" ]]; then
     printf "global mise config directory '%s' is a symlink\n" "$config_dir"
     return 0
   fi
-  resolved_dir=$(readlink -f "$config_dir" 2>/dev/null || true)
-  if [[ -n "$resolved_dir" && "$resolved_dir" != "$config_dir" ]]; then
-    printf "global mise config directory '%s' resolves through a symlinked parent\n" "$config_dir"
+  if linked=$(ap_setup_symlinked_component "${HOME:-}" "$config_dir"); then
+    printf "global mise config directory '%s' resolves through a symlinked parent (%s)\n" \
+      "$config_dir" "$linked"
     return 0
   fi
   return 1
@@ -562,7 +616,7 @@ ap_setup_managed_config_reason() {
     printf "tasks directory '%s' is a symlink\n" "$tasks_dir"
     return 0
   fi
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
     if [[ -L "$target" ]]; then
       printf "task file '%s' is a symlink\n" "$target"
@@ -601,7 +655,7 @@ ap_setup_prepare_managed() {
   release="$(ap_setup_release_root)/$version-${digest:0:8}"
 
   (umask 022 && mkdir -p "$prepare_dir/tasks") || return 1
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     if ! ap_setup_task_content "$task" "$release" "$version" "$digest" \
       >"$prepare_dir/tasks/$task"; then
       return 1
@@ -645,11 +699,11 @@ ap_setup_install_package() {
 
   if [[ "$(id -u)" -ne 0 ]]; then
     command -v sudo >/dev/null 2>&1 || return 1
-    cmd=(sudo "${cmd[@]}")
+    cmd=(sudo ${cmd[@]+"${cmd[@]}"})
   fi
 
-  printf "install: %s\n" "${cmd[*]}"
-  "${cmd[@]}"
+  printf "install: %s\n" "${cmd[*]:-}"
+  ${cmd[@]+"${cmd[@]}"}
 }
 
 ap_setup_install_prerequisites() {
@@ -657,11 +711,15 @@ ap_setup_install_prerequisites() {
   if [[ "$tasks_only" -eq 1 ]]; then
     printf "  prerequisites: skipped (--tasks-only requested; no package manager or agent installation)\n"
   fi
-  for dep in bash git python3 bwrap; do
+  for dep in "${AP_SETUP_DEPS[@]:-}"; do
+    [[ -n "$dep" ]] || continue
     if [[ "$tasks_only" -eq 1 ]]; then
       break
     fi
     if ap_setup_resolve "$dep" >/dev/null 2>&1; then
+      continue
+    fi
+    if [[ "$dep" == "mise" ]]; then
       continue
     fi
     if ! ap_setup_install_package "$dep"; then
@@ -786,7 +844,7 @@ ap_setup_apply_tasks() {
   if [[ $managed -eq 0 ]]; then
     (umask 022 && mkdir -p "$config_dir/tasks")
   fi
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     [[ $managed -eq 0 ]] || break
     target="$(ap_setup_task_path "$config_dir" "$task")"
 
@@ -831,7 +889,7 @@ ap_setup_apply_tasks() {
   done
 
   if [[ $managed -eq 0 ]]; then
-    for task in "${AP_SETUP_RETIRED_TASKS[@]}"; do
+    for task in ${AP_SETUP_RETIRED_TASKS[@]+"${AP_SETUP_RETIRED_TASKS[@]}"}; do
       target="$(ap_setup_task_path "$config_dir" "$task")"
       ap_setup_is_managed_task "$target" || continue
       if ! backup="$(ap_setup_backup_task "$target")"; then
@@ -844,12 +902,12 @@ ap_setup_apply_tasks() {
 
   if [[ "$tasks_only" -eq 0 ]]; then
     ap_setup_install_prerequisites
-    ap_setup_install_agents "$prepare_dir" "${requested_agents[@]}"
+    ap_setup_install_agents "$prepare_dir" ${requested_agents[@]+"${requested_agents[@]}"}
   fi
 
   printf "\nApplied:\n"
   printf "  release: %s\n" "$AP_SETUP_RELEASE_DIR"
-  for task in "${AP_SETUP_TASKS[@]}"; do
+  for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     if [[ $managed -eq 1 ]]; then
       if [[ -n "$prepare_dir" ]]; then
         printf "  prepared: %s/tasks/%s\n" "$prepare_dir" "$task"

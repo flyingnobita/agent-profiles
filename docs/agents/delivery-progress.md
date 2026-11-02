@@ -148,3 +148,92 @@ and commit references. This does not establish fleet-wide deployment.
 Current follow-ups and their completion criteria are in
 [outstanding.md](outstanding.md). Tagged releases and real-host installation
 remain separate actions; no such completion is inferred from source publication.
+
+## macOS platform delivery
+
+Issue #6 asked for macOS support, previously deferred. The user approved the
+plan and seams S1-S10 on 2026-10-30: macOS arm64 becomes a qualified platform
+for the same four integrations, using environment and configuration redirection
+only (recorded in `docs/adr/0001-darwin-environment-only-redirection.md`), stock
+macOS `/bin/bash` 3.2 with no new prerequisite, verification on the real MBP-M4
+machine plus a new arm64 CI job, and a 0.3.0 release.
+
+Delivery ran as one unit in eight ordered slices, each gated by the orchestrator:
+S1 portability kernel, S2 Darwin run and redirection, S3 agent adapters and
+Darwin doctor, S4 process safety and portable live harness, S5 setup, S6 test
+tier and arm64 CI, S7 release tooling, S8 Linux and macOS qualification. Every
+slice's new tests were re-run against the base commit before being accepted, and
+Linux keeps zero skips with bubblewrap behaviour unchanged.
+
+Three plan variances are recorded rather than hidden. First, the per-agent
+env-root hooks needed no code changes, because the Darwin HOME and the existing
+env hooks already produced the required per-agent roots, so those tests are
+guards that pin behaviour instead of adding it; the doctor and diagnostics parts
+of the same modules did change, with the Darwin Keychain branch in
+`lib/agents/agy.sh`, the lsof listener classification in `lib/agents/opencode.sh`
+and the portable login probe in `lib/agents/codex.sh`. Second, `mise.toml`
+gained a `node = "22.23.4"` tool pin instead of the plan's "stays unchanged
+unless a strictly necessary alias is added": the two npm-backed tools had no
+runtime pin and macOS arm64 QA failed on a host without a system node. Third,
+three provenance groups were reclassified during the gates after independent
+receipts showed they pass on the base commit.
+
+### Scope decision after real-machine QA
+
+The plan required real four-agent evidence on the macOS host for full
+qualification and said that, if unobtainable, the scope must return to the user.
+No agent CLI was installed on the qualification machine, so the version, startup,
+discovery and authentication classes for Claude Code, Codex CLI, Antigravity CLI
+and OpenCode could not be observed there. On 2026-11-01 the user accepted the
+narrowed claim for this release: macOS arm64 is qualified for profile mechanics,
+configuration redirection and diagnostics, while the four real-agent classes on
+Darwin are recorded as unverified and carried as a follow-up on issue #6. The
+release surface, the evidence summary and the compatibility reference state that
+boundary rather than implying parity with the Linux evidence classes.
+
+### Candidate status and historical snapshots
+
+Three real-machine receipts exist and they describe three different trees. They
+are kept apart instead of being merged into one count:
+
+- `1..401` with `CI_EXIT=0` (`evidence/macos-qa/mbp-m4-ci-final.log`) and
+  artifact `sha256 8de573aa…` (`mbp-m4-release-artifacts-final.log`) is the
+  earlier 0.3.0 ship candidate.
+- `1..406` with `CI_EXIT=0` (`mbp-m4-ci-ship.log`) and artifact
+  `sha256 b08469f7…` (remote `/tmp/ap06-art8.log`) is a later intermediate
+  tree. Neither log names a commit, so no commit binding is claimed for either,
+  and the commit-derived `SOURCE_DATE_EPOCH` means those digests cannot match a
+  later commit.
+- At replacement resumption on 2026-11-02, the base `f337d2a` carried 408
+  tests.
+
+At that checkpoint the candidate was not qualified: hosted run 41361031468 had
+reproduced exactly two macOS failures, both lease timing:
+`portability: shared and exclusive locks retain contention and descendant leases
+without flock or dynamic descriptors` (`tests/02-runtime/portability.bats:234`)
+and `execution: reset --yes is blocked by an active run lease on same profile
+with exit 75` (`tests/08-lifecycle/reset-remove-execution.bats:42`). The repair
+and the hosted gate were still pending then, so no green claim was made for
+either platform at that point. Final results for the shipped candidate are
+reported in pull request #7; this record is the checkpoint and is not updated
+to match them.
+
+The MBP-M4 run of the intermediate tree `4c68d82` had two different, correct
+refusals: `migrate recovery: refuses an original changed after verification` and
+`execution: reset --yes recreates empty directories` both hit the documented
+fail-closed process scan with exit 75, because the live desktop exposed
+`mdworker_shared` and `parsec-fbf` to `ps` while `lsof` could not inspect them.
+That is the plan-accepted boundary for uninspectable same-uid daemons, not a
+product defect, and it is why those two success-path lifecycle tests are
+host-coupled on a live session: they pass on a clean CI virtual machine and
+refuse on a desktop carrying such daemons. QA guidance keeps them unskipped and
+unbypassed.
+
+The accepted narrowed scope is unchanged: profile mechanics, configuration
+redirection and diagnostics are qualified on macOS arm64; the four real agent
+CLIs' version, startup, discovery and authentication classes on Darwin stay
+unverified with no agent CLI installed there; credentialed model runs stay a
+credential-dependent gap everywhere; filesystem enforcement is not claimed and
+the network is not blocked. At the checkpoint issue #6 still carried this
+follow-up open, so the change lands through pull request #7 with a reference
+(`Refs`), not a close.

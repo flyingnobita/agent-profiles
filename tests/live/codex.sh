@@ -211,15 +211,18 @@ STARTUP_INNER="$BASE_TMP/codex-startup-inner.sh"
 } >"$STARTUP_INNER"
 chmod 700 "$STARTUP_INNER"
 
-(
-  cd "$FIXTURE_REPO"
-  export AGENT_PROFILES_DIR="$STARTUP_PROFILE_DIR"
-  exec setsid script -qfc "stty rows 40 cols 120; bash '$STARTUP_INNER'" /dev/null
-) >"$STARTUP_LOG" 2>&1 </dev/null &
-STARTUP_ROOT_PID=$!
-if ! ap_live_write_group_marker "$STARTUP_ROOT_PID" "$STARTUP_MARKER"; then
+# The PTY comes from the Python standard-library driver instead of util-linux
+# script -qfc, and the group is created by Python start_new_session, so the
+# recorded identity is the group leader on both platforms.
+STARTUP_ROOT_PID="$(
+  cd "$FIXTURE_REPO" || exit 1
+  AGENT_PROFILES_DIR="$STARTUP_PROFILE_DIR" \
+    AP_LIVE_SPAWN_STDOUT="$STARTUP_LOG" AP_LIVE_SPAWN_STDERR="$STARTUP_LOG" \
+    ap_live_spawn_test_process "$STARTUP_MARKER" \
+    python3 "$AP_LIVE_PTY_EXEC" --rows 40 --cols 120 -- bash "$STARTUP_INNER"
+)"
+if [[ -z "$STARTUP_ROOT_PID" ]] || [[ ! -f "$STARTUP_MARKER" ]]; then
   printf 'ERROR: could not record the startup process identity\n' >&2
-  kill -TERM -"$STARTUP_ROOT_PID" 2>/dev/null || true
   exit 1
 fi
 
@@ -586,7 +589,7 @@ summary = {
         "version": {"status": "pass", "note": "doctor report; --version is not startup"},
         "startup": {
             "status": "pass",
-            "mode": "TUI in PTY via script -qfc, offline with bwrap --unshare-net",
+            "mode": "TUI in a Python standard-library PTY, offline with bwrap --unshare-net",
             "ready_marker": "Welcome to Codex with sign-in/onboarding options",
             "app_server_after": appserver,
             "cleanup": "owned PGID shutdown; no survivors",

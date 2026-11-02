@@ -29,6 +29,33 @@ teardown() {
   [[ -z "$(ls -A "$TEST_TMPDIR/dotfiles/tasks")" ]]
 }
 
+@test "setup apply: a config directory beneath a symlinked ancestor is deployed to" {
+  # The global mise config may sit below a symlinked ancestor that is not ours to
+  # judge: macOS serves every temporary directory through /var -> /private/var,
+  # and a home or XDG root can be linked to another volume. Only a link at or
+  # below the config directory itself means dotfiles management.
+  mkdir -p "$TEST_TMPDIR/real-config"
+  ln -s "$TEST_TMPDIR/real-config" "$TEST_TMPDIR/link-config"
+  export MISE_CONFIG_DIR="$TEST_TMPDIR/link-config/mise"
+  mkdir -p "$MISE_CONFIG_DIR"
+
+  run bash "$AP_HELPER" setup --apply --tasks-only
+  assert_success
+  assert_output_not_contains "managed configuration"
+  assert_file_exists "$MISE_CONFIG_DIR/tasks/agent-profiles"
+  grep -Fxq '#MISE alias="ap"' "$MISE_CONFIG_DIR/tasks/agent-profiles"
+
+  # A link at the config directory itself is still dotfiles management.
+  rm -rf "$MISE_CONFIG_DIR"
+  mkdir -p "$TEST_TMPDIR/dotfiles/mise"
+  ln -s "$TEST_TMPDIR/dotfiles/mise" "$MISE_CONFIG_DIR"
+
+  run bash "$AP_HELPER" setup --apply --tasks-only
+  assert_success
+  assert_output_contains "managed configuration"
+  [[ ! -e "$TEST_TMPDIR/dotfiles/mise/tasks/agent-profiles" ]]
+}
+
 @test "setup apply: prepare-dir writes prepared files and instructions without touching the target" {
   mkdir -p "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR"
   ln -s "$TEST_TMPDIR/dotfiles/tasks" "$MISE_CONFIG_DIR/tasks"

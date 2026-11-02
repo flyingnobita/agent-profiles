@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -32,11 +33,11 @@ teardown() {
 
   # Private permissions (0700)
   local mode_storage
-  mode_storage=$(stat -c "%a" "$repo/.agent-profiles")
+  mode_storage=$(ap_test_stat_mode "$repo/.agent-profiles")
   assert_equal "$mode_storage" "700"
 
   local mode_profile
-  mode_profile=$(stat -c "%a" "$prof_dir")
+  mode_profile=$(ap_test_stat_mode "$prof_dir")
   assert_equal "$mode_profile" "700"
 }
 

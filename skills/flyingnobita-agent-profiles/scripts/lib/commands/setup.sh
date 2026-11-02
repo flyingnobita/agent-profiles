@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Command: setup - detect the Linux machine environment and configure global
-# mise tasks without touching unrelated configuration.
+# Command: setup - detect the machine environment and configure global mise
+# tasks without touching unrelated configuration. Linux keeps its
+# package-manager and bubblewrap prerequisites; macOS is detected through
+# sw_vers and only redirects agent configuration by environment.
 # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise-tasks.sh
 
 source "$LIB_DIR/mise-tasks.sh"
@@ -89,5 +91,5 @@ ap_cmd_setup() {
     return 0
   fi
 
-  ap_setup_apply_tasks "$prepare_dir" "$tasks_only" "${requested_agents[@]}"
+  ap_setup_apply_tasks "$prepare_dir" "$tasks_only" ${requested_agents[@]+"${requested_agents[@]}"}
 }

@@ -33,7 +33,7 @@ ap_doctor_check_claude_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "claude" ]]; then
         matched=1
         break
@@ -97,7 +97,7 @@ PY
       auth_detail="Profile credential file present (OS keyring not inspected)"
     elif [[ ${#env_cred_names[@]} -gt 0 ]]; then
       local joined_names=""
-      for env_var in "${env_cred_names[@]}"; do
+      for env_var in ${env_cred_names[@]+"${env_cred_names[@]}"}; do
         if [[ -n "$joined_names" ]]; then
           joined_names+=", "
         fi

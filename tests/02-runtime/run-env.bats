@@ -126,6 +126,38 @@ print("ENV_OK")
   assert_output_contains "ENV_OK"
 }
 
+@test "run: helper-invoked python never writes bytecode into the home" {
+  local repo="$TEST_TMPDIR/repo-run-pycache"
+  create_fixture_repo "$repo"
+  cd "$repo"
+  run bash "$AP_HELPER" init --profile pycache
+  assert_success
+
+  # Apple's /usr/bin/python3 caches every imported stdlib module under $HOME
+  # (Library/Caches/com.apple.python) and follows HOME rather than XDG, so a
+  # profile run used to write into whichever home the helper had at the time.
+  # Bytecode writing is suppressed and any future cache is kept inside the
+  # profile; both promises are part of the exported profile environment.
+  run bash "$AP_HELPER" run --profile pycache -- python3 -c '
+import json, os
+prof_dir = os.environ["AGENT_PROFILES_DIR"]
+assert os.environ["PYTHONDONTWRITEBYTECODE"] == "1"
+assert os.environ["PYTHONPYCACHEPREFIX"] == os.path.join(prof_dir, ".cache/python")
+print("PYCACHE_OK")
+'
+  assert_success
+  assert_output_contains "PYCACHE_OK"
+
+  # No bytecode cache appeared in the redirect target's home. Linux creates the
+  # four host mountpoints there on purpose, so only bytecode is asserted.
+  local bytecode
+  bytecode=$(find "$HOME" \( -name '*.pyc' -o -name '__pycache__' \) -print | head -n 1)
+  [[ -z "$bytecode" ]] || {
+    printf 'python wrote bytecode into the home: %s\n' "$bytecode" >&2
+    return 1
+  }
+}
+
 @test "run: configures PATH with profile bin directories first and purges stale profile paths" {
   local repo="$TEST_TMPDIR/repo-run-path"
   create_fixture_repo "$repo"

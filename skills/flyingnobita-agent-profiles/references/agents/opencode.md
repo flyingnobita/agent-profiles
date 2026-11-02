@@ -6,14 +6,50 @@ path resolution, skill sources and server modes change between versions.
 
 ## Directory Redirection
 
-When launched through `agent-profiles run`, the Agent integration configures
-dedicated profile storage:
+When launched through `agent-profiles run` on Linux, the Agent integration
+configures dedicated profile storage with bubblewrap bind mounts; the macOS
+arm64 section below describes the environment-only equivalent:
 
 - Configuration: `OPENCODE_CONFIG_DIR` is exported as `<repo>/.agent-profiles/<profile>/.opencode`. In the tested version this variable **replaces** the configuration root instead of adding a source: the XDG configuration directory is not read while it is set.
 - Data, state and cache: `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` are profile directories, so OpenCode keeps its database, logs, repositories, sessions and installed helper binaries under `.local/share/opencode`, `.local/state/opencode` and `.cache/opencode`.
 - Shared skill mounts: `$HOME/.claude` and `$HOME/.agents` are bind-mounted from the profile, because OpenCode resolves Claude-compatible and `.agents` skill roots from the account home directory rather than from `$HOME`.
 - Profile bins: profile binaries (`npm-global/bin`, `bin`, `cargo-global/bin`, `python-user/bin`) take precedence in `PATH`. The host mise tool path and project files are preserved. If no profile is named, the Default profile is used.
 - Shared temporary path: the CLI reports a host-wide temporary directory (`/tmp/opencode` in the tested version) that is not redirected by a profile. Treat it as a shared Host environment resource, not profile storage.
+
+## macOS arm64 (Darwin)
+
+macOS arm64 is qualified for profile mechanics, configuration redirection and
+diagnostics only. Nothing is bind-mounted: `OPENCODE_CONFIG_DIR`, the four XDG
+roots and the profile `HOME` (`<profile>`) put configuration, data, state, cache
+and the `$HOME/.claude` / `$HOME/.agents` skill roots inside the profile by
+environment alone.
+
+Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
+tools. The real OpenCode CLI was **not installed** on the qualification host, so
+its version, startup, discovery and authentication classes are **not observed**
+on Darwin and stay Linux evidence only
+(`docs/evidence/macos-2026-10-31.md`).
+
+What is verified on Darwin (`tests/07-opencode/darwin-env.bats`, synthetic
+executable):
+
+- `OPENCODE_CONFIG_DIR` is the profile `.opencode` directory and the config,
+  data, state, cache and HOME roots are all profile-local;
+- the accepted-command `--standalone` injection is preserved without a mount
+  table;
+- `doctor` classifies the shared port through lsof, without procfs.
+
+Observed limits on Darwin:
+
+- The `$HOME/.claude` and `$HOME/.agents` skill roots are profile-local only
+  because `HOME` is. A build that resolves the account home another way (the
+  Linux notes above call out that this CLI already reads the account home) sees
+  the host roots.
+- The shared default port (`49374`) and `/tmp/opencode` stay host-wide, exactly
+  as on Linux; `--standalone` keeps a profile probe on a private server.
+- The shared-port probe needs a working lsof. An lsof that exits 1 but cannot
+  describe its own process is reported `unverified`, never `not_listening`.
+- Network access is not blocked on Darwin.
 
 ## Configuration Diagnostics
 
@@ -45,7 +81,7 @@ The tested version discovers skills from these sources, and each behaves
 differently:
 
 - Profile configuration: `$OPENCODE_CONFIG_DIR/skill` and `$OPENCODE_CONFIG_DIR/skills`, i.e. `.agent-profiles/<profile>/.opencode/skill` and `.opencode/skills`.
-- Claude-compatible and `.agents` roots: `$HOME/.claude/skills` and `$HOME/.agents/skills`, which resolve to profile storage through the bind mounts.
+- Claude-compatible and `.agents` roots: `$HOME/.claude/skills` and `$HOME/.agents/skills`, which resolve to profile storage through the bind mounts on Linux and through the profile `HOME` on macOS arm64.
 - Project scope: `<repo>/.opencode/skills` (and `skill`) in the current checkout.
 - Bundled skills: shipped inside the binary and reported from `/builtin/`, available to every profile separately from profile, project and host markers.
 

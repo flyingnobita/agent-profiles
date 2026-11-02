@@ -2,6 +2,19 @@
 
 setup_isolation() {
   export TEST_TMPDIR="${BATS_TEST_TMPDIR:-$(mktemp -d)}"
+
+  # The product always works on physical paths (the checkout root comes from
+  # git, which resolves the working directory), while macOS gives a temporary
+  # directory as /var/folders/... whose physical form is /private/var/folders/...
+  # Canonicalizing the fixture root once here keeps every fixture path a test
+  # compares against canonical, so an assertion is never a lexical comparison
+  # between one canonical and one unresolved path. The logical-path seam is
+  # covered explicitly by the canonical-path regression tests, which build
+  # fixtures beneath a symlinked ancestor on purpose.
+  local physical_tmpdir
+  physical_tmpdir="$(cd -P "$TEST_TMPDIR" && pwd -P)"
+  TEST_TMPDIR="$physical_tmpdir"
+
   export HOME="$TEST_TMPDIR/home"
   export XDG_CONFIG_HOME="$TEST_TMPDIR/config"
   export XDG_DATA_HOME="$TEST_TMPDIR/data"
@@ -11,6 +24,14 @@ setup_isolation() {
   export DISABLE_TELEMETRY=1
 
   mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
+
+  # The fixture host must only change when the product changes it. Apple's
+  # /usr/bin/python3 caches every compiled stdlib module under $HOME when
+  # HOME is redirected, so the harness's own python calls would land in the
+  # synthetic host tree and make a host-canary comparison flaky. The product
+  # suppresses this itself for helper-invoked python; here it keeps the
+  # measurement honest, and the strict canary assertions stay as strict.
+  export PYTHONDONTWRITEBYTECODE=1
 }
 
 teardown_isolation() {

@@ -2,6 +2,37 @@
 # Process scanning and relevance detection for agent profiles
 # shellcheck disable=SC2034
 
+# Prints the caller's process ancestry, one PID per line, so a scan never treats
+# the helper or its parents as profile users. Reads procfs on Linux and ps on
+# Darwin, because Darwin has no procfs.
+ap_process_ancestry_pids() {
+  local pid="$$"
+  local next=""
+  local depth=0
+
+  while [[ -n "$pid" && "$pid" -gt 0 && "$depth" -lt 64 ]]; do
+    printf '%s\n' "$pid"
+    next=$(ap_platform_process_ppid "$pid" 2>/dev/null || true)
+    if [[ -z "$next" || "$next" == "$pid" ]]; then
+      break
+    fi
+    pid="$next"
+    depth=$((depth + 1))
+  done
+}
+
+# Prints the processes that keep a lock or profile file open. Advisory only: it
+# names the holder of an already-busy profile lock (the inherited lease
+# descriptor is the strongest Darwin run marker) and never gates a mutation.
+ap_report_process_holders() {
+  local path="$1"
+  local os_name caller_csv
+  [[ -n "$path" ]] || return 0
+  os_name=$(ap_platform_os 2>/dev/null || uname -s)
+  caller_csv=$(ap_process_ancestry_pids 2>/dev/null | tr '\n' ' ')
+  ap_platform_process_holders "$os_name" "$path" "$caller_csv" 2>/dev/null || true
+}
+
 # Returns the earliest recorded start tick for a profile in the current boot,
 # or an empty string when the profile has no run record for this boot.
 ap_earliest_run_ticks() {
@@ -38,26 +69,16 @@ ap_scan_processes_for_paths() {
   local earliest_run_ticks="${3:-}"
   shift 3
 
-  local proc_root="${AP_PROC_ROOT:-/proc}"
-  if [[ ! -d "$proc_root" ]]; then
-    return 0
-  fi
-
   local current_uid
   current_uid=$(id -u)
 
   # Collect caller ancestry to exclude from process candidates
-  local caller_pids=()
-  local curr_p=$$
-  while [[ -n "$curr_p" && "$curr_p" -gt 0 ]]; do
-    caller_pids+=("$curr_p")
-    local next_p
-    next_p=$(cut -d' ' -f4 "$proc_root/$curr_p/stat" 2>/dev/null || true)
-    if [[ -z "$next_p" || "$next_p" -eq "$curr_p" ]]; then
-      break
-    fi
-    curr_p="$next_p"
-  done
+  local -a caller_pids=()
+  local caller_pid
+  while IFS= read -r caller_pid; do
+    [[ -n "$caller_pid" ]] || continue
+    caller_pids+=("$caller_pid")
+  done < <(ap_process_ancestry_pids)
 
   local assume_unrelated=()
   if [[ -n "$assume_unrelated_csv" ]]; then
@@ -69,11 +90,26 @@ ap_scan_processes_for_paths() {
   for target in "$@"; do
     [[ -n "$target" ]] || continue
     local resolved
-    resolved=$(readlink -f "$target" 2>/dev/null || printf '%s\n' "$target")
+    resolved=$(ap_platform_realpath_existing "$target" 2>/dev/null || printf '%s\n' "$target")
     real_targets+=("$resolved")
   done
 
   if [[ ${#real_targets[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  # Darwin has no procfs, and a missing probe must never mean "no process":
+  # the inspector uses stock ps and lsof through the platform adapter and
+  # refuses with exit 69 when that inspection is unavailable. It never reads a
+  # synthetic proc root, and the Linux branch below never runs on Darwin.
+  if ap_platform_is_darwin; then
+    ap_platform darwin-proc-scan "$label" "$current_uid" "${caller_pids[*]:-}" \
+      "$assume_unrelated_csv" ${real_targets[@]+"${real_targets[@]}"}
+    return $?
+  fi
+
+  local proc_root="${AP_PROC_ROOT:-/proc}"
+  if [[ ! -d "$proc_root" ]]; then
     return 0
   fi
 
@@ -84,6 +120,9 @@ label = sys.argv[1]
 proc_root = sys.argv[2]
 current_uid = int(sys.argv[3])
 caller_pids = set(int(p) for p in sys.argv[4].split() if p)
+# The scanner inherits the caller lock descriptors and therefore holds the
+# profile lease file open itself; never classify the scanner as a profile user.
+caller_pids.add(os.getpid())
 assume_unrelated = set(int(p) for p in sys.argv[5].split(",") if p.isdigit())
 earliest_run_ticks = int(sys.argv[6]) if sys.argv[6].isdigit() else None
 target_dirs = [os.path.realpath(p) for p in sys.argv[7:] if p]
@@ -305,18 +344,25 @@ if refusal_lines:
     sys.exit(75)
 
 sys.exit(0)
-' "$label" "$proc_root" "$current_uid" "${caller_pids[*]}" "${assume_unrelated[*]}" "$earliest_run_ticks" "${real_targets[@]}"
+' "$label" "$proc_root" "$current_uid" "${caller_pids[*]:-}" "${assume_unrelated[*]:-}" "$earliest_run_ticks" ${real_targets[@]+"${real_targets[@]}"}
 }
 
 # Scans one profile's storage. Kept as the public entry point for reset/remove.
+# The profile lease descriptor is scanned as well: on Darwin the inherited lock
+# file is the strongest evidence that a run session still uses this profile.
 ap_scan_processes() {
   local repo_root="$1"
   local profile="$2"
   local assume_unrelated_csv="${3:-}"
   local earliest
   earliest=$(ap_earliest_run_ticks "$repo_root/.agent-profiles/.locks/$profile.runs")
+  local -a scan_paths=("$repo_root/.agent-profiles/$profile")
+  local lease_file="$repo_root/.agent-profiles/.locks/$profile.lock"
+  if [[ -e "$lease_file" ]]; then
+    scan_paths+=("$lease_file")
+  fi
   ap_scan_processes_for_paths "profile '$profile'" "$assume_unrelated_csv" \
-    "$earliest" "$repo_root/.agent-profiles/$profile"
+    "$earliest" ${scan_paths[@]+"${scan_paths[@]}"}
 }
 
 # Scans arbitrary legacy sources that are not profile storage. No run record

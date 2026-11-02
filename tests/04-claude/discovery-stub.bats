@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -22,7 +23,7 @@ printf 'CONFIG_DIR=%s\n' "$cfg"
 printf 'PROFILE_JSON=%s\n' "$(cat "$cfg/.claude.json" 2>/dev/null || true)"
 printf 'PROFILE_SETTINGS=%s\n' "$(cat "$cfg/settings.json" 2>/dev/null || true)"
 printf 'HOME_SETTINGS=%s\n' "$(cat "$HOME/.claude/settings.json" 2>/dev/null || true)"
-printf 'SKILLS=%s\n' "$(find "$cfg/skills" -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null || true)"
+printf 'SKILLS=%s\n' "$(ls -1 "$cfg/skills" 2>/dev/null | tr '\n' ' ' || true)"
 printf 'SECURE=%s\n' "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-UNSET}"
 EOF
   chmod +x "$stub_bin/claude"
@@ -83,7 +84,7 @@ seed_synthetic_host() {
   seed_synthetic_host
   local host_cred="$HOME/.claude/.credentials.json"
   local before after
-  before=$(sha256sum "$host_cred" | awk '{print $1}')
+  before=$(ap_test_sha256 "$host_cred")
 
   run bash "$AP_HELPER" init --profile alpha
   assert_success
@@ -93,7 +94,7 @@ seed_synthetic_host() {
   run env PATH="$stub_bin:$PATH" bash "$AP_HELPER" run --profile alpha -- claude
   assert_success
 
-  after=$(sha256sum "$host_cred" | awk '{print $1}')
+  after=$(ap_test_sha256 "$host_cred")
   assert_equal "$after" "$before"
   [[ ! -e "$repo/.agent-profiles/alpha/.claude/.credentials.json" ]]
   assert_output_not_contains "host-credential-marker"
@@ -109,11 +110,11 @@ seed_synthetic_host() {
 
   local prof_dir="$repo/.agent-profiles/alpha"
   local before after
-  before=$(cd "$prof_dir" && find . -type f -exec sha256sum {} + | sort)
+  before=$(ap_test_tree_digest "$prof_dir")
 
   run bash "$AP_HELPER" doctor --json --agent claude --profile alpha
   assert_success
 
-  after=$(cd "$prof_dir" && find . -type f -exec sha256sum {} + | sort)
+  after=$(ap_test_tree_digest "$prof_dir")
   assert_equal "$after" "$before"
 }

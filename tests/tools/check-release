@@ -36,7 +36,8 @@ ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
 README="$ROOT_DIR/README.md"
 COMPAT="$SKILL_DIR/references/compatibility.md"
-EVIDENCE="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+EVIDENCE_LINUX="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
+EVIDENCE_DARWIN="$ROOT_DIR/docs/evidence/macos-2026-10-31.md"
 RELEASE_NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
 AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
@@ -50,6 +51,11 @@ fail() {
 pass() {
   echo "check-release: PASS: $*"
 }
+
+# Every portable check below goes through the standard library: stock macOS has
+# no GNU tar options, no PCRE grep and no sha256sum.
+PYTHON="$(command -v python3 || true)"
+[[ -n "$PYTHON" ]] || fail "python3 is required to verify the release surface"
 
 require_file() {
   [[ -f "$1" ]] || fail "required release file is missing: ${1#"$ROOT_DIR"/}"
@@ -95,6 +101,66 @@ check_matrix() {
     printf '%s\n' "$rows" | grep -qF -- "$agent" \
       || fail "${file#"$ROOT_DIR"/} '$heading' table does not name $agent"
   done
+}
+
+# Prints the normalized status cell (the second column) of one markdown table
+# row: | platform | status | notes |
+row_status() {
+  printf '%s\n' "$1" \
+    | awk -F'|' '{ cell = $3; gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell); print cell }'
+}
+
+# Verifies a platform table holds exactly the two documented platform rows and
+# reports both as qualified without overstating macOS. Linux must be Qualified
+# outright; the macOS cell must qualify itself for profile mechanics and
+# diagnostics, and the row must name the Darwin limits, so a blanket "Qualified"
+# row, a row that exports the Linux prerequisite or a reversion to the deferred
+# claim is refused.
+check_platform_table() {
+  local file="$1" heading="$2" rows data linux_row macos_row
+  local linux_status macos_status
+  require_file "$file"
+  rows=$(section_rows "$file" "$heading")
+  [[ -n "$rows" ]] || fail "${file#"$ROOT_DIR"/} has no table under '$heading'"
+  data=$(($(printf '%s\n' "$rows" | grep -c '^|') - 2))
+  [[ "$data" -eq 2 ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly 2 (Linux and macOS)"
+
+  linux_row=$(printf '%s\n' "$rows" | grep -F -- "| Linux" || true)
+  macos_row=$(printf '%s\n' "$rows" | grep -F -- "| macOS" || true)
+  [[ -n "$linux_row" ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table does not name Linux"
+  [[ -n "$macos_row" ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table does not name macOS"
+
+  linux_status=$(row_status "$linux_row")
+  printf '%s\n' "$linux_status" | grep -qix -- "qualified" \
+    || fail "${file#"$ROOT_DIR"/} does not report Linux as Qualified (status: $linux_status)"
+
+  macos_status=$(row_status "$macos_row")
+  printf '%s\n' "$macos_status" | grep -qiE -- "^qualified" \
+    || fail "${file#"$ROOT_DIR"/} does not report macOS as Qualified (status: $macos_status)"
+  # The documented cell is Qualified for profile mechanics and diagnostics. A
+  # bare "Qualified" or a claim of Linux-equivalent coverage is not the same
+  # statement and is refused.
+  printf '%s\n' "$macos_status" | grep -qiF -- "profile mechanics" \
+    || fail "${file#"$ROOT_DIR"/} macOS status does not scope the qualification to profile mechanics (status: $macos_status)"
+  printf '%s\n' "$macos_status" | grep -qiF -- "diagnostics" \
+    || fail "${file#"$ROOT_DIR"/} macOS status does not name diagnostics (status: $macos_status)"
+  # The limits travel with the claim: no agent CLI was installed on that host,
+  # so the real CLI classes stay unverified there.
+  printf '%s\n' "$macos_row" | grep -qiF -- "agent cli" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not name the real agent CLI classes"
+  printf '%s\n' "$macos_row" | grep -qiF -- "unverified" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not state that the real agent CLI classes were not observed there"
+  printf '%s\n' "$macos_row" | grep -qiF -- "configuration redirection only" \
+    || fail "${file#"$ROOT_DIR"/} macOS row does not state configuration redirection only"
+  if printf '%s\n' "$macos_row" | grep -qiF -- "bubblewrap"; then
+    fail "${file#"$ROOT_DIR"/} macOS row requires bubblewrap"
+  fi
+  if printf '%s\n' "$macos_row" | grep -qiF -- "not qualified"; then
+    fail "${file#"$ROOT_DIR"/} macOS row still claims macOS is not qualified"
+  fi
 }
 
 # --- 1. Version and MIT license --------------------------------------------
@@ -156,8 +222,14 @@ require_term "$README" "inherited environment credentials" \
 require_term "$README" "shared host resources" \
   "that host resources remain shared"
 require_term "$README" "macOS" "the macOS platform status"
-require_term "$README" "not qualified" "that macOS is not qualified"
-pass "README.md states the security and shared-resource boundaries"
+require_term "$README" "configuration redirection only" \
+  "that macOS uses configuration redirection only"
+require_term "$README" "same enforcement" \
+  "that the two platforms do not give the same enforcement"
+if grep -qiF -- "macOS is not qualified" "$README"; then
+  fail "README.md still claims macOS is not qualified"
+fi
+pass "README.md states the security, shared-resource and macOS platform boundaries"
 
 # --- 3. Dated compatibility matrix -----------------------------------------
 check_matrix "$README" "## Compatibility"
@@ -171,14 +243,8 @@ pass "README.md compatibility matrix is dated and names the four tested integrat
 
 PLATFORM_ROWS=$(section_rows "$README" "## Platforms")
 [[ -n "$PLATFORM_ROWS" ]] || fail "README.md has no '## Platforms' table"
-PLATFORM_DATA=$(($(printf '%s\n' "$PLATFORM_ROWS" | grep -c '^|') - 2))
-[[ "$PLATFORM_DATA" -eq 2 ]] \
-  || fail "README.md '## Platforms' table has $PLATFORM_DATA data rows; expected Linux and macOS"
-printf '%s\n' "$PLATFORM_ROWS" | grep -qF -- "Linux" \
-  || fail "README.md '## Platforms' table does not name Linux"
-printf '%s\n' "$PLATFORM_ROWS" | grep -qF -- "macOS" \
-  || fail "README.md '## Platforms' table does not name macOS"
-pass "README.md platform table names Linux as qualified and macOS as deferred"
+check_platform_table "$README" "## Platforms"
+pass "README.md platform table qualifies Linux and scopes macOS arm64 to profile mechanics and diagnostics"
 
 require_file "$COMPAT"
 check_matrix "$COMPAT" "## Agent CLI Integration Matrix"
@@ -187,31 +253,96 @@ for version in "${VERSIONS[@]}"; do
     || fail "compatibility.md does not record tested version $version"
 done
 require_term "$COMPAT" "Linux (x86_64)" "the qualified Linux platform"
-require_term "$COMPAT" "Not Qualified" "that macOS is not qualified"
+require_term "$COMPAT" "macOS (arm64)" "the qualified macOS arm64 platform"
+require_term "$COMPAT" "weaker" "that the macOS layer is the weaker guarantee"
 require_term "$COMPAT" "2026-10-28" "the compatibility verification date"
-pass "references/compatibility.md is dated and matches the tested matrix"
+check_platform_table "$COMPAT" "## Platform Support"
+if grep -qiF -- "macOS is not qualified" "$COMPAT"; then
+  fail "compatibility.md still claims macOS is not qualified"
+fi
+pass "references/compatibility.md is dated, qualifies macOS arm64 and matches the tested matrix"
 
-# --- 4. Sanitized evidence summary ----------------------------------------
-require_file "$EVIDENCE"
+# --- 4. Sanitized evidence summaries --------------------------------------
+# Two summaries, one per qualified platform. Each must name the four
+# integrations and the evidence classes it actually observed, and record its
+# limits: the Linux run could not exercise credentialed model runs, and no agent
+# CLI existed on the Darwin host, so those classes stay unobserved rather than
+# borrowed across platforms.
+require_file "$EVIDENCE_LINUX"
 for agent in "${AGENTS[@]}"; do
-  require_term "$EVIDENCE" "$agent" "evidence for $agent"
+  require_term "$EVIDENCE_LINUX" "$agent" "evidence for $agent"
 done
 for class in "Version" "Startup" "Discovery" "Auth" "Sandbox"; do
-  require_term "$EVIDENCE" "$class" "the separate $class evidence class"
+  require_term "$EVIDENCE_LINUX" "$class" "the separate $class evidence class"
 done
-require_term "$EVIDENCE" "credential-dependent gap" \
+require_term "$EVIDENCE_LINUX" "credential-dependent gap" \
   "the approved credential-dependent gaps"
-require_term "$EVIDENCE" "sanitized" "that only sanitized evidence is published"
-pass "docs/evidence release summary is sanitized and separates the evidence classes"
+require_term "$EVIDENCE_LINUX" "sanitized" "that only sanitized evidence is published"
+pass "docs/evidence/linux-2026-10-28.md is sanitized and separates the evidence classes"
+
+require_file "$EVIDENCE_DARWIN"
+for agent in "${AGENTS[@]}"; do
+  require_term "$EVIDENCE_DARWIN" "$agent" "Darwin evidence for $agent"
+done
+for class in "Profile mechanics" "Configuration redirection" "Diagnostics" \
+  "Credentialed model runs" "Filesystem enforcement"; do
+  require_term "$EVIDENCE_DARWIN" "$class" "the separate Darwin $class evidence class"
+done
+# The real CLI classes are not inferred from Linux: the summary says so as the
+# class result and again with the reason, so both are required. The reason is
+# checked before the individual class names because the row that names the four
+# classes is also the row that carries the reason; a summary that drops it fails
+# here rather than with a misleading "missing class" message.
+require_term "$EVIDENCE_DARWIN" "not observed" \
+  "that some Darwin evidence classes were not observed"
+if ! grep -qiF -- "no agent CLI was installed" "$EVIDENCE_DARWIN"; then
+  fail "docs/evidence/macos-2026-10-31.md does not state that the real agent CLI classes were not observed on that host (expected text: no agent CLI was installed)"
+fi
+# The plan names the four real-CLI classes explicitly, and requires the network
+# limit to be recorded rather than left to "not observed": an env-only Darwin
+# run shares the host network, so a summary that never mentions the network
+# would understate what was not enforced.
+for class in "Version" "Startup" "Discovery" "Authentication"; do
+  require_term "$EVIDENCE_DARWIN" "$class" "the Darwin real-CLI $class evidence class"
+done
+require_term "$EVIDENCE_DARWIN" "network not blocked" \
+  "that the Darwin run records the network as not blocked"
+require_term "$EVIDENCE_DARWIN" "credential-dependent gap" \
+  "that credentialed model runs are a credential-dependent gap"
+require_term "$EVIDENCE_DARWIN" "not observed on any platform" \
+  "that credentialed model runs were not observed on any platform"
+require_term "$EVIDENCE_DARWIN" "sanitized" "that only sanitized evidence is published"
+require_term "$EVIDENCE_DARWIN" "raw logs" "that raw logs are not published"
+pass "docs/evidence/macos-2026-10-31.md is sanitized and records the unobserved Darwin classes"
 
 # --- 4b. Versioned release notes --------------------------------------------
 require_file "$RELEASE_NOTES"
 grep -qE "^# +.*flyingnobita-agent-profiles v$VERSION$" "$RELEASE_NOTES" \
   || fail "RELEASE_NOTES.md needs a top-level heading naming flyingnobita-agent-profiles v$VERSION"
-for term in "MIT" "Linux" "macOS" "not qualified" "not a security sandbox" \
-  "credential-dependent" "not published"; do
-  require_term "$RELEASE_NOTES" "$term" "the release notes scope"
+# The current scope only. The archived v0.1.0 section truthfully records that
+# macOS was not qualified in that release, so the claim is read from the v$VERSION
+# section alone and a reversion to the deferred-platform wording is refused.
+NOTES_SCOPE=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
+  /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
+  inside { print }
+' "$RELEASE_NOTES")
+[[ -n "$NOTES_SCOPE" ]] \
+  || fail "RELEASE_NOTES.md has no v$VERSION scope section"
+for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
+  "no bubblewrap prerequisite" "credential-dependent" "not published"; do
+  printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "$term" \
+    || fail "RELEASE_NOTES.md v$VERSION scope does not state: $term"
 done
+# The notes word the boundary as "neither platform is a security sandbox"; the
+# README wording is accepted too, so either way the scope must deny that a
+# profile is a security sandbox.
+if ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "not a security sandbox" \
+  && ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "neither platform is a security sandbox"; then
+  fail "RELEASE_NOTES.md v$VERSION scope does not state: not a security sandbox"
+fi
+if printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "macOS is not qualified"; then
+  fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
+fi
 for agent in "${AGENTS[@]}"; do
   require_term "$RELEASE_NOTES" "$agent" "the release notes integration list"
 done
@@ -219,13 +350,14 @@ pass "RELEASE_NOTES.md is versioned and describes the local release scope"
 
 # --- 4c. Versioned artifacts with a disposable extract and run --------------
 verify_artifacts() (
-  local dir tarball work listing helper
+  local dir tarball work helper fingerprint
   dir="$(cd "$1" && pwd)"
   tarball="$dir/flyingnobita-agent-profiles-$VERSION.tar.gz"
 
   require_file "$tarball"
   require_file "$tarball.sha256"
-  (cd "$dir" && sha256sum -c "$(basename "$tarball").sha256" >/dev/null) \
+  python3 "$ROOT_DIR/skills/flyingnobita-agent-profiles/scripts/lib/platform.py" \
+    manifest-verify "$dir" "$dir/$(basename "$tarball").sha256" >/dev/null \
     || fail "artifact checksum verification failed for $(basename "$tarball")"
   pass "artifact checksum verifies: $(basename "$tarball").sha256"
 
@@ -234,20 +366,195 @@ verify_artifacts() (
     || fail "artifact RELEASE_NOTES.md differs from the tracked release notes"
   pass "artifact release notes match RELEASE_NOTES.md"
 
-  listing=$(tar -tzf "$tarball")
-  if printf '%s\n' "$listing" | grep -qE '^/|(^|/)\.\.(/|$)'; then
-    fail "artifact contains an absolute or parent-traversal path"
-  fi
-  for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
-    "references/compatibility.md"; do
-    printf '%s\n' "$listing" | grep -qxF "flyingnobita-agent-profiles/$required" \
-      || fail "artifact is missing flyingnobita-agent-profiles/$required"
-  done
-  pass "artifact contains the installable skill bundle and license"
+  # Every shipped source entry is compared with the artifact: path, type, mode,
+  # content and symlink target, in both directions. A member that is stale,
+  # missing, extra or duplicated is refused, so an artifact built before a
+  # source change cannot be accepted.
+  fingerprint=$(
+    "$PYTHON" - "$SKILL_DIR" "$tarball" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+import tarfile
+
+source, tarball = sys.argv[1], sys.argv[2]
+prefix = "flyingnobita-agent-profiles"
+# Byte code is local build state, not shipped source (see tools/release-artifacts).
+skipped = ("__pycache__",)
+
+
+def digest_of(handle):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(65536), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def describe(path):
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode):
+        return ("link", 0o777, os.readlink(path))
+    mode = stat.S_IMODE(info.st_mode)
+    if stat.S_ISDIR(info.st_mode):
+        return ("dir", mode, None)
+    with open(path, "rb") as handle:
+        return ("file", mode, digest_of(handle))
+
+
+expected = {prefix: describe(source)}
+for current, dirs, files in os.walk(source):
+    dirs[:] = sorted(name for name in dirs if name not in skipped)
+    for name in sorted(dirs + [entry for entry in files if not entry.endswith(".pyc")]):
+        path = os.path.join(current, name)
+        expected[prefix + "/" + os.path.relpath(path, source)] = describe(path)
+
+actual = {}
+failures = []
+try:
+    archive = tarfile.open(tarball, "r:gz")
+except (OSError, tarfile.TarError) as exc:
+    sys.stderr.write("check-release: FAIL: artifact is not a readable gzip tarball: %s\n" % exc)
+    raise SystemExit(1)
+
+with archive:
+    for info in archive.getmembers():
+        name = info.name.rstrip("/")
+        if info.name.startswith("/") or ".." in info.name.split("/"):
+            failures.append("artifact member has an absolute or parent-traversal path: %s" % info.name)
+            continue
+        if name in actual:
+            failures.append("artifact contains a duplicate member: %s" % name)
+        if info.issym():
+            entry = ("link", 0o777, info.linkname)
+        elif info.isdir():
+            entry = ("dir", info.mode & 0o7777, None)
+        elif info.isfile():
+            handle = archive.extractfile(info)
+            entry = ("file", info.mode & 0o7777, digest_of(handle))
+        else:
+            entry = ("other", info.mode & 0o7777, None)
+        actual[name] = entry
+
+for name in sorted(expected, key=lambda value: value.encode()):
+    if name not in actual:
+        failures.append("artifact is missing shipped source: %s" % name)
+        continue
+    want, got = expected[name], actual[name]
+    if want[0] != got[0]:
+        failures.append("artifact member type differs from source: %s" % name)
+    elif want[1] != got[1]:
+        failures.append(
+            "artifact member mode differs from source: %s (%o != %o)" % (name, got[1], want[1])
+        )
+    elif want[2] != got[2]:
+        if want[0] == "file":
+            failures.append("artifact member content differs from source: %s" % name)
+        else:
+            failures.append("artifact member link target differs from source: %s" % name)
+
+for name in sorted(actual, key=lambda value: value.encode()):
+    if name not in expected:
+        failures.append("artifact contains an unexpected member: %s" % name)
+
+if failures:
+    for failure in failures:
+        sys.stderr.write("check-release: FAIL: %s\n" % failure)
+    raise SystemExit(1)
+
+sys.stdout.write("artifact fingerprint matches every shipped source file (%d entries)" % len(expected))
+PY
+  ) || fail "artifact does not match the shipped skill source"
+  pass "$fingerprint"
 
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
-  tar -xzf "$tarball" -C "$work"
+  "$PYTHON" - "$tarball" "$work" <<'PY' || fail "artifact could not be extracted"
+import os
+import sys
+import tarfile
+
+tarball, dest = sys.argv[1], sys.argv[2]
+
+
+def under_destination(relative):
+    resolved = os.path.normpath(os.path.join(dest, relative))
+    return resolved == dest or resolved.startswith(dest + os.sep)
+
+
+# Every member is validated here, before anything is written: the artifact
+# contract must not depend on the interpreter's tarfile extraction filter,
+# which does not exist on 3.9, appears as --data-- from 3.10.12/3.11.4/3.12,
+# and becomes the default in 3.14. A rejected link would otherwise surface as
+# a filter exception raised from inside extractall rather than as the explicit
+# refusal below.
+failures = []
+with tarfile.open(tarball, "r:gz") as archive:
+    members = archive.getmembers()
+    for info in members:
+        name = info.name.rstrip("/")
+        if name.startswith("/") or ".." in name.split("/"):
+            failures.append(
+                "artifact member has an absolute or parent-traversal path: %s" % info.name
+            )
+            continue
+        if info.isdir() or info.isfile():
+            continue
+        if info.issym():
+            if info.linkname.startswith("/"):
+                failures.append(
+                    "artifact symlink target is absolute: %s -> %s" % (name, info.linkname)
+                )
+            elif not under_destination(os.path.join(os.path.dirname(name), info.linkname)):
+                failures.append(
+                    "artifact symlink escapes the artifact: %s -> %s" % (name, info.linkname)
+                )
+            continue
+        failures.append("artifact member is not a file, directory or symlink: %s" % name)
+    if failures:
+        for failure in failures:
+            sys.stderr.write("check-release: FAIL: %s\n" % failure)
+        raise SystemExit(1)
+
+    # Only validated members are written, by this loop: no TarFile.extractall,
+    # no filter argument and no reliance on a version's default filter.
+    for info in members:
+        name = info.name.rstrip("/")
+        target = os.path.join(dest, name)
+        if info.isdir():
+            os.makedirs(target, exist_ok=True)
+        elif info.issym():
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            if os.path.lexists(target):
+                os.remove(target)
+            os.symlink(info.linkname, target)
+        else:
+            parent = os.path.dirname(target)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            handle = archive.extractfile(info)
+            if handle is None:
+                sys.stderr.write(
+                    "check-release: FAIL: artifact member has no content: %s\n" % name
+                )
+                raise SystemExit(1)
+            with open(target, "wb") as out:
+                while True:
+                    chunk = handle.read(65536)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        if not info.issym():
+            os.chmod(target, info.mode & 0o777)
+PY
+  for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
+    "references/compatibility.md"; do
+    [[ -f "$work/flyingnobita-agent-profiles/$required" ]] \
+      || fail "artifact is missing flyingnobita-agent-profiles/$required"
+  done
+  pass "artifact contains the installable skill bundle and license"
   helper="$work/flyingnobita-agent-profiles/scripts/agent-profiles"
 
   [[ "$(bash "$helper" --version)" == "$VERSION" ]] \
@@ -307,15 +614,35 @@ done < <(release_files)
 pass "the release surface contains no author paths or private delivery identifiers"
 
 # --- 4d. Tracked and shipped content uses standard dashes ------------------
-EM_DASH_VIOLATIONS=0
-while IFS= read -r file; do
-  if grep -qP '\x{2014}' "$file" 2>/dev/null; then
+# BSD grep has no -P: the previous PCRE scan exited non-zero there and the
+# unchecked test passed silently. The bytes are read with the standard library
+# instead, and an unreadable file fails the check rather than skipping it.
+EM_DASH_LIST=$(
+  release_files | "$PYTHON" -c '
+import sys
+
+offenders = []
+for line in sys.stdin:
+    path = line.rstrip("\n")
+    if not path:
+        continue
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        sys.stderr.write("check-release: FAIL: cannot scan %s: %s\n" % (path, exc))
+        raise SystemExit(2)
+    if b"\xe2\x80\x94" in data:
+        offenders.append(path)
+sys.stdout.write("\n".join(offenders))
+'
+) || fail "the release surface could not be scanned for em dashes"
+if [[ -n "$EM_DASH_LIST" ]]; then
+  while IFS= read -r file; do
     echo "check-release: FAIL: em dash in ${file#"$ROOT_DIR"/}" >&2
-    EM_DASH_VIOLATIONS=$((EM_DASH_VIOLATIONS + 1))
-  fi
-done < <(release_files)
-[[ "$EM_DASH_VIOLATIONS" -eq 0 ]] \
-  || fail "the release surface contains em dashes; use standard dashes"
+  done <<<"$EM_DASH_LIST"
+  fail "the release surface contains em dashes; use standard dashes"
+fi
 pass "the release surface uses standard dashes"
 
 echo "check-release: all release readiness checks passed"

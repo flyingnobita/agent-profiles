@@ -16,7 +16,7 @@ ap_agent_agy_detect() {
     p=$(mise which agy 2>/dev/null || true)
     if [[ -n "$p" && -x "$p" ]]; then
       local rp
-      rp=$(readlink -f "$p" 2>/dev/null || echo "$p")
+      rp=$(ap_platform_realpath_existing "$p" 2>/dev/null || printf "%s\n" "$p")
       if [[ "$rp" != *"/bin/mise" && "$rp" != "/usr/bin/mise" ]]; then
         printf "%s\n" "$rp"
         return 0
@@ -31,7 +31,7 @@ ap_agent_agy_detect() {
     local cand="$dir/agy"
     if [[ -x "$cand" && ! -d "$cand" ]]; then
       local rcand
-      rcand=$(readlink -f "$cand" 2>/dev/null || echo "$cand")
+      rcand=$(ap_platform_realpath_existing "$cand" 2>/dev/null || printf "%s\n" "$cand")
       if [[ "$rcand" != *"/bin/mise" && "$rcand" != "/usr/bin/mise" ]]; then
         IFS="$old_ifs"
         printf "%s\n" "$rcand"
@@ -46,13 +46,23 @@ ap_agent_agy_detect() {
 
 # Antigravity CLI has no configuration-directory environment variable in the
 # tested version: it resolves its configuration from HOME (~/.gemini) and the
-# XDG config root for plugin secrets. Profile isolation therefore comes from the
-# .gemini bind mount plus the XDG redirect, not from an agent variable.
+# XDG config root for plugin secrets. On Linux profile isolation therefore comes
+# from the .gemini bind mount plus the XDG redirect; on Darwin HOME itself is the
+# profile root, so the same directories are profile-local by environment alone.
+# OS credential storage stays shared on both platforms; macOS exposes it as one
+# Keychain to the whole user session instead of a D-Bus secret service.
 ap_agy_os_credential_service() {
   local runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   local bus_desc=""
   local out=""
   local rc=0
+
+  if ap_platform_is_darwin; then
+    AGY_SECRET_SERVICE_STATUS="present"
+    AGY_SECRET_SERVICE_DETAIL="the macOS Keychain OS credential service is available to the whole user session; credential storage is shared with the host environment and was not read"
+    AGY_SESSION_BUS_PRESENT="false"
+    return 0
+  fi
 
   if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     bus_desc="DBUS_SESSION_BUS_ADDRESS"
@@ -73,7 +83,7 @@ ap_agy_os_credential_service() {
     return 0
   fi
 
-  out=$(timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+  out=$(ap_platform_timeout 3 dbus-send --session --print-reply --dest=org.freedesktop.DBus \
     /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
     string:org.freedesktop.secrets 2>/dev/null) || rc=$?
 
@@ -96,7 +106,7 @@ ap_doctor_check_agy_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "agy" ]]; then
         matched=1
         break
@@ -162,7 +172,7 @@ ap_doctor_check_agy_profile() {
     [[ -f "$config_dir/mcp_config.json" ]] && mcp_config="true"
     [[ -f "$prof_dir/.config/antigravity/plugin-secrets.json" ]] && plugin_secrets="true"
 
-    for var in "${candidate_credentials[@]}"; do
+    for var in ${candidate_credentials[@]+"${candidate_credentials[@]}"}; do
       if [[ -f "$prof_dir/$var" ]]; then
         profile_files+=("$var")
       fi

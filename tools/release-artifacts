@@ -7,6 +7,12 @@
 #
 # The output directory defaults to <repo-root>/dist, which is ignored by Git.
 # Nothing is published: no tag, remote, release or deployment is created.
+#
+# The tarball and its checksum are produced with the Python standard library
+# (tarfile, gzip, hashlib) instead of GNU tar options and sha256sum, which stock
+# macOS does not have. Member order, ownership and timestamps are fixed, so two
+# builds of one source tree at one SOURCE_DATE_EPOCH are byte-identical. The
+# checksum keeps the existing two-space `<sha256>  <tarball>` format.
 set -euo pipefail
 
 ROOT_DIR="$PWD"
@@ -42,9 +48,16 @@ fail() {
   exit 1
 }
 
+# Resolve the root first: the helper paths below must not depend on the caller's
+# working directory.
 ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
 NOTES="$ROOT_DIR/RELEASE_NOTES.md"
+
+PYTHON="$(command -v python3 || true)"
+if [[ -z "$PYTHON" || ! -f "$SKILL_DIR/scripts/lib/platform.py" ]]; then
+  fail "python3 and the internal platform helper are required"
+fi
 
 [[ -d "$SKILL_DIR" ]] || fail "skill directory is missing: skills/flyingnobita-agent-profiles"
 [[ -f "$SKILL_DIR/VERSION" ]] || fail "VERSION file is missing"
@@ -59,37 +72,89 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
-WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
-
-# Stage the installable skill bundle; the tarball holds one top-level directory.
-mkdir -p "$WORK/flyingnobita-agent-profiles"
-cp -a "$SKILL_DIR/." "$WORK/flyingnobita-agent-profiles/"
-
 TARBALL="flyingnobita-agent-profiles-$VERSION.tar.gz"
+
+# The same commit time for every member keeps the archive reproducible; a
+# source tree outside Git falls back to the current time.
 EPOCH="${SOURCE_DATE_EPOCH:-}"
 if [[ -z "$EPOCH" ]]; then
   EPOCH=$(git -C "$ROOT_DIR" log -1 --format=%ct 2>/dev/null || true)
 fi
 [[ -n "$EPOCH" ]] || EPOCH=$(date +%s)
+[[ "$EPOCH" =~ ^[0-9]+$ ]] || fail "SOURCE_DATE_EPOCH '$EPOCH' is not a whole number of seconds"
 
-tar -C "$WORK" \
-  --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" \
-  -czf "$OUTPUT_DIR/$TARBALL" flyingnobita-agent-profiles
+# Prints "<sha256> <bytes>" for the tarball it wrote.
+BUILD_RESULT=$(
+  "$PYTHON" - "$SKILL_DIR" "$OUTPUT_DIR/$TARBALL" "$EPOCH" <<'PY'
+import gzip
+import hashlib
+import io
+import os
+import sys
+import tarfile
 
-(
-  cd "$OUTPUT_DIR"
-  sha256sum "$TARBALL" >"$TARBALL.sha256"
-)
+source, target, epoch = sys.argv[1], sys.argv[2], int(sys.argv[3])
+prefix = "flyingnobita-agent-profiles"
+# Byte code is local build state, not shipped source, and would make the archive
+# depend on which interpreter last imported the helper.
+skipped = ("__pycache__",)
+
+
+def shipped(current, dirs, files):
+    dirs[:] = sorted(name for name in dirs if name not in skipped)
+    return sorted(dirs + [name for name in files if not name.endswith(".pyc")])
+
+
+def add(archive, path, name):
+    info = archive.gettarinfo(path, arcname=name)
+    info.uid = 0
+    info.gid = 0
+    info.uname = ""
+    info.gname = ""
+    info.mtime = epoch
+    if info.isdir():
+        info.name = info.name.rstrip("/") + "/"
+        archive.addfile(info)
+    elif info.isfile():
+        with open(path, "rb") as handle:
+            archive.addfile(info, handle)
+    else:
+        archive.addfile(info)
+
+
+buffer = io.BytesIO()
+with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+    add(archive, source, prefix)
+    for current, dirs, files in os.walk(source):
+        for name in shipped(current, dirs, files):
+            path = os.path.join(current, name)
+            relative = os.path.relpath(path, source)
+            add(archive, path, prefix + "/" + relative)
+
+payload = buffer.getvalue()
+compressed = io.BytesIO()
+with gzip.GzipFile(filename="", mode="wb", fileobj=compressed, mtime=0) as handle:
+    handle.write(payload)
+data = compressed.getvalue()
+
+with open(target, "wb") as raw:
+    raw.write(data)
+digest = hashlib.sha256(data).hexdigest()
+with open(target + ".sha256", "w") as manifest:
+    manifest.write("%s  %s\n" % (digest, os.path.basename(target)))
+
+sys.stdout.write("%s %d\n" % (digest, len(data)))
+PY
+) || fail "python3 could not build $TARBALL"
+
+CHECKSUM="${BUILD_RESULT%% *}"
+SIZE="${BUILD_RESULT##* }"
 
 cp "$NOTES" "$OUTPUT_DIR/RELEASE_NOTES.md"
 
-# The contract verifies the checksum, the bundle contents, the notes and an
-# extracted run before the artifact set is reported as built.
+# The contract verifies the checksum, the full source fingerprint, the bundle
+# contents and an extracted run before the artifact set is reported as built.
 bash "$ROOT_DIR/tests/tools/check-release" "$ROOT_DIR" --artifacts "$OUTPUT_DIR"
-
-CHECKSUM=$(cut -d' ' -f1 "$OUTPUT_DIR/$TARBALL.sha256")
-SIZE=$(stat -c %s "$OUTPUT_DIR/$TARBALL")
 
 echo "release-artifacts: version: $VERSION"
 echo "release-artifacts: tarball: $OUTPUT_DIR/$TARBALL ($SIZE bytes)"

@@ -15,7 +15,7 @@ ap_doctor_check_deps() {
   local bash_path bash_ver bash_status bash_hint
   bash_path=$(command -v bash 2>/dev/null || true)
   if [[ -n "$bash_path" ]]; then
-    bash_path=$(readlink -f "$bash_path" 2>/dev/null || echo "$bash_path")
+    bash_path=$(ap_platform_realpath_existing "$bash_path" 2>/dev/null || printf "%s\n" "$bash_path")
     bash_ver=$( (cd "${safe_dep_dir:-/}" && bash --version 2>/dev/null) | head -n 1 | cut -d' ' -f4 || echo "unknown")
     bash_status="available"
     bash_hint=""
@@ -40,7 +40,7 @@ print(json.dumps(checks))
   local git_path git_ver git_status git_hint
   git_path=$(command -v git 2>/dev/null || true)
   if [[ -n "$git_path" ]]; then
-    git_path=$(readlink -f "$git_path" 2>/dev/null || echo "$git_path")
+    git_path=$(ap_platform_realpath_existing "$git_path" 2>/dev/null || printf "%s\n" "$git_path")
     git_ver=$( (cd "${safe_dep_dir:-/}" && git --version 2>/dev/null) | cut -d' ' -f3 || echo "unknown")
     git_status="available"
     git_hint=""
@@ -65,7 +65,7 @@ print(json.dumps(checks))
   local py_path py_ver py_status py_hint
   py_path=$(command -v python3 2>/dev/null || true)
   if [[ -n "$py_path" ]]; then
-    py_path=$(readlink -f "$py_path" 2>/dev/null || echo "$py_path")
+    py_path=$(ap_platform_realpath_existing "$py_path" 2>/dev/null || printf "%s\n" "$py_path")
     py_ver=$( (cd "${safe_dep_dir:-/}" && python3 --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
     py_status="available"
     py_hint=""
@@ -90,7 +90,7 @@ print(json.dumps(checks))
   local mise_path mise_ver mise_status mise_hint
   mise_path=$(command -v mise 2>/dev/null || true)
   if [[ -n "$mise_path" ]]; then
-    mise_path=$(readlink -f "$mise_path" 2>/dev/null || echo "$mise_path")
+    mise_path=$(ap_platform_realpath_existing "$mise_path" 2>/dev/null || printf "%s\n" "$mise_path")
     mise_ver=$( (cd "${safe_dep_dir:-/}" && mise --version 2>/dev/null) | grep -E '^[0-9]' | head -n 1 | cut -d' ' -f1 || echo "installed")
     mise_status="available"
     mise_hint=""
@@ -111,18 +111,30 @@ checks.append({
 print(json.dumps(checks))
 ' "$CHECKS_JSON" "$mise_status" "$mise_ver" "$mise_path" "$mise_hint")
 
-  # 5. bwrap (bubblewrap)
-  local bwrap_path bwrap_ver bwrap_status bwrap_hint
-  bwrap_path=$(command -v bwrap 2>/dev/null || true)
-  if [[ -n "$bwrap_path" ]]; then
-    bwrap_path=$(readlink -f "$bwrap_path" 2>/dev/null || echo "$bwrap_path")
-    bwrap_ver=$( (cd "${safe_dep_dir:-/}" && bwrap --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
-    bwrap_status="available"
+  # 5. bwrap (bubblewrap). Darwin redirects profiles by environment only, so
+  # bubblewrap is not a prerequisite there and must not be probed or shown as a
+  # missing dependency.
+  local bwrap_path bwrap_ver bwrap_status bwrap_hint bwrap_detail
+  if ap_platform_is_darwin; then
+    bwrap_path=""
+    bwrap_ver=""
+    bwrap_status="not_applicable"
+    bwrap_detail="bubblewrap is a Linux-only prerequisite; Darwin redirects agent configuration by environment"
     bwrap_hint=""
   else
-    bwrap_ver="none"
-    bwrap_status="missing"
-    bwrap_hint="Install bubblewrap (bwrap) via package manager (e.g. pacman -S bubblewrap or apt install bubblewrap)"
+    bwrap_path=$(command -v bwrap 2>/dev/null || true)
+    if [[ -n "$bwrap_path" ]]; then
+      bwrap_path=$(ap_platform_realpath_existing "$bwrap_path" 2>/dev/null || printf "%s\n" "$bwrap_path")
+      bwrap_ver=$( (cd "${safe_dep_dir:-/}" && bwrap --version 2>/dev/null) | cut -d' ' -f2 || echo "unknown")
+      bwrap_status="available"
+      bwrap_detail="$bwrap_ver ($bwrap_path)"
+      bwrap_hint=""
+    else
+      bwrap_ver="none"
+      bwrap_status="missing"
+      bwrap_detail="not found on PATH"
+      bwrap_hint="Install bubblewrap (bwrap) via package manager (e.g. pacman -S bubblewrap or apt install bubblewrap)"
+    fi
   fi
   CHECKS_JSON=$(python3 -c '
 import json, sys
@@ -130,15 +142,19 @@ checks = json.loads(sys.argv[1])
 checks.append({
     "id": "bwrap",
     "status": sys.argv[2],
-    "detail": f"{sys.argv[3]} ({sys.argv[4]})" if sys.argv[2] == "available" else "not found on PATH",
-    "hint": sys.argv[5]
+    "detail": sys.argv[3],
+    "hint": sys.argv[4]
 })
 print(json.dumps(checks))
-' "$CHECKS_JSON" "$bwrap_status" "$bwrap_ver" "$bwrap_path" "$bwrap_hint")
+' "$CHECKS_JSON" "$bwrap_status" "$bwrap_detail" "$bwrap_hint")
 
-  # 6. userns (user namespaces)
+  # 6. userns (user namespaces). A Linux-only mechanism: Darwin never probes it.
   local userns_status userns_detail userns_hint
-  if [[ "$bwrap_status" == "available" ]]; then
+  if ap_platform_is_darwin; then
+    userns_status="not_applicable"
+    userns_detail="unprivileged user namespaces are a Linux-only mechanism; Darwin profile runs use environment redirection"
+    userns_hint=""
+  elif [[ "$bwrap_status" == "available" ]]; then
     if (cd "${safe_dep_dir:-/}" && bwrap --dev-bind / / true 2>/dev/null); then
       userns_status="available"
       userns_detail="unprivileged user namespaces working with bubblewrap"

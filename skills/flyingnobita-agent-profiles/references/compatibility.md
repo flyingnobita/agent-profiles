@@ -14,11 +14,21 @@ services remain.
 | Operating System | Status | Verification Notes |
 | --- | --- | --- |
 | Linux (x86_64) | Qualified | bubblewrap and unprivileged user namespaces required; host final QA 2026-10-29 |
-| macOS (Darwin) | Not Qualified | Deferred and unverified; there is no Darwin redirection layer |
+| macOS (arm64) | Qualified for profile mechanics, redirection and diagnostics | configuration redirection only (no mounts); stock `/bin/bash` 3.2, mise, git and python3; macOS 27.2 arm64 run in `docs/evidence/macos-2026-10-31.md`. Real agent CLI startup, discovery and authentication on Darwin are unverified there because no agent CLI was installed |
 
-Linux is the only implementation. Running on any other OS reports that the
-platform is not qualified (exit 69) instead of attempting a fallback. Linux
-results are not evidence for macOS behavior.
+Linux redirects with a bubblewrap mount layer. On macOS there is no namespace
+to mount into, so a profile is redirected by pointing the agent CLIs and
+toolchains at profile storage through their own environment and configuration
+variables plus a profile `HOME`. Both platforms separate settings and tools;
+neither is a security boundary, and the macOS layer is the weaker of the two
+because a process that ignores those variables still sees host paths. Linux
+results are not evidence for macOS behavior and the reverse also holds.
+
+Unsupported operating systems report the platform as not qualified instead of
+attempting a fallback. Darwin is decided per architecture by `doctor` only: a
+Darwin build that is not arm64 is reported there as unqualified (a warning, not
+a refusal), and profile execution on such a build is unvalidated because only
+macOS arm64 was tested. `run` and `setup` do not refuse a non-arm64 Darwin host.
 
 Default Docker containers usually restrict unprivileged user namespaces. There,
 prerequisite installation, versioned deployment, the task shims, profile

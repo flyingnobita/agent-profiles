@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -24,7 +25,7 @@ teardown() {
   mkdir -m 0700 -p "$backup_root"
 
   local hash_before
-  hash_before=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_before=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
 
   run env AP_FORCE_COPY=1 AP_FAULT_AFTER=staged bash "$AP_HELPER" migrate --yes --backup-root "$backup_root"
   assert_failure 137
@@ -41,7 +42,7 @@ assert data["state"] == "staged"
 
   # Originals are untouched while the journal is below verified.
   local hash_after
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
 
   # Mutating commands are blocked by the stale migrate journal.
@@ -54,7 +55,7 @@ assert data["state"] == "staged"
   assert_output_contains "interrupted 'migrate'"
 
   # The untrusted staging copy is discarded and originals stay intact.
-  hash_after=$(find "$fixture_repo/.agent-sandbox" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$fixture_repo/.agent-sandbox")
   assert_equal "$hash_before" "$hash_after"
   [[ ! -f "$journal_file" ]]
   [[ ! -d "$fixture_repo/.agent-profiles/default" ]]
@@ -327,14 +328,9 @@ EOF
   assert_failure 137
   assert_file_exists "$fixture_repo/.agent-profiles/.journal/migrate-all.json"
 
-  setsid bash -c 'cd "$1" && exec sleep 60' _ "$fixture_repo/.agent-sandbox/.claude" &
-  local live_pid=$!
-  local i=0
-  while [[ "$(readlink "/proc/$live_pid/cwd" 2>/dev/null)" != "$fixture_repo/.agent-sandbox/.claude" && $i -lt 50 ]]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  [[ "$(readlink "/proc/$live_pid/cwd")" == "$fixture_repo/.agent-sandbox/.claude" ]]
+  local live_pid
+  live_pid=$(ap_test_spawn_in_dir "$fixture_repo/.agent-sandbox/.claude" "$TEST_TMPDIR/recover-cwd.marker" 60)
+  ap_test_wait_for_file "$TEST_TMPDIR/recover-cwd.marker"
 
   run bash "$AP_HELPER" recover --yes
   assert_failure 75

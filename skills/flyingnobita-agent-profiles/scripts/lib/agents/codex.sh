@@ -16,7 +16,7 @@ ap_agent_codex_detect() {
     p=$(mise which codex 2>/dev/null || true)
     if [[ -n "$p" && -x "$p" ]]; then
       local rp
-      rp=$(readlink -f "$p" 2>/dev/null || echo "$p")
+      rp=$(ap_platform_realpath_existing "$p" 2>/dev/null || printf "%s\n" "$p")
       if [[ "$rp" != *"/bin/mise" && "$rp" != "/usr/bin/mise" ]]; then
         printf "%s\n" "$rp"
         return 0
@@ -31,7 +31,7 @@ ap_agent_codex_detect() {
     local cand="$dir/codex"
     if [[ -x "$cand" && ! -d "$cand" ]]; then
       local rcand
-      rcand=$(readlink -f "$cand" 2>/dev/null || echo "$cand")
+      rcand=$(ap_platform_realpath_existing "$cand" 2>/dev/null || printf "%s\n" "$cand")
       if [[ "$rcand" != *"/bin/mise" && "$rcand" != "/usr/bin/mise" ]]; then
         IFS="$old_ifs"
         printf "%s\n" "$rcand"
@@ -56,7 +56,7 @@ ap_doctor_check_codex_profile() {
 
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     local matched=0
-    for ag in "${SELECTED_AGENTS[@]}"; do
+    for ag in ${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"}; do
       if [[ "$ag" == "codex" ]]; then
         matched=1
         break
@@ -111,7 +111,7 @@ ap_doctor_check_codex_profile() {
       auth_detail="Codex binary not found; login state unverified"
     else
       local resolved_bin=""
-      resolved_bin=$(readlink -f "$codex_bin" 2>/dev/null || echo "$codex_bin")
+      resolved_bin=$(ap_platform_realpath_existing "$codex_bin" 2>/dev/null || printf "%s\n" "$codex_bin")
       if [[ "$resolved_bin" == *"/bin/mise" || "$resolved_bin" == "/usr/bin/mise" ]]; then
         auth_status="unverified"
         auth_detail="Codex launcher resolved to mise; login state unverified"
@@ -163,7 +163,8 @@ ap_doctor_check_codex_profile() {
             fi
           done
 
-          probe_out=$(env -i "${probe_env[@]}" timeout 5 "$codex_bin" login status 2>&1) || probe_rc=$?
+          probe_out=$(env -i ${probe_env[@]+"${probe_env[@]}"} \
+            "$AP_PLATFORM_PYTHON" "$AP_PLATFORM_PY" timeout 5 "$codex_bin" login status 2>&1) || probe_rc=$?
           probe_exit="$probe_rc"
 
           if [[ "$probe_rc" -eq 124 ]]; then

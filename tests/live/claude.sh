@@ -50,13 +50,15 @@ mkdir -p "$EVIDENCE_ROOT"
 chmod 700 "$EVIDENCE_ROOT" 2>/dev/null || true
 OUT="$EVIDENCE_ROOT/claude-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -m 700 "$OUT"
-QA_START_TICKS="$(ap_claude_qa_uptime_ticks)"
 QA_BOOT_ID="$(ap_claude_qa_boot_id)"
 
 HOST_HOME="$HOME"
 HOST_CLAUDE_DIR="$HOST_HOME/.local/share/claude"
 QA_KEY="placeholder-not-a-real-key"
 WORK="$(mktemp -d /tmp/ap-claude-live-XXXXXX)"
+# Portable timeout for the inner profile shells, which have no GNU userland on
+# stock macOS.
+ap_live_prepare_tool_shims "$WORK/bin"
 BG_ID=""
 WATCH_PID=""
 QA_PROFILE_DIR=""
@@ -92,11 +94,12 @@ stop_background_session() {
   BG_ID=""
 }
 
-# Owned QA processes are identified by the disposable profile environment and
-# their start-time identity in tests/live/claude-cleanup.sh. argv and cwd are
-# not ownership evidence, so a scanner cannot detect itself.
+# Owned QA processes are identified by the disposable profile environment (or,
+# on Darwin, by the open profile lease) and the QA boot identity in
+# tests/live/claude-cleanup.sh. argv and cwd are not ownership evidence, so a
+# scanner cannot detect itself.
 stop_test_processes() {
-  ap_claude_qa_cleanup "$QA_PROFILE_DIR" "$QA_START_TICKS" "$QA_BOOT_ID" \
+  ap_claude_qa_cleanup "$QA_PROFILE_DIR" "$QA_BOOT_ID" \
     >>"$OUT/daemons-stopped.txt" 2>/dev/null || true
 }
 
@@ -373,7 +376,7 @@ done
   sleep 1
   printf '\003'
 } \
-  | timeout 25 script -qfc "$EXEC b claude --ax-screen-reader" /dev/null \
+  | ap_live_pty_exec --timeout 25 -- "$EXEC" b claude --ax-screen-reader \
     >"$OUT/startup-tui.txt" 2>&1 || true
 
 kill "$WATCH_PID" 2>/dev/null || true
@@ -569,7 +572,7 @@ STOPPED_SESSION=0
 if grep -q "^stopped " "$OUT/background-stop.txt" 2>/dev/null; then
   STOPPED_SESSION=1
 fi
-DAEMONS_LEFT="$(ap_claude_qa_owned_pids "$QA_PROFILE_DIR" "$QA_START_TICKS" "$QA_BOOT_ID")"
+DAEMONS_LEFT="$(ap_claude_qa_owned_pids "$QA_PROFILE_DIR" "$QA_BOOT_ID")"
 if [[ "$STOPPED_SESSION" -eq 1 && -z "$DAEMONS_LEFT" ]]; then
   pass_check cleanup "test-owned background session and transient daemon were stopped"
 elif [[ "$STOPPED_SESSION" -ne 1 ]]; then

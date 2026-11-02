@@ -20,7 +20,9 @@ sandboxing work.
 
 ## Directory Redirection
 
-`agent-profiles run --profile NAME -- claude` exports:
+On Linux the profile is applied with bubblewrap bind mounts; the macOS arm64
+section below describes the environment-only equivalent. `agent-profiles run
+--profile NAME -- claude` exports:
 
 - `CLAUDE_CONFIG_DIR=<checkout>/.agent-profiles/NAME/.claude`
 - no inherited `CLAUDE_SECURESTORAGE_CONFIG_DIR` (it is unset)
@@ -39,6 +41,43 @@ was not read or imported. Host `~/.claude/settings.json`, `~/.claude/skills` and
 Project-scoped `.mcp.json` files and repository `.claude/` settings remain part
 of the checkout and are not redirected by the profile. Treat them as host
 repository content, not as profile state.
+
+## macOS arm64 (Darwin)
+
+macOS arm64 is qualified for profile mechanics, configuration redirection and
+diagnostics only. Darwin has no mount namespace, so `agent-profiles run` exports
+the profile environment and executes the child directly: nothing is
+bind-mounted over `~/.claude` and no host mountpoint is created.
+
+Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
+tools. Claude Code itself was **not installed** on the qualification host, so its
+version, startup, discovery and authentication classes are **not observed** on
+Darwin and stay Linux evidence only
+(`docs/evidence/macos-2026-10-31.md`).
+
+What is verified on Darwin (`tests/04-claude/darwin-env.bats`, synthetic
+executable plus byte-identical host canaries):
+
+- `CLAUDE_CONFIG_DIR` is exported as `<profile>/.claude` and the profile `HOME`
+  is `<profile>` (not `<profile>/home`), so `$HOME/.claude` and
+  `$HOME/.claude.json` resolve inside the profile by environment alone;
+- no inherited `CLAUDE_SECURESTORAGE_CONFIG_DIR` survives the redirect;
+- the profile `.claude.json`, skills and settings are written inside the
+  profile, and synthetic host settings and credentials stay untouched.
+
+Observed limits on Darwin:
+
+- No mount covers `~/.claude`. A build that ignores `CLAUDE_CONFIG_DIR` and
+  resolves the account home through something other than `$HOME` (for example
+  `NSHomeDirectory` or a hard-coded path) still reads host configuration.
+- The macOS Keychain stays shared with the host. With
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR` unset, credentials can come from the host
+  Keychain, so a profile is not a separate account.
+- Claude Code's own Bash sandbox (`claude sandbox status`) is a separate
+  mechanism. The strict background-session check recorded above is Linux
+  evidence; no Darwin enforcement is claimed.
+- Network access is not blocked on Darwin: the profile separates configuration,
+  not network reachability.
 
 ## Discovery
 

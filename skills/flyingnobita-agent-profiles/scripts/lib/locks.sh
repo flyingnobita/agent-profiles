@@ -19,10 +19,76 @@ ap_ensure_locks_dir() {
     (umask 077 && mkdir -p "$locks_dir")
   fi
 
-  local real_ld
-  real_ld=$(readlink -f "$locks_dir" 2>/dev/null || true)
-  if [[ "$real_ld" != "$locks_dir" ]]; then
+  local real_ld real_storage
+  if ! real_ld=$(ap_platform_realpath_existing "$locks_dir"); then
+    ap_die "$EX_LAYOUT" "locks directory '$locks_dir' could not be resolved to a physical path"
+  fi
+  if ! real_storage=$(ap_platform_realpath_existing "$storage_dir"); then
+    ap_die "$EX_LAYOUT" "profile storage directory '$storage_dir' could not be resolved to a physical path"
+  fi
+  # Both sides are canonical. A checkout reached through a symlinked ancestor
+  # is not a layout error - macOS reports /var/folders as /private/var/folders -
+  # but a locks directory that resolves to anything other than the storage
+  # root's own .locks is. Both directories being symbolic links is refused
+  # above.
+  if [[ "$real_ld" != "$real_storage/.locks" ]]; then
     ap_die "$EX_LAYOUT" "locks directory path mismatch with realpath ($locks_dir -> $real_ld)"
+  fi
+}
+
+# Test-only fault injection point, run immediately before a lock is acquired.
+# It replaces wrapping an external flock binary, which the portable lock path no
+# longer calls. Internal test hook, never a user option.
+ap_maybe_lock_fault() {
+  local lock_file="$1"
+  [[ -n "${AP_FAULT_BEFORE_LOCK:-}" ]] || return 0
+  AP_FAULT_LOCK_FILE="$lock_file" "$AP_FAULT_BEFORE_LOCK"
+}
+
+# Opens a persistent lock file on an allocated descriptor and locks it.
+# ap_lock_file_into <varname> <lock-file> <shared|exclusive> <busy-message> \
+#   [report-holders]
+# When report-holders is 1, a busy lock also names the processes that keep the
+# file open. That refusal diagnostic is advisory: the exit status and message
+# are unchanged, no process is signalled, and only PID and command name are
+# printed. It matters most on Darwin, where the inherited profile lease
+# descriptor is the strongest run marker.
+ap_lock_file_into() {
+  local __ap_var="$1"
+  local __ap_lock_file="$2"
+  local __ap_mode="$3"
+  local __ap_message="$4"
+  local __ap_report_holders="${5:-0}"
+  local __ap_lock_fd
+
+  ap_maybe_lock_fault "$__ap_lock_file"
+  if ! ap_lock_fd_open_into __ap_lock_fd "$__ap_lock_file"; then
+    ap_die "$EX_LAYOUT" "lock file '$__ap_lock_file' could not be opened"
+  fi
+  if ! ap_platform_lock "$__ap_mode" "$__ap_lock_fd"; then
+    if [[ "$__ap_report_holders" == "1" ]] && declare -F ap_report_process_holders >/dev/null 2>&1; then
+      local __ap_holders
+      __ap_holders=$(ap_report_process_holders "$__ap_lock_file" || true)
+      if [[ -n "$__ap_holders" ]]; then
+        printf "agent-profiles: note: lock file '%s' is held open by:\n%s\n" \
+          "$__ap_lock_file" "$__ap_holders" >&2
+      fi
+    fi
+    ap_lock_fd_release "$__ap_lock_fd"
+    ap_die "$EX_BUSY" "$__ap_message"
+  fi
+  eval "$__ap_var=\$__ap_lock_fd"
+}
+
+ap_prepare_lock_file() {
+  local lock_file="$1"
+  local label="$2"
+
+  if [[ -L "$lock_file" ]]; then
+    ap_die "$EX_LAYOUT" "$label '$lock_file' is a symbolic link"
+  fi
+  if [[ ! -f "$lock_file" ]]; then
+    (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
   fi
 }
 
@@ -31,22 +97,14 @@ ap_lock_storage_shared() {
   ap_ensure_locks_dir "$repo_root"
 
   local storage_lock="$repo_root/.agent-profiles/.locks/.storage.lock"
-  if [[ -L "$storage_lock" ]]; then
-    ap_die "$EX_LAYOUT" "storage lock file '$storage_lock' is a symbolic link"
-  fi
-  if [[ ! -f "$storage_lock" ]]; then
-    (umask 077 && touch "$storage_lock" && chmod 600 "$storage_lock")
-  fi
-
-  exec {AP_STORAGE_LOCK_FD}<>"$storage_lock"
-  if ! flock -s -n "$AP_STORAGE_LOCK_FD"; then
-    ap_die "$EX_BUSY" "cannot acquire shared storage lock (storage is locked by another operation)"
-  fi
+  ap_prepare_lock_file "$storage_lock" "storage lock file"
+  ap_lock_file_into AP_STORAGE_LOCK_FD "$storage_lock" shared \
+    "cannot acquire shared storage lock (storage is locked by another operation)"
 }
 
 ap_unlock_storage() {
   if [[ -n "${AP_STORAGE_LOCK_FD:-}" ]]; then
-    exec {AP_STORAGE_LOCK_FD}>&-
+    ap_lock_fd_release "$AP_STORAGE_LOCK_FD"
     unset AP_STORAGE_LOCK_FD
   fi
 }
@@ -56,17 +114,9 @@ ap_lock_storage_exclusive() {
   ap_ensure_locks_dir "$repo_root"
 
   local storage_lock="$repo_root/.agent-profiles/.locks/.storage.lock"
-  if [[ -L "$storage_lock" ]]; then
-    ap_die "$EX_LAYOUT" "storage lock file '$storage_lock' is a symbolic link"
-  fi
-  if [[ ! -f "$storage_lock" ]]; then
-    (umask 077 && touch "$storage_lock" && chmod 600 "$storage_lock")
-  fi
-
-  exec {AP_STORAGE_LOCK_FD}<>"$storage_lock"
-  if ! flock -x -n "$AP_STORAGE_LOCK_FD"; then
-    ap_die "$EX_BUSY" "cannot acquire exclusive storage lock (storage is busy)"
-  fi
+  ap_prepare_lock_file "$storage_lock" "storage lock file"
+  ap_lock_file_into AP_STORAGE_LOCK_FD "$storage_lock" exclusive \
+    "cannot acquire exclusive storage lock (storage is busy)"
 }
 
 ap_lease_profile_shared() {
@@ -75,18 +125,12 @@ ap_lease_profile_shared() {
   ap_ensure_locks_dir "$repo_root"
 
   local lock_file="$repo_root/.agent-profiles/.locks/$profile.lock"
-  if [[ -L "$lock_file" ]]; then
-    ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
-  fi
-  if [[ ! -f "$lock_file" ]]; then
-    (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
-  fi
+  ap_prepare_lock_file "$lock_file" "profile lock file"
 
-  # Open file descriptor without O_CLOEXEC so it is inherited by bwrap and descendants
-  exec {AP_PROFILE_LEASE_FD}<>"$lock_file"
-  if ! flock -s -n "$AP_PROFILE_LEASE_FD"; then
-    ap_die "$EX_BUSY" "cannot acquire shared profile lease for '$profile' (profile is locked exclusively)"
-  fi
+  # The descriptor stays open across exec, so bwrap and every descendant keeps
+  # the shared lease after this helper exits.
+  ap_lock_file_into AP_PROFILE_LEASE_FD "$lock_file" shared \
+    "cannot acquire shared profile lease for '$profile' (profile is locked exclusively)"
 }
 
 ap_lock_profile_exclusive() {
@@ -95,26 +139,19 @@ ap_lock_profile_exclusive() {
   ap_ensure_locks_dir "$repo_root"
 
   local lock_file="$repo_root/.agent-profiles/.locks/$profile.lock"
-  if [[ -L "$lock_file" ]]; then
-    ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
-  fi
-  if [[ ! -f "$lock_file" ]]; then
-    (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
-  fi
+  ap_prepare_lock_file "$lock_file" "profile lock file"
 
-  exec {AP_PROFILE_EXCLUSIVE_FD}<>"$lock_file"
-  if ! flock -x -n "$AP_PROFILE_EXCLUSIVE_FD"; then
-    ap_die "$EX_BUSY" "cannot acquire exclusive lock for profile '$profile' (profile is in use)"
-  fi
+  ap_lock_file_into AP_PROFILE_EXCLUSIVE_FD "$lock_file" exclusive \
+    "cannot acquire exclusive lock for profile '$profile' (profile is in use)" 1
 }
 
 ap_unlock_profile() {
   if [[ -n "${AP_PROFILE_EXCLUSIVE_FD:-}" ]]; then
-    exec {AP_PROFILE_EXCLUSIVE_FD}>&-
+    ap_lock_fd_release "$AP_PROFILE_EXCLUSIVE_FD"
     unset AP_PROFILE_EXCLUSIVE_FD
   fi
   if [[ -n "${AP_PROFILE_LEASE_FD:-}" ]]; then
-    exec {AP_PROFILE_LEASE_FD}>&-
+    ap_lock_fd_release "$AP_PROFILE_LEASE_FD"
     unset AP_PROFILE_LEASE_FD
   fi
 }
@@ -129,34 +166,25 @@ ap_lock_profiles_exclusive() {
 
   [[ $# -gt 0 ]] || return 0
 
-  local names=()
-  mapfile -t names < <(printf "%s\n" "$@" | sort -u)
-
   local name lock_file fd
-  for name in "${names[@]}"; do
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
     ap_ensure_locks_dir "$repo_root"
     lock_file="$repo_root/.agent-profiles/.locks/$name.lock"
-    if [[ -L "$lock_file" ]]; then
-      ap_die "$EX_LAYOUT" "profile lock file '$lock_file' is a symbolic link"
-    fi
-    if [[ ! -f "$lock_file" ]]; then
-      (umask 077 && touch "$lock_file" && chmod 600 "$lock_file")
-    fi
+    ap_prepare_lock_file "$lock_file" "profile lock file"
 
-    exec {fd}<>"$lock_file"
-    if ! flock -x -n "$fd"; then
-      exec {fd}>&-
-      ap_die "$EX_BUSY" "cannot acquire exclusive lock for profile '$name' (profile is in use)"
-    fi
+    # All descriptors stay open together, in sorted name order.
+    ap_lock_file_into fd "$lock_file" exclusive \
+      "cannot acquire exclusive lock for profile '$name' (profile is in use)" 1
     AP_PROFILE_EXCLUSIVE_FDS+=("$fd")
-  done
+  done < <(printf "%s\n" "$@" | LC_ALL=C sort -u)
 }
 
 ap_unlock_profiles() {
   local fd
   for fd in "${AP_PROFILE_EXCLUSIVE_FDS[@]:-}"; do
     [[ -n "$fd" ]] || continue
-    exec {fd}>&-
+    ap_lock_fd_release "$fd"
   done
   AP_PROFILE_EXCLUSIVE_FDS=()
 }
@@ -216,10 +244,11 @@ ap_journal_is_stale() {
 
   local rc=0
   (
-    if ! exec {probe_fd}<>"$lock_file" 2>/dev/null; then
+    local probe_fd
+    if ! ap_lock_fd_open_into probe_fd "$lock_file"; then
       exit 3
     fi
-    flock -x -n "$probe_fd"
+    ap_platform_lock exclusive "$probe_fd"
   ) 2>/dev/null || rc=$?
 
   case "$rc" in
@@ -239,15 +268,13 @@ ap_lock_journal() {
   local lock_file
   lock_file=$(ap_ensure_journal_lock_file "$journal_file")
 
-  exec {AP_JOURNAL_LOCK_FD}<>"$lock_file"
-  if ! flock -x -n "$AP_JOURNAL_LOCK_FD"; then
-    ap_die "$EX_BUSY" "cannot acquire exclusive lock for journal '$journal_file' (operation in progress)"
-  fi
+  ap_lock_file_into AP_JOURNAL_LOCK_FD "$lock_file" exclusive \
+    "cannot acquire exclusive lock for journal '$journal_file' (operation in progress)"
 }
 
 ap_unlock_journal() {
   if [[ -n "${AP_JOURNAL_LOCK_FD:-}" ]]; then
-    exec {AP_JOURNAL_LOCK_FD}>&-
+    ap_lock_fd_release "$AP_JOURNAL_LOCK_FD"
     unset AP_JOURNAL_LOCK_FD
   fi
 }
@@ -293,11 +320,17 @@ ap_run_preflight() {
     hooks+=("$hook")
   done
 
-  if [[ ${#hooks[@]} -gt 1 ]]; then
-    mapfile -t hooks < <(printf "%s\n" "${hooks[@]}" | sort)
+  local ordered_hooks=()
+  if [[ ${#hooks[@]} -gt 0 ]]; then
+    local hook_path
+    while IFS= read -r hook_path; do
+      [[ -n "$hook_path" ]] || continue
+      ordered_hooks+=("$hook_path")
+    done < <(printf "%s\n" ${hooks[@]+"${hooks[@]}"} | LC_ALL=C sort)
   fi
 
-  for hook in "${hooks[@]}"; do
+  for hook in "${ordered_hooks[@]:-}"; do
+    [[ -n "$hook" ]] || continue
     # Source hook so ap_die terminates immediately with exact code
     # shellcheck source=/dev/null
     source "$hook"

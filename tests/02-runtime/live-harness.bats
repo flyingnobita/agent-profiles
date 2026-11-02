@@ -72,9 +72,10 @@ force_stop_group() {
   local test_home="$TEST_TMPDIR/synth_home"
   ap_live_create_synthetic_home "$test_home"
 
-  # Checksum file must have private permissions (0600)
+  # Checksum file must have private permissions (0600), read portably so the
+  # proof holds on stock macOS as well.
   local perm
-  perm=$(stat -c "%a" "$test_home/.checksums.sha256")
+  perm=$(ap_platform stat mode "$test_home/.checksums.sha256")
   assert_equal "$perm" "600"
 
   # Untouched verification must succeed
@@ -149,7 +150,7 @@ force_stop_group() {
   child_pgid=$(AGENT_PROFILES_DIR="$profile_dir" ap_live_spawn_test_process "$marker_file" bash -c 'sleep 30 & sleep 30 & wait')
 
   # The group has the shell plus two sleeps, all under one UID.
-  [[ "$(ps -o pid= -g "$child_pgid" | wc -l)" -ge 3 ]]
+  [[ "$(ap_live_pgid_members "$child_pgid" | wc -l)" -ge 3 ]]
   kill -0 -"$child_pgid" 2>/dev/null
 
   run ap_live_cleanup_pgid "$child_pgid" "$marker_file" "$profile_dir"
@@ -193,9 +194,9 @@ force_stop_group() {
   local child_pgid
   child_pgid=$(AGENT_PROFILES_DIR="$profile_dir" ap_live_spawn_test_process "$marker_file" sleep 30)
 
-  # Valid structure and target, but the recorded process start time is wrong.
+  # Valid structure and target, but the recorded start identity is wrong.
   printf 'pgid=%s\nleader_pid=%s\nboot_id=%s\nstart_ticks=1\nuid=%s\n' \
-    "$child_pgid" "$child_pgid" "$(cat /proc/sys/kernel/random/boot_id)" "$(id -u)" \
+    "$child_pgid" "$child_pgid" "$(ap_live_boot_identity)" "$(id -u)" \
     >"$marker_file"
 
   run ap_live_cleanup_pgid "$child_pgid" "$marker_file" "$profile_dir"
@@ -219,7 +220,9 @@ force_stop_group() {
   local child_pgid
   child_pgid=$(AGENT_PROFILES_DIR="$profile_dir" ap_live_spawn_test_process "$marker_file" sleep 30)
 
-  sed -i 's/^pgid=.*/pgid=999999/' "$marker_file"
+  # Rewrite the recorded group without GNU sed -i, which stock macOS lacks.
+  awk '{ if ($0 ~ /^pgid=/) print "pgid=999999"; else print }' "$marker_file" >"$marker_file.rewritten"
+  mv "$marker_file.rewritten" "$marker_file"
 
   run ap_live_cleanup_pgid "$child_pgid" "$marker_file" "$profile_dir"
   assert_failure

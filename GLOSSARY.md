@@ -16,3 +16,11 @@ The user's machine and resources shared with profile sessions, including project
 
 **Agent integration**:
 The supported behavior and guidance for using one agent CLI within an agent profile, including discovery, authentication diagnostics, and command execution.
+
+**Configuration redirection**:
+The placement of an agent's settings, state and user-installed tools in profile storage instead of the host environment, so profile sessions do not read or write each other's configuration.
+_Avoid_: Isolation, sandboxing, container
+
+**Qualified platform**:
+An operating system and architecture whose documented behavior has been verified for the named evidence classes, and whose unverified limits are stated.
+_Avoid_: Supported, tested, works on

@@ -11,6 +11,22 @@ source "$LIB_DIR/locks.sh"
 source "$LIB_DIR/procscan.sh"
 source "$LIB_DIR/lifecycle.sh"
 
+# Resolves a path that a journal recorded, so identity checks compare canonical
+# to canonical. The product records physical paths, but a journal can also be
+# reached through a symlinked ancestor (macOS serves /var/folders as
+# /private/var/folders) or survive a checkout move, and a lexical comparison
+# between a recorded path and a resolved one refuses a journal that is correct.
+# Nothing is trusted because of this: every caller still refuses a recorded path
+# that resolves anywhere other than the location it expects.
+ap_recover_canonical() {
+  local path="$1"
+  local resolved
+  if ! resolved=$(ap_platform_realpath_missing "$path"); then
+    ap_die "$EX_LAYOUT" "recorded path '$path' could not be resolved to a physical path"
+  fi
+  printf "%s\n" "$resolved"
+}
+
 ap_recover_validate_trash_path() {
   local repo_root="$1"
   local trash_path="$2"
@@ -18,14 +34,20 @@ ap_recover_validate_trash_path() {
   [[ -n "$trash_path" ]] || return 0
 
   local trash_base="$repo_root/.agent-profiles/.trash"
-  if [[ "$trash_path" != "$trash_base"/* ]]; then
+  local real_base real_trash
+  real_base=$(ap_recover_canonical "$trash_base")
+  real_trash=$(ap_recover_canonical "$trash_path")
+  if [[ "$real_trash" != "$real_base"/* ]]; then
     ap_die "$EX_LAYOUT" "unsafe journal trash path '$trash_path' (not under $trash_base)"
   fi
-  ap_assert_no_symlink_components "$repo_root" "$trash_path"
+  ap_assert_no_symlink_components "$repo_root" "$real_base"
+  ap_assert_no_symlink_components "$repo_root" "$real_trash"
 
-  if [[ -L "$trash_path" ]]; then
+  if [[ -L "$real_trash" ]]; then
     ap_die "$EX_LAYOUT" "journal trash path '$trash_path' is a symbolic link"
   fi
+
+  printf "%s\n" "$real_trash"
 }
 
 ap_recover_profile_operation() {
@@ -39,14 +61,17 @@ ap_recover_profile_operation() {
   ap_validate_profile_name "$profile"
 
   local expected_dir="$repo_root/.agent-profiles/$profile"
-  if [[ "$profile_dir" != "$expected_dir" ]]; then
+  local real_profile_dir real_expected_dir
+  real_profile_dir=$(ap_recover_canonical "$profile_dir")
+  real_expected_dir=$(ap_recover_canonical "$expected_dir")
+  if [[ "$real_profile_dir" != "$real_expected_dir" ]]; then
     ap_die "$EX_LAYOUT" "unsafe journal profile path '$profile_dir' (expected '$expected_dir')"
   fi
   ap_assert_no_symlink_components "$repo_root" "$expected_dir"
   if [[ -L "$expected_dir" ]]; then
     ap_die "$EX_LAYOUT" "profile path '$expected_dir' is a symbolic link"
   fi
-  ap_recover_validate_trash_path "$repo_root" "$trash_path"
+  trash_path=$(ap_recover_validate_trash_path "$repo_root" "$trash_path")
 
   local profile_present=0
   local trash_present=0
@@ -102,14 +127,16 @@ ap_recover_validate_migrate_source() {
   if [[ "$source_path" != /* ]]; then
     ap_die "$EX_LAYOUT" "unsafe migration source path '$source_path' (must be absolute)"
   fi
-  ap_assert_no_symlink_components "$repo_root" "$source_path"
+  local real_source
+  real_source=$(ap_recover_canonical "$source_path")
+  ap_assert_no_symlink_components "$repo_root" "$real_source"
 
-  if [[ "$source_path" == "$repo_root/.agent-sandbox" ]]; then
+  if [[ "$real_source" == "$repo_root/.agent-sandbox" ]]; then
     if [[ "$label" != "agent-sandbox" ]]; then
       ap_die "$EX_LAYOUT" "unsafe migration label '$label' for '$source_path'"
     fi
-  elif [[ "$source_path" == "$repo_root/.agent-profiles/"* ]]; then
-    local relative="${source_path#"$repo_root/.agent-profiles/"}"
+  elif [[ "$real_source" == "$repo_root/.agent-profiles/"* ]]; then
+    local relative="${real_source#"$repo_root/.agent-profiles/"}"
     if [[ "$relative" == */* ]]; then
       ap_die "$EX_LAYOUT" "unsafe migration source path '$source_path'"
     fi
@@ -161,11 +188,15 @@ ap_recover_validate_content_manifest() {
   fi
 
   local owner mode
-  owner=$(stat -c "%u" "$manifest" 2>/dev/null || true)
+  if ! owner=$(ap_platform_stat_owner "$manifest"); then
+    ap_die "$EX_LAYOUT" "cannot read the ownership of content manifest '$manifest'"
+  fi
   if [[ "$owner" != "$(id -u)" ]]; then
     ap_die "$EX_LAYOUT" "content manifest '$manifest' is not owned by the current user"
   fi
-  mode=$(stat -c "%a" "$manifest" 2>/dev/null || true)
+  if ! mode=$(ap_platform_stat_mode "$manifest"); then
+    ap_die "$EX_LAYOUT" "cannot read the permissions of content manifest '$manifest'"
+  fi
   if [[ -n "$mode" ]] && ((8#$mode & 8#022)); then
     ap_die "$EX_LAYOUT" "content manifest '$manifest' is group or world writable (mode $mode)"
   fi
@@ -208,11 +239,12 @@ ap_recover_migrate_operation() {
   local journal_file="$2"
   local state="$3"
   local backup_dir="$4"
-  local staged_dir="$5"
-  local legacy_dir="$6"
+  local raw_staged_dir="${5:-}"
+  local raw_legacy_dir="${6:-}"
   local profiles_csv="$7"
   local content_manifest="$8"
-
+  local staged_dir=""
+  local legacy_dir=""
   if [[ -z "$backup_dir" ]]; then
     ap_die "$EX_LAYOUT" "interrupted migrate journal has no recorded backup directory"
   fi
@@ -221,21 +253,26 @@ ap_recover_migrate_operation() {
   resolved_backup=$(ap_validate_existing_private_dir "$backup_dir" "backup directory")
 
   local real_repo
-  real_repo=$(realpath -e "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
+  real_repo=$(ap_platform_realpath_existing "$repo_root" 2>/dev/null || printf '%s\n' "$repo_root")
   if ap_path_within "$resolved_backup" "$real_repo"; then
     ap_die "$EX_LAYOUT" "recorded backup directory '$resolved_backup' is inside the git checkout"
   fi
 
-  local recorded_dir
-  for recorded_dir in "$staged_dir" "$legacy_dir"; do
+  local recorded_dir real_recorded
+  local -a recorded_dirs=()
+  for recorded_dir in "$raw_staged_dir" "$raw_legacy_dir"; do
     if [[ -z "$recorded_dir" ]]; then
       ap_die "$EX_LAYOUT" "interrupted migrate journal is missing a staging or legacy directory"
     fi
-    if [[ "$recorded_dir" != "$backup_dir"/* ]]; then
+    real_recorded=$(ap_recover_canonical "$recorded_dir")
+    if [[ "$real_recorded" != "$resolved_backup"/* ]]; then
       ap_die "$EX_LAYOUT" "unsafe journal directory '$recorded_dir' (not under '$backup_dir')"
     fi
-    ap_assert_no_symlink_components "$backup_dir" "$recorded_dir"
+    ap_assert_no_symlink_components "$resolved_backup" "$real_recorded"
+    recorded_dirs+=("$real_recorded")
   done
+  staged_dir="${recorded_dirs[0]}"
+  legacy_dir="${recorded_dirs[1]}"
 
   local profiles=()
   local profile
@@ -362,7 +399,7 @@ ap_recover_migrate_operation() {
       done
       rm -rf "$staged_dir"
 
-      ap_recover_finish_migrate "$repo_root" "$backup_dir" "${profiles[@]}"
+      ap_recover_finish_migrate "$repo_root" "$backup_dir" ${profiles[@]+"${profiles[@]}"}
       ;;
     *)
       ap_die "$EX_LAYOUT" "unknown journal state '$state' in interrupted migrate operation"
@@ -422,7 +459,7 @@ ap_cmd_recover() {
 
   if [[ $yes_flag -eq 0 ]]; then
     printf "Interrupted operation journals found for recovery:\n"
-    for journal_file in "${stale_journals[@]}"; do
+    for journal_file in ${stale_journals[@]+"${stale_journals[@]}"}; do
       printf "  %s\n" "$(basename "$journal_file")"
     done
     printf "Pass --yes to perform recovery.\n"
@@ -438,13 +475,13 @@ ap_cmd_recover() {
   local incomplete_journals=()
 
   # Phase 1: classify journals without mutating anything.
-  for journal_file in "${stale_journals[@]}"; do
+  for journal_file in ${stale_journals[@]+"${stale_journals[@]}"}; do
     if [[ ! -s "$journal_file" ]]; then
       incomplete_journals+=("$journal_file")
       continue
     fi
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_LAYOUT" "malformed journal '$(basename "$journal_file")'; inspect it manually instead of deleting data"
     fi
@@ -470,7 +507,7 @@ ap_cmd_recover() {
   # concurrent init or reset cannot race the clear.
   if [[ ${#incomplete_journals[@]} -gt 0 ]]; then
     ap_lock_storage_exclusive "$repo_root"
-    for journal_file in "${incomplete_journals[@]}"; do
+    for journal_file in ${incomplete_journals[@]+"${incomplete_journals[@]}"}; do
       ap_journal_is_stale "$journal_file" \
         || ap_die "$EX_BUSY" "journal '$(basename "$journal_file")' became active during recovery"
       if [[ -s "$journal_file" ]]; then
@@ -487,7 +524,7 @@ ap_cmd_recover() {
 
   stale_journals=()
   if [[ ${#valid_journals[@]} -gt 0 ]]; then
-    stale_journals=("${valid_journals[@]}")
+    stale_journals=(${valid_journals[@]+"${valid_journals[@]}"})
   fi
 
   if [[ ${#stale_journals[@]} -eq 0 ]]; then
@@ -498,9 +535,9 @@ ap_cmd_recover() {
   # Collect the locks needed by every remaining journal before mutating anything.
   local needs_exclusive_storage=0
   local all_targets=()
-  for journal_file in "${stale_journals[@]}"; do
+  for journal_file in ${stale_journals[@]+"${stale_journals[@]}"}; do
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
     fi
@@ -530,19 +567,23 @@ ap_cmd_recover() {
 
   local deduped_targets=()
   if [[ ${#all_targets[@]} -gt 0 ]]; then
-    mapfile -t deduped_targets < <(printf "%s\n" "${all_targets[@]}" | sort -u)
-    ap_lock_profiles_exclusive "$repo_root" "${deduped_targets[@]}"
+    local target_name
+    while IFS= read -r target_name; do
+      [[ -n "$target_name" ]] || continue
+      deduped_targets+=("$target_name")
+    done < <(printf "%s\n" ${all_targets[@]+"${all_targets[@]}"} | LC_ALL=C sort -u)
+    ap_lock_profiles_exclusive "$repo_root" ${deduped_targets[@]+"${deduped_targets[@]}"}
   fi
 
   local target
-  for journal_file in "${stale_journals[@]}"; do
+  for journal_file in ${stale_journals[@]+"${stale_journals[@]}"}; do
     ap_journal_is_stale "$journal_file" \
       || ap_die "$EX_BUSY" "journal '$(basename "$journal_file")' became active during recovery"
 
     ap_lock_journal "$journal_file"
 
     fields=()
-    mapfile -d '' -t fields < <(ap_read_journal_fields "$journal_file")
+    read_journal_fields_into fields "$journal_file"
     if [[ ${#fields[@]} -eq 0 ]]; then
       ap_die "$EX_REFUSED" "unreadable journal '$(basename "$journal_file")'; inspect it manually"
     fi
@@ -567,7 +608,7 @@ ap_cmd_recover() {
           scan_paths+=("$journal_trash_path")
         fi
         ap_scan_legacy_processes "$repo_root" "interrupted $journal_op data" \
-          "$journal_assume" "${scan_paths[@]}"
+          "$journal_assume" ${scan_paths[@]+"${scan_paths[@]}"}
         ap_recover_profile_operation "$repo_root" "$journal_op" "$journal_profile" \
           "$journal_state" "$journal_profile_dir" "$journal_trash_path"
         ;;
@@ -588,7 +629,7 @@ ap_cmd_recover() {
         fi
         if [[ ${#migrate_scan_paths[@]} -gt 0 ]]; then
           ap_scan_legacy_processes "$repo_root" "legacy migration data" \
-            "$journal_assume" "${migrate_scan_paths[@]}"
+            "$journal_assume" ${migrate_scan_paths[@]+"${migrate_scan_paths[@]}"}
         fi
         for target in $migrated_profiles; do
           ap_scan_processes "$repo_root" "$target" "$journal_assume"

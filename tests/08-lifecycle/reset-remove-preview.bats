@@ -5,6 +5,7 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
 }
 
@@ -110,7 +111,7 @@ teardown() {
 
   # Snapshot sha256 checksum of the entire profile directory before preview
   local hash_before
-  hash_before=$(find "$prof_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_before=$(ap_test_tree_digest "$prof_dir")
 
   run bash "$AP_HELPER" reset --profile targetprof
   assert_success
@@ -125,7 +126,7 @@ teardown() {
 
   # Verify profile is completely untouched
   local hash_after
-  hash_after=$(find "$prof_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after=$(ap_test_tree_digest "$prof_dir")
   assert_equal "$hash_before" "$hash_after"
 
   # Test remove preview
@@ -141,7 +142,7 @@ teardown() {
   assert_output_contains "Pass --yes to proceed"
 
   local hash_after_remove_preview
-  hash_after_remove_preview=$(find "$prof_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  hash_after_remove_preview=$(ap_test_tree_digest "$prof_dir")
   assert_equal "$hash_before" "$hash_after_remove_preview"
 }
 

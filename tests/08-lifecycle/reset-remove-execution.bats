@@ -5,17 +5,14 @@ setup() {
   load '../helpers/assert.bash'
   load '../helpers/fixtures.bash'
   load '../helpers/isolation.bash'
+  load '../helpers/platform.bash'
   setup_isolation
-  TEST_BG_PIDS=()
 }
 
 teardown() {
-  if [[ ${#TEST_BG_PIDS[@]} -gt 0 ]]; then
-    for pid in "${TEST_BG_PIDS[@]}"; do
-      kill -9 "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-    done
-  fi
+  # Long-lived lease holders are registered when they start; a failed assertion
+  # must stop exactly those and nothing else.
+  ap_test_teardown_owned
   teardown_isolation
 }
 
@@ -28,13 +25,16 @@ teardown() {
   run bash "$AP_HELPER" init --profile profb
   assert_success
 
-  # Start a background run in profa holding the shared lease
-  bash "$AP_HELPER" run --profile profa -- sleep 10 </dev/null >/dev/null 2>&1 &
-  local bg_pid=$!
-  TEST_BG_PIDS+=("$bg_pid")
-
-  # Wait briefly for process and lease to be established
-  sleep 0.5
+  # Start a run in profa holding the shared lease. The holder signals that it is
+  # executing and the lease is confirmed by a refused exclusive probe, so a slow
+  # helper start cannot slip past a fixed sleep and let reset win.
+  local lease_dir="$TEST_TMPDIR/lease-fixtures"
+  local holder_script
+  holder_script=$(ap_test_lease_holder_script "$lease_dir")
+  local lock_file="$fixture_repo/.agent-profiles/.locks/profa.lock"
+  ap_test_start_lease_holder "$AP_HELPER" profa "$holder_script" \
+    "$TEST_TMPDIR/profa-started" "$TEST_TMPDIR/profa-release" "$TEST_TMPDIR/profa-holder.log"
+  local bg_pid=$AP_TEST_LEASE_PID
 
   # Reset on profa must fail with 75 because profa lease is held
   run bash "$AP_HELPER" reset --profile profa --yes
@@ -44,8 +44,7 @@ teardown() {
   run bash "$AP_HELPER" reset --profile profb --yes
   assert_success
 
-  kill -9 "$bg_pid" 2>/dev/null || true
-  wait "$bg_pid" 2>/dev/null || true
+  ap_test_release_lease_holder "$TEST_TMPDIR/profa-release" "$bg_pid" "$lock_file"
 }
 
 @test "execution: reset --yes recreates empty directories while preserving other profiles" {
@@ -67,7 +66,7 @@ teardown() {
   echo "prof2 tool" >"$prof2_dir/bin/tool"
 
   local prof2_hash_before
-  prof2_hash_before=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_before=$(ap_test_tree_digest "$prof2_dir")
 
   run bash "$AP_HELPER" reset --profile prof1 --yes
   assert_success
@@ -83,7 +82,7 @@ teardown() {
 
   # Verify prof2 is completely untouched
   local prof2_hash_after
-  prof2_hash_after=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_after=$(ap_test_tree_digest "$prof2_dir")
   assert_equal "$prof2_hash_before" "$prof2_hash_after"
 }
 
@@ -105,7 +104,7 @@ teardown() {
   echo "# Untracked project file" >"$fixture_repo/project_scratch.txt"
 
   local prof2_hash_before
-  prof2_hash_before=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_before=$(ap_test_tree_digest "$prof2_dir")
 
   run bash "$AP_HELPER" remove --profile prof1 --yes
   assert_success
@@ -116,7 +115,7 @@ teardown() {
   # prof2 must remain completely intact
   assert_dir_exists "$prof2_dir"
   local prof2_hash_after
-  prof2_hash_after=$(find "$prof2_dir" -type f -exec sha256sum {} + | sort | sha256sum)
+  prof2_hash_after=$(ap_test_tree_digest "$prof2_dir")
   assert_equal "$prof2_hash_before" "$prof2_hash_after"
 
   # Project files and local mise config must remain untouched
