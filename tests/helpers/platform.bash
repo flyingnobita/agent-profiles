@@ -311,6 +311,314 @@ ap_test_wait_for_file() {
   done
 }
 
+# --- Test-owned fixture registry -------------------------------------------
+# A lease holder is a deliberately long-lived process, so every fixture started
+# here is recorded and a test's teardown stops exactly those processes. An
+# assertion failure, an interrupted test or a readiness timeout would otherwise
+# leave a holder alive forever - most visibly on Darwin, where there is no
+# bubblewrap sandbox and nothing else ends it. Bash 3.2: indexed arrays only.
+AP_TEST_OWNED_PIDS=()
+AP_TEST_OWNED_RELEASES=()
+
+# ap_test_register_owned_pid <pid>: records a process this test started.
+ap_test_register_owned_pid() {
+  local pid="$1"
+  [[ -n "$pid" ]] && AP_TEST_OWNED_PIDS+=("$pid")
+  return 0
+}
+
+# ap_test_register_owned_release <path>: records a release path whose creation
+# lets a registered holder exit by itself.
+ap_test_register_owned_release() {
+  local release="$1"
+  [[ -n "$release" ]] && AP_TEST_OWNED_RELEASES+=("$release")
+  return 0
+}
+
+ap_test_unregister_owned_pid() {
+  local pid="$1"
+  local kept=()
+  local candidate
+  for candidate in ${AP_TEST_OWNED_PIDS[@]+"${AP_TEST_OWNED_PIDS[@]}"}; do
+    [[ "$candidate" == "$pid" ]] || kept+=("$candidate")
+  done
+  AP_TEST_OWNED_PIDS=(${kept[@]+"${kept[@]}"})
+}
+
+# ap_test_pid_uid <pid>: the owning user id, or empty when the process is gone.
+ap_test_pid_uid() {
+  local pid="$1"
+  ps -o uid= -p "$pid" 2>/dev/null | tr -d ' '
+}
+
+# ap_test_pid_running <pid>: 0 when the process exists and is not a zombie.
+ap_test_pid_running() {
+  local pid="$1"
+  local state
+  state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ')
+  [[ -n "$state" && "${state#Z}" == "$state" ]]
+}
+
+# ap_test_pid_owned <pid>: 0 only for a pid this test recorded AND that is still
+# this user's process. Nothing outside the registry is ever signalled.
+ap_test_pid_owned() {
+  local pid="$1"
+  local recorded=0
+  local candidate
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  for candidate in ${AP_TEST_OWNED_PIDS[@]+"${AP_TEST_OWNED_PIDS[@]}"}; do
+    [[ "$candidate" == "$pid" ]] && recorded=1
+  done
+  [[ "$recorded" -eq 1 ]] || return 1
+  ap_test_pid_running "$pid" || return 1
+  [[ "$(ap_test_pid_uid "$pid")" == "$(id -u)" ]]
+}
+
+# ap_test_stop_owned_pid <pid>: signals a recorded, still-owned process only.
+ap_test_stop_owned_pid() {
+  local pid="$1"
+  ap_test_pid_owned "$pid" || return 0
+  kill -9 "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+# ap_test_wait_pid_gone <pid> [attempts]: waits until a process is gone.
+ap_test_wait_pid_gone() {
+  local pid="$1"
+  local limit="${2:-100}"
+  local i=0
+  while [[ $i -lt $limit ]]; do
+    ap_test_pid_running "$pid" || return 0
+    i=$((i + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+# ap_test_teardown_owned: the failure-path teardown every lease fixture uses.
+# It releases what can exit by itself, then stops every recorded holder or
+# descendant that is still alive. Safe to call when nothing was started, and
+# safe to call after a normal release.
+ap_test_teardown_owned() {
+  local release
+  local pid
+  for release in ${AP_TEST_OWNED_RELEASES[@]+"${AP_TEST_OWNED_RELEASES[@]}"}; do
+    : >"$release" 2>/dev/null || true
+  done
+  for pid in ${AP_TEST_OWNED_PIDS[@]+"${AP_TEST_OWNED_PIDS[@]}"}; do
+    ap_test_stop_owned_pid "$pid"
+  done
+  AP_TEST_OWNED_PIDS=()
+  AP_TEST_OWNED_RELEASES=()
+  return 0
+}
+
+# ap_test_run_detached <log-file> <command...>: runs a fixture command in its
+# own session and sets AP_TEST_DETACHED_PID. The session keeps the fixture's
+# lifetime under this test's control instead of the runner's process-group
+# cleanup, and python3 is used rather than setsid(1), which stock macOS does not
+# ship.
+ap_test_run_detached() {
+  local log="$1"
+  shift
+  # `python3 -c CODE -- cmd` leaves a literal "--" in sys.argv[1], so the "--"
+  # separator is not passed: argv[1:] is the command itself.
+  #
+  # Descriptors above stderr are closed before the helper runs. The test runner
+  # captures output through one of them (Bats uses fd 3), so a long-lived
+  # fixture that kept it open would make the runner wait for the fixture to
+  # end - which turns an uncollected holder into a false pass. The helper opens
+  # the profile-lease descriptors after this point, so those still inherit
+  # normally.
+  python3 -c 'import os, sys
+argv = sys.argv[1:]
+if argv and argv[0] == "--":
+    argv = argv[1:]
+if not argv:
+    raise SystemExit("ap_test_run_detached: no command")
+try:
+    os.setsid()
+except OSError:
+    pass
+try:
+    inherited = [int(name) for name in os.listdir("/dev/fd")]
+except OSError:
+    inherited = list(range(3, 256))
+for descriptor in inherited:
+    if descriptor > 2:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+os.execvp(argv[0], argv)' "$@" </dev/null >"$log" 2>&1 &
+  AP_TEST_DETACHED_PID=$!
+}
+
+# ap_test_lease_holder_script <dir>: writes a portable holder command and prints
+# its path. The command signals that it is executing, then waits for a release
+# file, so the caller controls its lifetime instead of betting a fixed sleep
+# will outlast a slow start. The third argument is a hard lifetime bound: even
+# if the owning test process is killed before teardown, the holder exits by
+# itself instead of waiting forever. It runs inside the profile, so it inherits
+# the shared profile lease descriptor just like a real command.
+ap_test_lease_holder_script() {
+  local dir="$1"
+  local script="$dir/lease-holder.sh"
+  mkdir -p "$dir"
+  if [[ ! -f "$script" ]]; then
+    cat >"$script" <<'SH'
+#!/bin/sh
+# args: <ready-marker> <release-file> [<max-seconds>]
+printf 'ready\n' >"$1"
+max="${3:-120}"
+deadline=$(( $(date +%s) + max ))
+while [ ! -e "$2" ]; do
+  [ "$(date +%s)" -ge "$deadline" ] && exit 0
+  sleep 0.2
+done
+exit 0
+SH
+    chmod +x "$script"
+  fi
+  printf '%s\n' "$script"
+}
+
+# ap_test_lease_wait_held <lock-file> [attempts]: waits until an exclusive probe
+# of the profile lock fails, i.e. a shared lease is observably held. Probing is
+# the observation: a process existing is not yet proof that it holds the lease.
+ap_test_lease_wait_held() {
+  local file="$1"
+  local limit="${2:-300}"
+  local i=0 rc=0
+  while [[ $i -lt $limit ]]; do
+    rc=0
+    ap_test_try_lock "$file" exclusive >/dev/null 2>&1 || rc=$?
+    [[ "$rc" -eq 1 ]] && return 0
+    i=$((i + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+# ap_test_lease_wait_free <lock-file> [attempts]: waits until an exclusive probe
+# succeeds, i.e. the shared lease was released. Replaces "kill, then sleep, then
+# assume it happened".
+ap_test_lease_wait_free() {
+  local file="$1"
+  local limit="${2:-300}"
+  local i=0
+  while [[ $i -lt $limit ]]; do
+    ap_test_try_lock "$file" exclusive >/dev/null 2>&1 && return 0
+    i=$((i + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+# ap_test_start_lease_holder <helper> <profile> <script> <marker> <release> <log>
+#   [<max-seconds>]
+#
+# Starts `run --profile <profile> -- sh <script> <marker> <release> <max>` from
+# the current checkout root and sets AP_TEST_LEASE_PID. Returns only once the
+# command is executing (marker) and the profile lease is observably held
+# (exclusive probe refused), so no caller sleeps and hopes. The holder is
+# registered before readiness is awaited, and a readiness failure stops it
+# immediately instead of leaving it to teardown alone.
+ap_test_start_lease_holder() {
+  local helper="$1"
+  local profile="$2"
+  local script="$3"
+  local marker="$4"
+  local release="$5"
+  local log="$6"
+  local max_seconds="${7:-120}"
+  local lock_file=".agent-profiles/.locks/$profile.lock"
+
+  rm -f "$marker" "$release"
+  # Own session: a holder is a long-lived stand-in for a real profile command,
+  # so its lifetime must be controlled by the registry below and not by the test
+  # runner's cleanup of its own process group. That is the only way a failure
+  # path can actually be exercised on Linux, and it is also the Darwin shape,
+  # where no bubblewrap sandbox ends the process for us.
+  ap_test_run_detached "$log" bash "$helper" run --profile "$profile" -- \
+    sh "$script" "$marker" "$release" "$max_seconds"
+  AP_TEST_LEASE_PID=$AP_TEST_DETACHED_PID
+  ap_test_register_owned_pid "$AP_TEST_LEASE_PID"
+  ap_test_register_owned_release "$release"
+
+  if ! ap_test_wait_for_file "$marker" 300 || ! ap_test_lease_wait_held "$lock_file" 300; then
+    printf 'lease holder did not start and hold the profile lease:\n' >&2
+    cat "$log" >&2 2>/dev/null || true
+    ap_test_stop_owned_pid "$AP_TEST_LEASE_PID"
+    ap_test_unregister_owned_pid "$AP_TEST_LEASE_PID"
+    return 1
+  fi
+}
+
+# ap_test_start_lease_descendant <helper> <profile> <script> <marker> <release>
+#   <pid-file> <log> [<max-seconds>]
+#
+# Runs a command that starts the holder as a background descendant and exits, so
+# only the inherited lease descriptor keeps the profile locked. The descendant's
+# pid is recorded from the pid file and registered for teardown, which is what
+# covers the failure path where the direct parent is already gone.
+ap_test_start_lease_descendant() {
+  local helper="$1"
+  local profile="$2"
+  local script="$3"
+  local marker="$4"
+  local release="$5"
+  local pid_file="$6"
+  local log="$7"
+  local max_seconds="${8:-120}"
+  local lock_file=".agent-profiles/.locks/$profile.lock"
+  local child_pid=""
+
+  rm -f "$marker" "$release" "$pid_file"
+  # shellcheck disable=SC2016 # $1..$5 belong to the inner sh, not this shell.
+  ap_test_run_detached "$log" bash "$helper" run --profile "$profile" -- \
+    sh -c 'sh "$1" "$2" "$3" "$4" & echo $! >"$5"' holder \
+    "$script" "$marker" "$release" "$max_seconds" "$pid_file"
+  local parent_pid=$AP_TEST_DETACHED_PID
+  ap_test_register_owned_pid "$parent_pid"
+
+  # The detached run has to reach the point where it forks the descendant and
+  # writes its pid; a missing pid file is a fixture failure, not readiness.
+  if ! ap_test_wait_for_file "$pid_file" 300; then
+    printf 'lease descendant parent did not record a pid:\n' >&2
+    cat "$log" >&2 2>/dev/null || true
+    ap_test_stop_owned_pid "$parent_pid"
+    ap_test_unregister_owned_pid "$parent_pid"
+    return 1
+  fi
+  child_pid=$(cat "$pid_file")
+  [[ -n "$child_pid" ]] || return 1
+  ap_test_register_owned_pid "$child_pid"
+  ap_test_register_owned_release "$release"
+
+  if ! ap_test_wait_for_file "$marker" 300 || ! ap_test_lease_wait_held "$lock_file" 300; then
+    printf 'lease descendant did not start and hold the profile lease:\n' >&2
+    cat "$log" >&2 2>/dev/null || true
+    ap_test_stop_owned_pid "$child_pid"
+    ap_test_unregister_owned_pid "$child_pid"
+    return 1
+  fi
+}
+
+# ap_test_release_lease_holder <release-file> <pid> <lock-file>: ends the
+# holder's lifetime, waits, and observes the lease being released. It also
+# unregisters the holder so teardown has nothing left to signal.
+ap_test_release_lease_holder() {
+  local release="$1"
+  local pid="$2"
+  local lock_file="$3"
+
+  : >"$release"
+  wait "$pid" 2>/dev/null || true
+  ap_test_unregister_owned_pid "$pid"
+  ap_test_lease_wait_free "$lock_file"
+}
+
 # ap_test_tree_digest <dir>: one digest over every regular file below dir, in
 # sorted relative order. Replaces `find -type f -exec sha256sum {} + | sort |
 # sha256sum`, which needs GNU sha256sum and makes the answer depend on absolute
