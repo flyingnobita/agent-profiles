@@ -36,6 +36,13 @@ teardown() {
   assert_output_contains "3.14.1"
 }
 
+@test "guard: pinned rush version is 0.11.1" {
+  # rush --version also checks online for a newer release; -h is offline.
+  run rush -h
+  assert_success
+  assert_output_contains "Version: 0.11.1"
+}
+
 @test "guard: AP_SUBJECT is a valid directory" {
   [[ -d "$AP_SUBJECT" ]]
 }
