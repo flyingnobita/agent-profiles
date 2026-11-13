@@ -2,10 +2,19 @@
   "name": "agent-profiles",
   "version": "0.3.0",
   "description": "Named agent profiles: separate logins, settings, skills and tools for Claude Code, Codex CLI, Antigravity CLI and OpenCode, per Git checkout.",
-  "author": { "name": "flyingnobita" },
+  "author": {
+    "name": "flyingnobita"
+  },
   "homepage": "https://github.com/flyingnobita/agent-profiles",
   "repository": "https://github.com/flyingnobita/agent-profiles",
   "license": "MIT",
-  "keywords": ["profiles", "skills", "claude-code", "codex", "antigravity", "opencode"],
-  "skills": "./skills/"
+  "keywords": [
+    "profiles",
+    "skills",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "opencode"
+  ],
+  "skills": "./flyingnobita-agent-profiles"
 }

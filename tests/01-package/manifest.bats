@@ -12,6 +12,16 @@ teardown() {
   teardown_isolation
 }
 
+# Copy the package as check-package sees it: the skill, the plugin manifests
+# beside it under skills/, and the repository marketplace.
+copy_package() {
+  local repo="$1"
+  mkdir -p "$repo/skills"
+  cp -a "$AP_SKILL_DIR" "$repo/skills/flyingnobita-agent-profiles"
+  cp -a "$AP_SUBJECT/skills/.claude-plugin" "$AP_SUBJECT/skills/.codex-plugin" "$repo/skills/"
+  cp -a "$AP_SUBJECT/.claude-plugin" "$repo/"
+}
+
 @test "manifest: check-package tool passes for subject" {
   run bash "$AP_SUBJECT/tests/tools/check-package" "$AP_SUBJECT"
   assert_success
@@ -72,9 +82,7 @@ teardown() {
 
   local repo="$TEST_TMPDIR/package"
   local skill="$repo/skills/flyingnobita-agent-profiles"
-  mkdir -p "$repo/skills"
-  cp -a "$AP_SKILL_DIR" "$skill"
-  cp -a "$AP_SUBJECT/.claude-plugin" "$AP_SUBJECT/.codex-plugin" "$repo/"
+  copy_package "$repo"
 
   # The documented surface is accepted before anything is changed.
   run bash "$CHECK_PACKAGE" "$repo"
@@ -104,9 +112,7 @@ PY
 
 @test "manifest: check-package refuses plugin manifests whose version drifts from VERSION" {
   local repo="$TEST_TMPDIR/package"
-  mkdir -p "$repo/skills"
-  cp -a "$AP_SKILL_DIR" "$repo/skills/flyingnobita-agent-profiles"
-  cp -a "$AP_SUBJECT/.claude-plugin" "$AP_SUBJECT/.codex-plugin" "$repo/"
+  copy_package "$repo"
   run bash "$CHECK_PACKAGE" "$repo"
   assert_success
 
@@ -114,9 +120,9 @@ PY
   # a manifest left behind on a release would hide that release from plugin
   # users. Every manifest that states a version must match VERSION.
   local manifest
-  for manifest in .claude-plugin/plugin.json .codex-plugin/plugin.json .claude-plugin/marketplace.json; do
-    rm -rf "$repo/.claude-plugin" "$repo/.codex-plugin"
-    cp -a "$AP_SUBJECT/.claude-plugin" "$AP_SUBJECT/.codex-plugin" "$repo/"
+  for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json .claude-plugin/marketplace.json; do
+    rm -rf "$repo"
+    copy_package "$repo"
     python3 - "$repo/$manifest" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -129,5 +135,43 @@ PY
     assert_failure
     assert_output_contains "$manifest"
     assert_output_contains "0.0.1"
+  done
+}
+
+@test "manifest: check-package keeps the plugin root at skills/ and its skill path exact" {
+  local repo="$TEST_TMPDIR/package"
+  copy_package "$repo"
+  run bash "$CHECK_PACKAGE" "$repo"
+  assert_success
+
+  # Plugin installs copy the whole plugin root into the agent's cache, so the
+  # root stays skills/ rather than the repository with its tests and docs.
+  python3 - "$repo/.claude-plugin/marketplace.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["plugins"][0]["source"] = "./"
+json.dump(data, open(path, "w"))
+PY
+  run bash "$CHECK_PACKAGE" "$repo"
+  assert_failure
+  assert_output_contains "./skills"
+
+  # Codex finds no skill when the path names the plugin root ("./" or "."),
+  # so each manifest names the skill directory itself.
+  local manifest
+  for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json; do
+    rm -rf "$repo"
+    copy_package "$repo"
+    python3 - "$repo/$manifest" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["skills"] = "./"
+json.dump(data, open(path, "w"))
+PY
+    run bash "$CHECK_PACKAGE" "$repo"
+    assert_failure
+    assert_output_contains "$manifest"
   done
 }
