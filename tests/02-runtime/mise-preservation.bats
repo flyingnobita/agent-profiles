@@ -130,19 +130,9 @@ print("PASSTHROUGH_OK")
   # Path with mise removed
   local no_mise_bin="$TEST_TMPDIR/no_mise_bin"
   mkdir -p "$no_mise_bin"
-  local old_ifs="$IFS"
-  IFS=':'
-  for bin_dir in $PATH; do
-    IFS="$old_ifs"
-    for tool in "$bin_dir"/*; do
-      [[ -x "$tool" && ! -d "$tool" ]] || continue
-      local name
-      name="$(basename "$tool")"
-      [[ "$name" == "mise" ]] && continue
-      [[ ! -e "$no_mise_bin/$name" ]] && ln -s "$tool" "$no_mise_bin/$name" 2>/dev/null || true
-    done
-  done
-  IFS="$old_ifs"
+  # shellcheck source=tests/helpers/restricted-path.bash
+  source "$BATS_TEST_DIRNAME/../helpers/restricted-path.bash"
+  ap_test_restricted_bin "$no_mise_bin" mise
 
   run env PATH="$no_mise_bin" bash "$AP_HELPER" run -- echo "generic_cmd_ok"
   assert_success

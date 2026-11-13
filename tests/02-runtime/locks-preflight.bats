@@ -106,21 +106,9 @@ SHIM
   # therefore runs the env-only adapter with bwrap genuinely absent from PATH.
   local no_bwrap="$TEST_TMPDIR/no-bwrap-bin"
   mkdir -p "$no_bwrap"
-  local dir tool name
-  local old_ifs="$IFS"
-  IFS=':'
-  for dir in $PATH; do
-    IFS="$old_ifs"
-    [[ -d "$dir" ]] || continue
-    for tool in "$dir"/*; do
-      [[ -x "$tool" && ! -d "$tool" ]] || continue
-      name="$(basename "$tool")"
-      [[ "$name" == "bwrap" ]] && continue
-      [[ -e "$no_bwrap/$name" ]] && continue
-      ln -s "$tool" "$no_bwrap/$name" 2>/dev/null || true
-    done
-  done
-  IFS="$old_ifs"
+  # shellcheck source=tests/helpers/restricted-path.bash
+  source "$BATS_TEST_DIRNAME/../helpers/restricted-path.bash"
+  ap_test_restricted_bin "$no_bwrap" bwrap
 
   cat >"$probe" <<'PROBE'
 #!/usr/bin/env bats
