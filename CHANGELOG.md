@@ -8,6 +8,8 @@
 
 - Nov-14, 2026 - 12:58 AM +08:00 - `ap doctor` reports the global task as `stale` when the installed skill changed after setup: setup records the installed skill directory in each task, and doctor compares the deployed release with it, reporting `cannot verify` when that record is missing or the skill has moved, as after a plugin update
 
+- Nov-14, 2026 - 12:27 AM +08:00 - The README usage table gives `exit` / Ctrl-D its own row, so leaving a profile shell is a listed command rather than a note on the `ap NAME` row
+
 - Nov-13, 2026 - 11:21 PM +08:00 - Plugin installs copy only `skills/` instead of the whole repository (about 470 KB instead of 1.5 MB): the manifests live in `skills/.claude-plugin/` and `skills/.codex-plugin/`, name the skill directory as their skills path (the only form Codex discovers), and the package check enforces both; the release notes now list plugin install
 
 - Nov-13, 2026 - 11:14 PM +08:00 - On macOS, `reset`, `remove`, `recover` and `migrate` no longer refuse because of a process that exited during the process scan, such as a short-lived Spotlight `mdworker_shared`; a process that is still alive and cannot be inspected still refuses

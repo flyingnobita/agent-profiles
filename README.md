@@ -85,12 +85,13 @@ rewrites your host credential files.
 | Command | Does |
 | --- | --- |
 | `ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`) or any command in profile `NAME` |
-| `ap NAME` | Open your shell inside the profile; `exit` to leave |
+| `ap NAME` | Open your shell inside the profile |
 | `ap new NAME` | Create a profile without running anything |
 | `ap ls` | List the profiles in this checkout |
 | `ap rm NAME [--yes]` | Remove a profile (preview until `--yes`) |
 | `ap reset NAME [--yes]` | Recreate a profile empty (preview until `--yes`) |
 | `ap doctor` | Check the machine, the task and the agent integrations |
+| `exit` / Ctrl-D | Leave the profile shell and return to the host shell |
 
 Everything after the agent name is forwarded unchanged
 (`ap demo claude --resume`). A missing profile is offered for creation in a
