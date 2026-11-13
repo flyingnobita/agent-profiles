@@ -223,11 +223,14 @@ ap_test_try_lock() {
 # ap_test_hold_lock <file> [seconds]: holds an exclusive lock in a detached
 # session for the given time and prints its pid (also its process-group id).
 # Run it in the background, then wait for ap_test_try_lock to report contention
-# before exercising the helper.
+# before exercising the helper. Only call it with `&`: it execs python3, so the
+# background job's $! is the holder itself and `kill -TERM -"$!"` reaches its
+# session. Without the exec, $! named the bash subshell, the group kill missed,
+# and every caller waited out the full hold time.
 ap_test_hold_lock() {
   local file="$1"
   local seconds="${2:-30}"
-  python3 - "$file" "$seconds" <<'PY'
+  exec python3 - "$file" "$seconds" <<'PY'
 import fcntl
 import os
 import sys
