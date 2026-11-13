@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-14, 2026 - 06:59 AM +08:00 - On macOS, the OpenCode service-port check no longer risks a spurious "unverified" result from a broken pipe when it confirms `lsof` can see its own process
+
 - Nov-14, 2026 - 06:53 AM +08:00 - `check-install` extracts the source archive from a temporary file instead of a pipe, so macOS CI no longer fails intermittently with exit 141 when `tar` stops reading before `git archive` finishes writing
 
 - Nov-14, 2026 - 01:09 AM +08:00 - `mise run test` runs the Bats suite in parallel through a pinned `rush`, one job per CPU up to 8, so a full run takes about 8 minutes instead of 19 on a 3-job macOS arm64 host; `AP_TEST_JOBS` sets the job count and `AP_TEST_JOBS=1` runs it serially
