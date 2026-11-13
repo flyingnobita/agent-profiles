@@ -28,6 +28,20 @@ in GitHub Issues.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+### Status labels move the issue, not just the board
+
+`status:done` is not a note that the work landed: the `kaneo-nobita-labs[bot]` app
+closes the issue within seconds of it being added. A later pull request that
+references the issue makes the same app remove `status:done`, add
+`status:in-review` and reopen it, so the issue does not stay closed by mistake.
+
+Observed on 2026-11-13 on issue #6: the label was added at 09:33:22 and the app
+closed the issue at 09:33:29; opening PR #27 made the app reopen it with
+`status:in-review` at 11:16:36.
+
+While a pull request is open, set `status:in-review`. Reserve `status:done` for
+the merge, otherwise the issue closes before its work has landed.
+
 File issues only into the user's own repo. Never file into `mattpocock/skills` (the repo these skills come from) unless the user owns it. In a fork, `gh` can default to the upstream parent, so before the first `gh issue create` of a session, check the target with `gh repo view --json nameWithOwner` and confirm it with the user if it is not their repo.
 
 ## Pull requests as a triage surface
