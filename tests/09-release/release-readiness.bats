@@ -46,9 +46,9 @@ teardown() {
   assert_success
 }
 
-@test "release: README names the published repository and pinned installer" {
+@test "release: README names the published repository installer" {
   assert_file_exists "$README"
-  run grep -F -- "npx skills@1.7.4 add flyingnobita/agent-profiles" "$README"
+  run grep -F -- "npx skills add flyingnobita/agent-profiles" "$README"
   assert_success
   run grep -F -- "proposed, after publication" "$README"
   assert_failure 1

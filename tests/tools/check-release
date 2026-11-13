@@ -207,13 +207,13 @@ done < <(
 )
 pass "every relative README link resolves to a real file"
 
-require_term "$README" "npx skills@1.7.4 add flyingnobita/agent-profiles" \
+require_term "$README" "npx skills add flyingnobita/agent-profiles" \
   "the repository-source install command"
 if grep -qF -- "proposed, after publication" "$README" \
   || grep -qF -- "flyingnobita/flyingnobita-agent-profiles" "$README"; then
   fail "README.md has obsolete pre-publication installation instructions"
 fi
-pass "README.md names the published repository and pinned installer"
+pass "README.md names the published repository installer"
 
 require_term "$README" "not a security sandbox" \
   "that profiles are not a security sandbox"

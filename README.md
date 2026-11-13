@@ -58,7 +58,7 @@ What stays **shared** by every profile in the checkout:
 
 ```bash
 # 1. Install the skill into your agents
-npx skills@1.7.4 add flyingnobita/agent-profiles \
+npx skills add flyingnobita/agent-profiles \
   --skill flyingnobita-agent-profiles --copy -g -y \
   --agent claude-code codex antigravity-cli opencode
 
@@ -160,8 +160,8 @@ never installed by the helper.
 
 ### Install the skill
 
-The skill is installed with the `skills` CLI (npm `skills` package, pinned to
-1.7.4). Select the skill explicitly, and drop `-g` for project scope.
+The skill is installed with the `skills` CLI (npm `skills` package; this
+repository's own tests pin 1.7.4 in `mise.toml`). Select the skill explicitly, and drop `-g` for project scope.
 
 > [!NOTE]
 > Before the skill is published to the public registry it will be renamed
@@ -171,7 +171,7 @@ The skill is installed with the `skills` CLI (npm `skills` package, pinned to
 From the [published repository](https://github.com/flyingnobita/agent-profiles):
 
 ```bash
-npx skills@1.7.4 add flyingnobita/agent-profiles \
+npx skills add flyingnobita/agent-profiles \
   --skill flyingnobita-agent-profiles --copy -g -y \
   --agent claude-code codex antigravity-cli opencode
 ```

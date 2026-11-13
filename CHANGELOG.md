@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-13, 2026 - 02:16 PM +08:00 - The README install command uses `npx skills add` without a version pin, so users get the current `skills` CLI; the repository's own tests still pin 1.7.4
+
 - Nov-02, 2026 - 09:47 AM +08:00 - Lease contention tests wait for the holder's own start marker and an observed lease instead of a fixed sleep, keep every holder and descendant in an owned-process registry with a bounded lifetime, and close the runner's capture descriptor before a fixture starts, so a slow host no longer fails the macOS suite and an aborted test cannot leave a fixture process behind
 
 - Oct-31, 2026 - 05:07 PM +08:00 - macOS arm64 becomes a qualified platform: environment and configuration redirection only, stock `/bin/bash` 3.2 with no bubblewrap, a portable platform adapter for BSD userland, Darwin process safety that fails closed, a truthful Darwin doctor, an arm64 CI job with a guarded test tier, and release tooling that fingerprints every shipped file
