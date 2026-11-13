@@ -86,6 +86,68 @@ sys.exit(2)
   [[ "$(ap_test_lower "$tasks")" == *"stale"* ]]
 }
 
+# The deployed task runs the release helper, so doctor must compare it with the
+# installed skill recorded at setup time, not with its own (always current) digest.
+@test "doctor: the deployed task reports a skill update that was not redeployed as stale" {
+  local copy="$TEST_TMPDIR/installed-skill"
+  cp -a "$AP_SKILL_DIR" "$copy"
+  run bash "$copy/scripts/agent-profiles" setup --apply
+  assert_success
+  printf '\n# update that was not deployed\n' >>"$copy/scripts/lib/common.sh"
+
+  run mise ap doctor --json
+  assert_success
+  local tasks
+  tasks=$(doctor_check "$output" tasks)
+  [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "warning" ]]
+  [[ "$(ap_test_lower "$tasks")" == *"stale"* ]]
+}
+
+@test "doctor: the deployed task reports an unchanged installed skill as available" {
+  local copy="$TEST_TMPDIR/installed-skill"
+  cp -a "$AP_SKILL_DIR" "$copy"
+  run bash "$copy/scripts/agent-profiles" setup --apply
+  assert_success
+
+  run mise ap doctor --json
+  assert_success
+  local tasks
+  tasks=$(doctor_check "$output" tasks)
+  [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "available" ]]
+}
+
+@test "doctor: a deployed task whose recorded skill is gone cannot be verified" {
+  local copy="$TEST_TMPDIR/installed-skill"
+  cp -a "$AP_SKILL_DIR" "$copy"
+  run bash "$copy/scripts/agent-profiles" setup --apply
+  assert_success
+  mv "$copy" "$copy.moved"
+
+  run mise ap doctor --json
+  assert_success
+  local tasks
+  tasks=$(doctor_check "$output" tasks)
+  [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "warning" ]]
+  [[ "$tasks" == *"cannot verify"* ]]
+}
+
+@test "doctor: a deployed task without a recorded skill cannot be verified" {
+  run bash "$AP_HELPER" setup --apply
+  assert_success
+  local task_file="$MISE_CONFIG_DIR/tasks/agent-profiles"
+  local kept="$TEST_TMPDIR/task-without-record"
+  grep -v '^# skill-dir: ' "$task_file" >"$kept"
+  mv "$kept" "$task_file"
+  chmod 755 "$task_file"
+
+  run mise ap doctor --json
+  assert_success
+  local tasks
+  tasks=$(doctor_check "$output" tasks)
+  [[ "$(printf '%s\n' "$tasks" | sed -n '1p')" == "warning" ]]
+  [[ "$tasks" == *"cannot verify"* ]]
+}
+
 @test "doctor: a project-level task shadows the global task and is reported" {
   run bash "$AP_HELPER" setup --apply
   assert_success
