@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-13, 2026 - 10:18 PM +08:00 - The repository is a plugin marketplace: the skill installs as the `agent-profiles` plugin in Claude Code, Codex CLI and Antigravity CLI (from GitHub or a local checkout), the README documents each plugin's install, update, removal and helper path plus a manual copy for OpenCode, and the package check fails when a plugin manifest's version drifts from `VERSION`
+
 - Nov-13, 2026 - 09:57 PM +08:00 - The README presents macOS arm64 as a supported platform: a platform badge and requirements table for both systems, a macOS install section (Xcode command line tools, Homebrew `mise`) with the configuration-only redirection, shared Keychain and Intel limits, and macOS-observed agent versions and evidence links in the compatibility section
 
 - Nov-13, 2026 - 08:38 PM +08:00 - The `test` task runs the Darwin suite with the stock `/bin/bash` 3.2 path ordering the macOS CI job already uses, so a Homebrew bash earlier in `PATH` no longer fails the platform contract or resolves a Homebrew bash inside the restricted-PATH fixtures
