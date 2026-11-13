@@ -323,13 +323,13 @@ verification. Sanitized results are in the
 | Platform | Status | Notes |
 | --- | --- | --- |
 | Linux x86_64 | Qualified | Requires bubblewrap and unprivileged user namespaces |
-| macOS arm64 | Qualified for profile mechanics and diagnostics | Requires mise, git and python3 plus the stock `/bin/bash` 3.2; configuration redirection only; version, startup, discovery and authentication of the real agent CLI classes were observed on a desktop run, while enforcement and credentialed model execution stay unverified there |
+| macOS arm64 | Qualified for profile mechanics and diagnostics | Requires mise, git and python3 plus the stock `/bin/bash` 3.2; configuration redirection only; version, startup, discovery and authentication of the real agent CLI classes were observed on a desktop run under a test-only containment wrapper (Claude Code rendered its entry point without reaching ready; Codex CLI needed `--no-daemon`), while enforcement and credentialed model execution stay unverified there |
 
 On macOS a profile is redirected through each agent's own configuration
 variables plus a profile `HOME`: nothing is mounted, and host files a CLI reads
 without honoring a variable stay readable. A 2026-11-13 desktop run with all
 four CLIs installed observed their version, startup, discovery and authentication
-classes in disposable profiles, in
+classes in disposable profiles under a test-only containment wrapper, in
 `docs/evidence/macos-2026-11-13-real-agent.md`; that run changes nothing about
 enforcement, and credentialed model responses stay unverified. Linux keeps its
 bubblewrap mount layer, so the two platforms do not give the same enforcement.

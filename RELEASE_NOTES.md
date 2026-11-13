@@ -18,9 +18,11 @@ configuration redirection and diagnostics are qualified by the 2026-10-31
 real-machine run recorded in `docs/evidence/macos-2026-10-31.md` and by the
 arm64 job in CI. A 2026-11-13 macOS arm64 desktop run observed version, startup,
 discovery and authentication for the four real agent CLIs in disposable profiles
-(`docs/evidence/macos-2026-11-13-real-agent.md`); it claims no enforcement and no
-network containment. Credential-dependent model behavior remains a
-credential-dependent gap on both platforms and is not claimed.
+under a test-only containment wrapper (`docs/evidence/macos-2026-11-13-real-agent.md`);
+there Claude Code rendered its entry point without reaching ready and Codex CLI
+reached its sign-in surface only with `--no-daemon`. That run claims no
+enforcement and no network containment. Credential-dependent model behavior
+remains a credential-dependent gap on both platforms and is not claimed.
 
 The source is available at <https://github.com/flyingnobita/agent-profiles>, and
 repository-source installation in copy mode is verified in a disposable home.
