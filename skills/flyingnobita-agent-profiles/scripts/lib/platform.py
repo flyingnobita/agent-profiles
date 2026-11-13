@@ -436,6 +436,44 @@ def _ps_rows():
     return rows
 
 
+def _still_running(pids):
+    """Returns the subset of pids that still exist and are not zombies.
+
+    ps and lsof are two snapshots. A process that exits between them is in the
+    ps table but missing from lsof, which reads as "uninspectable". Re-reading
+    its state tells an exited process (it holds nothing) from a live one that
+    lsof could not describe. When the re-check itself cannot run, every PID is
+    kept, so a failed probe still fails closed.
+    """
+    if not pids:
+        return set()
+    binary = _ps_bin()
+    if not binary:
+        return set(pids)
+    try:
+        proc = subprocess.run(
+            [binary, "-o", "pid=,stat=", "-p", ",".join(str(pid) for pid in sorted(pids))],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+        )
+    except OSError:
+        return set(pids)
+    # ps exits 1 when some requested PIDs no longer exist and still lists the
+    # rest. Any other status is an unreliable answer.
+    if proc.returncode not in (0, 1):
+        return set(pids)
+    alive = set()
+    for line in proc.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].isdigit():
+            continue
+        if "Z" in fields[1]:
+            continue
+        alive.add(int(fields[0]))
+    return alive & set(pids)
+
+
 def _comm_label(comm):
     if not comm:
         return "?"
@@ -576,6 +614,10 @@ def cmd_darwin_proc_scan(args):
                 unknown.append((pid, _comm_label(row["comm"])))
                 break
             ancestor = parents.get(ancestor, 0)
+
+    if unknown:
+        alive = _still_running(set(pid for pid, _ in unknown))
+        unknown = [(pid, comm) for pid, comm in unknown if pid in alive]
 
     return _refusal(label, relevant, unknown)
 
