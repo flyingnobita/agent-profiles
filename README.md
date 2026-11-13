@@ -479,7 +479,7 @@ container with its own credentials and network policy.
 ```bash
 MISE_TRUSTED_CONFIG_PATHS="$PWD" mise install
 mise run lint                 # shellcheck, shfmt, markdownlint, package check
-mise run test                 # full Bats suite
+mise run test                 # full Bats suite, in parallel (AP_TEST_JOBS=1 for serial)
 mise run ci                   # lint, tests and clean-install checks
 mise run release-artifacts    # release checks and local artifacts in dist/
 ```
