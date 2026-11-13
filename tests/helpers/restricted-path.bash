@@ -13,15 +13,20 @@
 # The loop also runs in a fresh bash: under bats the caller carries a DEBUG
 # trap with functrace, which runs on every statement and alone costs seconds
 # per call across a few thousand PATH entries.
+# The child is the caller's own bash ($BASH) with BASH_ENV unset, so neither a
+# different bash earlier in PATH nor a startup file changes the fixture.
 ap_test_restricted_bin() {
-  bash -c "$(declare -f ap_test_restricted_bin_impl); ap_test_restricted_bin_impl \"\$@\"" \
+  env -u BASH_ENV "${BASH:-bash}" -c \
+    "$(declare -f ap_test_restricted_bin_impl); ap_test_restricted_bin_impl \"\$@\"" \
     ap_test_restricted_bin "$@"
 }
 
 ap_test_restricted_bin_impl() {
   local dest="$1"
   shift
-  mkdir -p "$dest"
+  # A fixture that could not be created must fail the caller, not leave an
+  # empty PATH that later reads as "command not found".
+  mkdir -p "$dest" || return 1
 
   local -a dirs
   IFS=':' read -ra dirs <<<"$PATH"
