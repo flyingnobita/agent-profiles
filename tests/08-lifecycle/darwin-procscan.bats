@@ -402,11 +402,10 @@ STUB
     attempt=$((attempt + 1))
   done
   [[ "$live_comm" == "sleep" ]]
-  if [[ "$live_ppid" != "1" ]]; then
-    # A child subreaper (systemd --user, some container inits) adopts the
-    # orphan instead of PID 1, so the scan never treats it as parentless.
-    skip "detached fixture was adopted by a subreaper (ppid $live_ppid), not PID 1"
-  fi
+  # The scan treats only a parentless orphan as relevant-unknown. A host whose
+  # child subreaper adopts the fixture instead of PID 1 fails here, loudly,
+  # rather than skipping: the platform contract allows no skips in this suite.
+  [[ "$live_ppid" == "1" ]]
   local real_lsof
   real_lsof=$(command -v /usr/sbin/lsof /usr/bin/lsof lsof 2>/dev/null | head -n 1)
   [[ -n "$real_lsof" ]]
