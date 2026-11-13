@@ -187,8 +187,26 @@ See [Platforms](#platforms) for what was verified.
 
 ### Install the skill
 
-The skill is installed with the `skills` CLI (npm `skills` package; this
-repository's own tests pin 1.7.4 in `mise.toml`). Select the skill explicitly, and drop `-g` for project scope.
+Pick one method. Each puts the same skill and helper on disk; only the helper's
+path differs, and you need that path once, for
+[setup](#set-up-the-machine-and-the-ap-alias).
+
+| Method | Agents | Helper path (`<skill-dir>`) |
+| --- | --- | --- |
+| [`skills` CLI](#with-the-skills-cli) | all four in one command | `~/.agents/skills/flyingnobita-agent-profiles` |
+| [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/skills/flyingnobita-agent-profiles` |
+| [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/skills/flyingnobita-agent-profiles` |
+| [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/skills/flyingnobita-agent-profiles` |
+| [Manual copy](#opencode-and-manual-copy) | OpenCode, or any agent | wherever you copy it |
+
+A plugin makes the skill available to that one agent only. Use the `skills` CLI
+when you want it in all four at once.
+
+#### With the `skills` CLI
+
+The npm `skills` package installs into every agent at once (this repository's
+own tests pin 1.7.4 in `mise.toml`). Select the skill explicitly, and drop `-g`
+for project scope.
 
 > [!NOTE]
 > Before the skill is published to the public registry it will be renamed
@@ -216,13 +234,51 @@ The installed helper needs nothing outside its own directory, so it keeps
 working after the source checkout is gone. `npx skills list` shows where it was
 installed.
 
+#### As a plugin
+
+The repository is a plugin marketplace named `flyingnobita-agent-profiles` with
+one plugin, `agent-profiles`. Claude Code and Codex CLI read the same
+`.claude-plugin/marketplace.json`; Antigravity CLI converts the Claude Code
+plugin on install.
+
+```bash
+# Claude Code (or /plugin install inside a session)
+claude plugin install agent-profiles --marketplace flyingnobita/agent-profiles
+
+# Codex CLI
+codex plugin marketplace add flyingnobita/agent-profiles
+codex plugin add agent-profiles@flyingnobita-agent-profiles
+
+# Antigravity CLI
+agy plugin install https://github.com/flyingnobita/agent-profiles
+```
+
+Each command also takes a local checkout path in place of the GitHub source.
+Inside the agent, the skill is named `agent-profiles:flyingnobita-agent-profiles`
+in Claude Code and Codex, and `flyingnobita-agent-profiles` in Antigravity.
+
+#### OpenCode and manual copy
+
+OpenCode plugins are JavaScript packages, so there is no OpenCode plugin. Use
+the `skills` CLI with `--agent opencode`, or copy the skill directory into a
+skills root yourself:
+
+```bash
+git clone https://github.com/flyingnobita/agent-profiles /tmp/agent-profiles
+mkdir -p ~/.config/opencode/skills
+cp -R /tmp/agent-profiles/skills/flyingnobita-agent-profiles ~/.config/opencode/skills/
+```
+
+`~/.agents/skills/` works too, and is also read by Codex CLI and Antigravity
+CLI.
+
 ### Set up the machine and the `ap` alias
 
 Setup creates the `mise ap` task, so it is the one step that calls the helper
 by its installed path:
 
 ```bash
-AP_HELPER="<installed-skill-dir>/scripts/agent-profiles"
+AP_HELPER="<skill-dir>/scripts/agent-profiles"   # <skill-dir> from the table above
 bash "$AP_HELPER" setup --preview   # read-only plan
 bash "$AP_HELPER" setup --apply     # deploy
 ```
@@ -258,6 +314,15 @@ bash "$AP_HELPER" setup --apply                       # redeploy the release and
 ap doctor                                             # confirm it is current
 ```
 
+With a plugin, replace the first line with the agent's own update, then point
+`AP_HELPER` at the new `<version>` directory before running setup:
+
+```bash
+claude plugin update agent-profiles@flyingnobita-agent-profiles
+codex plugin marketplace upgrade && codex plugin add agent-profiles@flyingnobita-agent-profiles
+agy plugin install https://github.com/flyingnobita/agent-profiles   # replaces the install
+```
+
 Run setup through the installed helper, not `ap`: `ap` runs the deployed
 release, so it would redeploy the old version. After a skill update `doctor`
 reports the task as `stale` until setup runs again. A previous release is kept until the new one is verified.
@@ -274,6 +339,10 @@ ap doctor
 
 # 2. Uninstall the skill. The helper is gone after this step.
 npx skills remove -g -y --skill flyingnobita-agent-profiles
+# or, for a plugin install:
+claude plugin uninstall agent-profiles@flyingnobita-agent-profiles
+codex plugin remove agent-profiles@flyingnobita-agent-profiles
+agy plugin uninstall agent-profiles
 
 # 3. Delete the global task files, but only those this tool manages.
 MISE_CONFIG="${MISE_CONFIG_DIR:-$(mise doctor --json 2>/dev/null |
