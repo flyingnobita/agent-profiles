@@ -32,7 +32,7 @@ directory are redirected there:
 
 | Isolated per profile | What that means |
 | --- | --- |
-| **Logins and accounts** | Each profile has its own credential storage, so `work` and `personal` can be logged into different accounts or plans. On macOS, logins an agent keeps in the Keychain stay shared (see [Platforms](#platforms)). |
+| **Logins and accounts** | Each profile has its own credential storage, so `work` and `personal` can be logged into different accounts or plans. On macOS, logins an agent keeps in the Keychain stay shared (see [macOS](#macos)). |
 | **Settings, plugins, MCP servers and hooks** | The user-level ones, which mostly have no project-scope equivalent, or have one you would not want to commit. |
 | **Session history and state** | Transcripts, memory and caches stay with the profile. |
 | **User-installed tools** | `npm -g`, `cargo install`, `go install`, `uv tool` and `pip --user` install into the profile and come first on its `PATH`, so tool versions never collide with each other or with your host. |
@@ -164,22 +164,24 @@ separately. `mise` itself is never installed by the helper.
 Install the prerequisites before the skill:
 
 ```bash
-xcode-select --install   # git and python3 (skip if `git --version` already works)
-brew install mise        # or any installer from https://mise.jdx.dev
-echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+xcode-select -p >/dev/null 2>&1 || xcode-select --install   # git and python3
+brew install mise   # or any installer from https://mise.jdx.dev
+grep -qs 'mise activate' ~/.zshrc || echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 ```
 
 Then follow [Quick start](#quick-start) unchanged: the skill, `setup` and `ap`
-commands are the same on both platforms. `setup --preview` on macOS reports
-bubblewrap as not applicable and lists any prerequisite still missing.
+commands are the same on both platforms. `setup --preview` on macOS lists any
+prerequisite still missing, and `ap doctor` reports bubblewrap as not
+applicable.
 
 Know the macOS limits before relying on a profile:
 
 - Redirection works only for programs that honor the agents' configuration
   variables or `HOME`; a process that ignores them still reads host paths.
-- The Keychain is shared with the host. Claude Code and Antigravity CLI can
-  pick up host Keychain logins, so a profile is not a separate account for
-  them.
+- The Keychain is shared with the host. Claude Code and Antigravity CLI keep
+  logins there, so expect a profile to see host Keychain logins and not act as a
+  separate account for them. Keychain access was not observed in the macOS
+  evidence runs.
 - Intel Macs are untested: `doctor` warns, and `run` and `setup` do not
   refuse, but nothing is validated there.
 
