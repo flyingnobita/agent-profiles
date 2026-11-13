@@ -154,10 +154,12 @@ teardown() {
 }
 PROBE
 
+  # bats' real entry point, not the libexec script plain `bats` resolves to in
+  # a test; see the platform contract test for why.
   run ap_test_timeout 180 env AP_TEST_HELPERS="$helpers_dir" \
     AP_TEST_NO_BWRAP_PATH="$no_bwrap" \
     AP_TEST_PID_RECORD="$pid_record" AP_TEST_CHILD_RECORD="$child_record" \
-    "$(command -v bats)" "$probe"
+    "$BATS_ROOT/bin/bats" "$probe"
   assert_failure
   assert_output_contains "fixture aborts after readiness"
 

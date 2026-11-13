@@ -294,12 +294,16 @@ setup() {
 }
 PROBE
 
-  run env AP_TEST_PLATFORM_OS=Linux bats --show-output-of-passing-tests "$probe"
+  # A nested run goes through bats' real entry point. Inside a test, plain
+  # `bats` resolves to libexec/bats-core/bats, which needs the exported
+  # bats_readlinkf function; a parallel run starts each job through /bin/sh,
+  # and dash on Linux drops exported functions.
+  run env AP_TEST_PLATFORM_OS=Linux "$BATS_ROOT/bin/bats" --show-output-of-passing-tests "$probe"
   assert_success
   assert_output_contains "guard-probe ran"
   assert_output_not_contains "# skip"
 
-  run env AP_TEST_PLATFORM_OS=Darwin bats --show-output-of-passing-tests "$probe"
+  run env AP_TEST_PLATFORM_OS=Darwin "$BATS_ROOT/bin/bats" --show-output-of-passing-tests "$probe"
   assert_success
   assert_output_contains "# skip Linux-only S3: probe of the mandatory-reason guard"
   assert_output_not_contains "guard-probe ran"
