@@ -47,6 +47,11 @@ requires a separate explicit maintainer action.
   Linux-only skips
 - Release tooling builds a reproducible artifact with the Python standard library
   and fingerprints every shipped file, rejecting stale or tampered content
+- Plugin install: the repository is a plugin marketplace, so the skill installs
+  as the `agent-profiles` plugin in Claude Code, Codex CLI and Antigravity CLI.
+  Each install copies only `skills/`, and the package check fails when a plugin
+  manifest's version drifts from `VERSION`. OpenCode keeps the `skills` CLI or a
+  manual copy
 
 ## Compatibility
 

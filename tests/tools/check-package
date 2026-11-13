@@ -19,7 +19,9 @@ VERSION=$(tr -d '[:space:]' <"$VERSION_FILE")
 
 # 1a. Plugin manifests: Claude Code and Codex cache installs by the plugin.json
 # version, so a stale manifest version would hide a release from plugin users.
-for manifest in .claude-plugin/plugin.json .codex-plugin/plugin.json .claude-plugin/marketplace.json; do
+# The plugin root is skills/, so an install copies only the skill, and each
+# manifest names the skill directory itself, the only form Codex discovers.
+for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json .claude-plugin/marketplace.json; do
   [[ -f "$ROOT_DIR/$manifest" ]] || fail "Plugin manifest missing: $manifest"
   manifest_error=$(
     python3 -I - "$ROOT_DIR/$manifest" "$VERSION" 2>&1 <<'PY'
@@ -33,6 +35,9 @@ if path.endswith("marketplace.json"):
     entries = data.get("plugins", [])
     if not any(e.get("name") == "agent-profiles" for e in entries):
         sys.exit("lists no agent-profiles plugin")
+    sources = [e.get("source") for e in entries if e.get("name") == "agent-profiles"]
+    if sources != ["./skills"]:
+        sys.exit(f"agent-profiles source {sources[0]!r} is not './skills'")
     stale = [e.get("version") for e in entries if "version" in e and e.get("version") != version]
     if stale:
         sys.exit(f"plugin entry version {stale[0]} does not match VERSION {version}")
@@ -41,6 +46,8 @@ else:
         sys.exit(f"name {data.get('name')!r} is not 'agent-profiles'")
     if data.get("version") != version:
         sys.exit(f"version {data.get('version')!r} does not match VERSION {version}")
+    if data.get("skills") != "./flyingnobita-agent-profiles":
+        sys.exit(f"skills {data.get('skills')!r} is not './flyingnobita-agent-profiles'")
 PY
   ) || fail "$manifest: $manifest_error"
 done

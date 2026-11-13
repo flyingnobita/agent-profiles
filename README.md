@@ -196,9 +196,9 @@ path differs, and you need that path once, for
 | Method | Agents | Helper path (`<skill-dir>`) |
 | --- | --- | --- |
 | [`skills` CLI](#with-the-skills-cli) | all four in one command | `~/.agents/skills/flyingnobita-agent-profiles` |
-| [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/skills/flyingnobita-agent-profiles` |
-| [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/skills/flyingnobita-agent-profiles` |
-| [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/skills/flyingnobita-agent-profiles` |
+| [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/flyingnobita-agent-profiles` |
+| [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/flyingnobita-agent-profiles` |
+| [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/flyingnobita-agent-profiles` |
 | [Manual copy](#opencode-and-manual-copy) | OpenCode, or any agent | wherever you copy it |
 
 A plugin makes the skill available to that one agent only. Use the `skills` CLI
