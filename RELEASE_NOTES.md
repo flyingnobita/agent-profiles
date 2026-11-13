@@ -1,4 +1,20 @@
-# flyingnobita-agent-profiles v0.3.0
+# flyingnobita-agent-profiles v0.3.1
+
+A patch release for skill discovery and the missing-Git error. The skill
+description now names the `ap` tasks and the `agent-profiles: error:` prefix,
+the not-a-git error states how to fix it, and the exit 66 guide no longer
+recommends `agent-profiles init` for a checkout that is not a Git repository.
+
+Platform behavior is unchanged. Linux and macOS arm64 remain supported with
+Claude Code, OpenAI Codex CLI, Google Antigravity CLI and OpenCode. MIT licensed.
+On Linux a profile is redirected with a bubblewrap mount layer. macOS arm64 has
+no bubblewrap prerequisite: nothing is mounted, and configuration is redirected
+through the agents' own variables, so the macOS layer is the weaker of the two.
+Neither platform is a security sandbox for untrusted code. Credential-dependent
+model behavior remains a credential-dependent gap. A tagged GitHub Release is
+not published for this version.
+
+## Earlier release: flyingnobita-agent-profiles v0.3.0
 
 Named agent profiles now run on macOS arm64 as well as Linux. The same four
 integrations are supported: Claude Code, OpenAI Codex CLI, Google Antigravity

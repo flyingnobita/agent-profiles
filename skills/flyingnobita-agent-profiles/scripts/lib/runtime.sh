@@ -5,7 +5,7 @@
 ap_find_repo_root() {
   local root
   if ! root=$(git rev-parse --show-toplevel 2>/dev/null); then
-    ap_die "$EX_NOINPUT" "not a git repository (or any of the parent directories)"
+    ap_die "$EX_NOINPUT" "not a git repository (or any of the parent directories); profiles live inside a Git checkout: cd into one or run 'git init'"
   fi
   printf "%s\n" "$root"
 }

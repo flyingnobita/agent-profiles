@@ -10,6 +10,8 @@
 
 - Nov-14, 2026 - 12:27 AM +08:00 - The README usage table gives `exit` / Ctrl-D its own row, so leaving a profile shell is a listed command rather than a note on the `ap NAME` row
 
+- Nov-14, 2026 - 12:16 AM +08:00 - The skill states when to load it: the description names `ap new` and the other profile commands plus the `agent-profiles: error:` prefix, the not-a-git error gives the fix, and the exit 66 guide no longer sends users to `init` for a missing Git checkout
+
 - Nov-13, 2026 - 11:21 PM +08:00 - Plugin installs copy only `skills/` instead of the whole repository (about 470 KB instead of 1.5 MB): the manifests live in `skills/.claude-plugin/` and `skills/.codex-plugin/`, name the skill directory as their skills path (the only form Codex discovers), and the package check enforces both; the release notes now list plugin install
 
 - Nov-13, 2026 - 11:14 PM +08:00 - On macOS, `reset`, `remove`, `recover` and `migrate` no longer refuse because of a process that exited during the process scan, such as a short-lived Spotlight `mdworker_shared`; a process that is still alive and cannot be inspected still refuses

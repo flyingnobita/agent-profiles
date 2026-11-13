@@ -1,10 +1,10 @@
 ---
 name: flyingnobita-agent-profiles
-description: Named agent profiles for Linux and macOS arm64 for Claude Code, Codex CLI, Antigravity CLI, and OpenCode with separate settings and tools while preserving shared host checkouts. Routes setup, repository operations, lifecycle, and Q&A to focused references.
+description: 'Named agent profiles for Linux and macOS arm64 for Claude Code, Codex CLI, Antigravity CLI, and OpenCode with separate settings and tools while preserving shared host checkouts. Use for the `ap` / `mise ap` task and the `agent-profiles` helper (`ap new`, `ap ls`, `ap rm`, `ap reset`, `ap doctor`), including explaining any `agent-profiles: error:` output. Routes setup, repository operations, lifecycle, and Q&A to focused references.'
 license: MIT
 compatibility: Linux (bash, git, python3, mise, bubblewrap) and macOS arm64 (stock bash 3.2, git, python3, mise) with configuration redirection only
 metadata:
-  version: 0.3.0
+  version: 0.3.1
 ---
 
 # Agent Profiles
