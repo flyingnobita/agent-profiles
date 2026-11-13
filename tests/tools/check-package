@@ -17,6 +17,34 @@ VERSION_FILE="$SKILL_DIR/VERSION"
 VERSION=$(tr -d '[:space:]' <"$VERSION_FILE")
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]] || fail "VERSION '$VERSION' is not valid semver"
 
+# 1a. Plugin manifests: Claude Code and Codex cache installs by the plugin.json
+# version, so a stale manifest version would hide a release from plugin users.
+for manifest in .claude-plugin/plugin.json .codex-plugin/plugin.json .claude-plugin/marketplace.json; do
+  [[ -f "$ROOT_DIR/$manifest" ]] || fail "Plugin manifest missing: $manifest"
+  manifest_error=$(
+    python3 -I - "$ROOT_DIR/$manifest" "$VERSION" 2>&1 <<'PY'
+import json, sys
+path, version = sys.argv[1], sys.argv[2]
+try:
+    data = json.load(open(path))
+except ValueError as exc:
+    sys.exit(f"invalid JSON ({exc})")
+if path.endswith("marketplace.json"):
+    entries = data.get("plugins", [])
+    if not any(e.get("name") == "agent-profiles" for e in entries):
+        sys.exit("lists no agent-profiles plugin")
+    stale = [e.get("version") for e in entries if "version" in e and e.get("version") != version]
+    if stale:
+        sys.exit(f"plugin entry version {stale[0]} does not match VERSION {version}")
+else:
+    if data.get("name") != "agent-profiles":
+        sys.exit(f"name {data.get('name')!r} is not 'agent-profiles'")
+    if data.get("version") != version:
+        sys.exit(f"version {data.get('version')!r} does not match VERSION {version}")
+PY
+  ) || fail "$manifest: $manifest_error"
+done
+
 # 2. LICENSE
 LICENSE_FILE="$SKILL_DIR/LICENSE"
 [[ -f "$LICENSE_FILE" ]] || fail "LICENSE file missing"

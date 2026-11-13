@@ -1,0 +1,15 @@
+{
+  "name": "flyingnobita-agent-profiles",
+  "owner": { "name": "flyingnobita" },
+  "metadata": {
+    "description": "Marketplace for the agent-profiles skill."
+  },
+  "plugins": [
+    {
+      "name": "agent-profiles",
+      "source": "./",
+      "description": "Named agent profiles: separate logins, settings, skills and tools for Claude Code, Codex CLI, Antigravity CLI and OpenCode, per Git checkout.",
+      "license": "MIT"
+    }
+  ]
+}
