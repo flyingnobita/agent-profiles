@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-13, 2026 - 08:38 PM +08:00 - The `test` task runs the Darwin suite with the stock `/bin/bash` 3.2 path ordering the macOS CI job already uses, so a Homebrew bash earlier in `PATH` no longer fails the platform contract or resolves a Homebrew bash inside the restricted-PATH fixtures
+
 - Nov-13, 2026 - 04:00 PM +08:00 - Qualify real-agent behavior on macOS arm64: version, offline startup, discovery and authentication were observed for Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI 1.5.8 and OpenCode 2.2.7 in disposable profiles under a test-only containment wrapper on a desktop host, with A/B redirection, host preservation, native runtime changes and the shared-host, network, Keychain and read-observability limits recorded in `docs/evidence/macos-2026-11-13-real-agent.md`
 
 - Nov-13, 2026 - 02:16 PM +08:00 - The README install command uses `npx skills add` without a version pin, so users get the current `skills` CLI; the repository's own tests still pin 1.7.4
