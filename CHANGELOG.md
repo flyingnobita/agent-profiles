@@ -6,6 +6,8 @@
 
 - Nov-13, 2026 - 09:57 PM +08:00 - The README presents macOS arm64 as a supported platform: a platform badge and requirements table for both systems, a macOS install section (Xcode command line tools, Homebrew `mise`) with the configuration-only redirection, shared Keychain and Intel limits, and macOS-observed agent versions and evidence links in the compatibility section
 
+- Nov-13, 2026 - 09:10 PM +08:00 - Tests that make a tool absent build their restricted `PATH` through one shared helper that forks nothing per executable and runs outside the bats debug trap, so each such setup takes under a second instead of 15-48 seconds on CI
+
 - Nov-13, 2026 - 08:38 PM +08:00 - The `test` task runs the Darwin suite with the stock `/bin/bash` 3.2 path ordering the macOS CI job already uses, so a Homebrew bash earlier in `PATH` no longer fails the platform contract or resolves a Homebrew bash inside the restricted-PATH fixtures
 
 - Nov-13, 2026 - 04:00 PM +08:00 - Qualify real-agent behavior on macOS arm64: version, offline startup, discovery and authentication were observed for Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI 1.5.8 and OpenCode 2.2.7 in disposable profiles under a test-only containment wrapper on a desktop host, with A/B redirection, host preservation, native runtime changes and the shared-host, network, Keychain and read-observability limits recorded in `docs/evidence/macos-2026-11-13-real-agent.md`

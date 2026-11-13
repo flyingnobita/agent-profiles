@@ -18,21 +18,9 @@ setup_file() {
   NO_TIMEOUT_BIN="$BATS_FILE_TMPDIR/no-timeout-bin"
   mkdir -p "$NO_TIMEOUT_BIN"
 
-  local dir tool name
-  local old_ifs="$IFS"
-  IFS=':'
-  for dir in $PATH; do
-    IFS="$old_ifs"
-    [[ -d "$dir" ]] || continue
-    for tool in "$dir"/*; do
-      [[ -x "$tool" && ! -d "$tool" ]] || continue
-      name="$(basename "$tool")"
-      [[ "$name" == "timeout" ]] && continue
-      [[ -e "$NO_TIMEOUT_BIN/$name" ]] && continue
-      ln -s "$tool" "$NO_TIMEOUT_BIN/$name" 2>/dev/null || true
-    done
-  done
-  IFS="$old_ifs"
+  # shellcheck source=tests/helpers/restricted-path.bash
+  source "$BATS_TEST_DIRNAME/../helpers/restricted-path.bash"
+  ap_test_restricted_bin "$NO_TIMEOUT_BIN" timeout
 
   export NO_TIMEOUT_BIN
 }

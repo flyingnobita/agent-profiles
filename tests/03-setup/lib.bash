@@ -8,6 +8,8 @@
 
 # shellcheck source=/dev/null
 source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../helpers/platform.bash"
+# shellcheck source=/dev/null
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/../helpers/restricted-path.bash"
 
 # Point all mise state at the disposable test tree so no host configuration is
 # read or written. The caller has already run setup_isolation.
@@ -60,29 +62,7 @@ SPY
 # except the excluded names, so tests can simulate missing tools without
 # touching the host. The destination is the only PATH entry afterwards.
 make_restricted_bin() {
-  local dest="$1"
-  shift
-  local -a exclude=("$@")
-  mkdir -p "$dest"
-
-  local -a dirs
-  IFS=':' read -ra dirs <<<"$PATH"
-
-  local dir tool name skip entry
-  for dir in "${dirs[@]}"; do
-    [[ -d "$dir" ]] || continue
-    for tool in "$dir"/*; do
-      [[ -f "$tool" && -x "$tool" ]] || continue
-      name="$(basename "$tool")"
-      skip=0
-      for entry in "${exclude[@]}"; do
-        [[ "$name" == "$entry" ]] && skip=1
-      done
-      [[ $skip -eq 1 ]] && continue
-      [[ -e "$dest/$name" ]] && continue
-      ln -s "$tool" "$dest/$name" 2>/dev/null || true
-    done
-  done
+  ap_test_restricted_bin "$@"
 }
 
 # snapshot_tree <path...>: stable description of directory entries, modes,

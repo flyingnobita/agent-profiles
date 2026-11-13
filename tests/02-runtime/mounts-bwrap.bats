@@ -122,19 +122,9 @@ teardown() {
   # Strip bwrap from PATH using a restricted PATH
   local restricted_bin="$TEST_TMPDIR/restricted_bin"
   mkdir -p "$restricted_bin"
-  local old_ifs="$IFS"
-  IFS=':'
-  for bin_dir in $PATH; do
-    IFS="$old_ifs"
-    for tool in "$bin_dir"/*; do
-      [[ -x "$tool" && ! -d "$tool" ]] || continue
-      local name
-      name="$(basename "$tool")"
-      [[ "$name" == "bwrap" ]] && continue
-      [[ ! -e "$restricted_bin/$name" ]] && ln -s "$tool" "$restricted_bin/$name" 2>/dev/null || true
-    done
-  done
-  IFS="$old_ifs"
+  # shellcheck source=tests/helpers/restricted-path.bash
+  source "$BATS_TEST_DIRNAME/../helpers/restricted-path.bash"
+  ap_test_restricted_bin "$restricted_bin" bwrap
 
   run env PATH="$restricted_bin" bash "$AP_HELPER" run -- true
   assert_failure
