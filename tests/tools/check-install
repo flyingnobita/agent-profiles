@@ -39,12 +39,18 @@ run_in_home() {
 }
 
 # Step 1: Populate disposable copy of source
+# The archive goes through a file, not a pipe: macOS tar can stop reading at
+# the end-of-archive marker while the writer still has padding to send, and
+# under pipefail the writer's SIGPIPE fails the check with exit 141.
 if [[ $DEV_MODE -eq 1 ]]; then
   echo "check-install: copying uncommitted worktree files..."
-  git -C "$SRC" ls-files -co --exclude-standard | tar -cf - -C "$SRC" -T - | tar -xf - -C "$T/src"
+  git -C "$SRC" ls-files -co --exclude-standard >"$T/src.list"
+  tar -cf "$T/src.tar" -C "$SRC" -T "$T/src.list"
+  tar -xf "$T/src.tar" -C "$T/src"
 else
   echo "check-install: extracting git archive HEAD..."
-  git -C "$SRC" archive HEAD | tar -x -C "$T/src"
+  git -C "$SRC" archive -o "$T/src.tar" HEAD
+  tar -xf "$T/src.tar" -C "$T/src"
 fi
 
 # Step 2: Test discovery via skills add --list with complete environment isolation

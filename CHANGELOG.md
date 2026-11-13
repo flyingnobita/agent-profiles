@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-14, 2026 - 06:53 AM +08:00 - `check-install` extracts the source archive from a temporary file instead of a pipe, so macOS CI no longer fails intermittently with exit 141 when `tar` stops reading before `git archive` finishes writing
+
 - Nov-14, 2026 - 01:09 AM +08:00 - `mise run test` runs the Bats suite in parallel through a pinned `rush`, one job per CPU up to 8, so a full run takes about 8 minutes instead of 19 on a 3-job macOS arm64 host; `AP_TEST_JOBS` sets the job count and `AP_TEST_JOBS=1` runs it serially
 
 - Nov-13, 2026 - 11:21 PM +08:00 - Plugin installs copy only `skills/` instead of the whole repository (about 470 KB instead of 1.5 MB): the manifests live in `skills/.claude-plugin/` and `skills/.codex-plugin/`, name the skill directory as their skills path (the only form Codex discovers), and the package check enforces both; the release notes now list plugin install
