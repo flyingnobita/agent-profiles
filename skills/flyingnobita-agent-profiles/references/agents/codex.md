@@ -19,10 +19,11 @@ diagnostics only. Darwin has no mount namespace, so nothing is bind-mounted over
 directly with the profile `HOME` set to `<profile>`.
 
 Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
-tools. The real Codex CLI was **not installed** on the qualification host, so its
-version, startup, discovery and authentication classes are **not observed** on
-Darwin and stay Linux evidence only
-(`docs/evidence/macos-2026-10-31.md`).
+tools. The 2026-10-31 qualification host had no Codex CLI installed, so its
+version, startup, discovery and authentication classes were not observed there
+(`docs/evidence/macos-2026-10-31.md`). A later macOS arm64 desktop run with Codex
+CLI 0.168.0 observed all four classes in disposable profiles
+(`docs/evidence/macos-2026-11-13-real-agent.md`).
 
 What is verified on Darwin (`tests/05-codex/darwin-env.bats`, synthetic `codex`
 executable plus byte-identical host canaries):

@@ -25,10 +25,11 @@ and the `$HOME/.claude` / `$HOME/.agents` skill roots inside the profile by
 environment alone.
 
 Tested host: macOS 27.2 arm64 with stock `/bin/bash` 3.2.57 and mise-managed
-tools. The real OpenCode CLI was **not installed** on the qualification host, so
-its version, startup, discovery and authentication classes are **not observed**
-on Darwin and stay Linux evidence only
-(`docs/evidence/macos-2026-10-31.md`).
+tools. The 2026-10-31 qualification host had no OpenCode CLI installed, so its
+version, startup, discovery and authentication classes were not observed there
+(`docs/evidence/macos-2026-10-31.md`). A later macOS arm64 desktop run with
+OpenCode 2.2.7 observed all four classes in disposable profiles
+(`docs/evidence/macos-2026-11-13-real-agent.md`).
 
 What is verified on Darwin (`tests/07-opencode/darwin-env.bats`, synthetic
 executable):

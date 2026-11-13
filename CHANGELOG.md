@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-13, 2026 - 04:00 PM +08:00 - Qualify real-agent behavior on macOS arm64: version, offline startup, discovery and authentication were observed for Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI 1.5.8 and OpenCode 2.2.7 in disposable profiles on a desktop host, with A/B redirection, host preservation, native runtime changes and the shared-host, network, Keychain and read-observability limits recorded in `docs/evidence/macos-2026-11-13-real-agent.md`
+
 - Nov-13, 2026 - 02:16 PM +08:00 - The README install command uses `npx skills add` without a version pin, so users get the current `skills` CLI; the repository's own tests still pin 1.7.4
 
 - Nov-02, 2026 - 09:47 AM +08:00 - Lease contention tests wait for the holder's own start marker and an observed lease instead of a fixed sleep, keep every holder and descendant in an owned-process registry with a bounded lifetime, and close the runner's capture descriptor before a fixture starts, so a slow host no longer fails the macOS suite and an aborted test cannot leave a fixture process behind
