@@ -16,24 +16,29 @@ summary: no account names, no host paths, no credential values.
 | Host | macOS 27.2.1 arm64 desktop, stock `/bin/bash` 3.2.57, mise-managed tools, real user session |
 | Isolated host | disposable synthetic `HOME` with its own XDG roots and mise state, plus a disposable Git checkout for the profiles |
 | Profiles | two named profiles for the A/B check and one fresh profile per agent for the startup check |
-| Containment | each CLI launch ran under a test-owned `sandbox-exec` profile that denies non-loopback egress and allows loopback |
-| Not performed | no login, no account sign-in, no provider API request, no model turn, no Keychain read, no tool installation |
+| Containment | each CLI launch ran under a test-owned `sandbox-exec` profile, kept outside this repository, that denies non-loopback egress and allows loopback |
+| Not performed | no login, no account sign-in, no completed provider request, no model turn, no tool installation, and no `security` command; whether a CLI queried the Keychain was not observed |
 
 The containment profile is a property of this run, not of the product. It exists
 so the startup class can be called offline; the platform limit it does not remove
-is in the limits section.
+is in the limits section. Its policy is a test artifact: outbound network denied
+except loopback, inherited environment, and read access to the system tool paths
+the CLIs need. It is not committed here, and `sandbox-exec` is the deprecated API
+that [ADR 0001](../adr/0001-darwin-environment-only-redirection.md) rejects as a
+product mechanism. Nothing in this page is product behaviour or a supported
+containment guarantee.
 
 ## Version class
 
 Informational. The version probe is separate from startup, discovery and
 authentication, and `doctor` marked the probe verified for all four.
 
-| Integration | Command | Observed | Resolved by `doctor` |
-| --- | --- | --- | --- |
-| Claude Code | `claude --version` | 2.1.323 | host native install, version tree carve-out |
-| Codex CLI | `codex --version` | codex-cli 0.168.0 | mise npm install, versioned bin |
-| Antigravity CLI | `agy --version` | 1.5.8 | mise install, `antigravity` binary in the version tree |
-| OpenCode | `opencode --version` | 2.2.7 | mise npm install, versioned bin |
+| Integration | Command | Observed |
+| --- | --- | --- |
+| Claude Code | `claude --version` | 2.1.323 |
+| Codex CLI | `codex --version` | codex-cli 0.168.0 |
+| Antigravity CLI | `agy --version` | 1.5.8 |
+| OpenCode | `opencode --version` | 2.2.7 |
 
 ## Startup class
 
@@ -43,16 +48,21 @@ timeout. Output markers are quoted from the sanitized capture.
 
 | Integration | Offline result | What it proves |
 | --- | --- | --- |
-| Claude Code | banner `Welcome to Claude Code v2.1.323`, then `Unable to connect to Anthropic services` and `api.anthropic.com: ECONNREFUSED`, exit 1 | the entry point renders with profile storage and no host credentials; it stops at its own connectivity check when egress is denied |
-| Codex CLI | sign-in screen: `Choose how you want to use Codex`, `1. Sign in with ChatGPT`, reached with `--no-daemon` | the entry point reaches its authentication surface offline in a profile |
-| Antigravity CLI | `Welcome to the Antigravity CLI. You are currently not signed in.` with `Select login method: 1. Google OAuth, 2. Use a Google Cloud project` | the entry point reaches its sign-in surface offline in a profile |
-| OpenCode | TUI composer `Ask anything...`, version `2.2.7`, workspace path inside the disposable checkout | the TUI reaches its composer offline in a profile |
+| Claude Code | banner `Welcome to Claude Code v2.1.323`, then `Unable to connect to Anthropic services` and `api.anthropic.com: ECONNREFUSED`, exit 1 | the entry point renders with profile storage and no credentials supplied, stops at its own connectivity check when egress is denied, and does **not** reach a ready state; host credential reads were not observed |
+| Codex CLI | sign-in screen: `Choose how you want to use Codex`, `1. Sign in with ChatGPT`, reached with `--no-daemon` | the entry point reaches its authentication surface offline in a profile, but only with `--no-daemon` |
+| Antigravity CLI | `Welcome to the Antigravity CLI. You are currently not signed in.` with `Select login method: 1. Google OAuth, 2. Use a Google Cloud project` | the entry point reaches its sign-in surface offline in a profile, with no extra flag |
+| OpenCode | TUI composer `Ask anything...`, version `2.2.7`, workspace path inside the disposable checkout | the TUI reaches its composer offline in a profile, with no extra flag |
+
+Read this table as three different outcomes, not one: Antigravity CLI and
+OpenCode reached their own ready or composer surface; Codex CLI reached its
+authentication surface only with `--no-daemon`; Claude Code rendered its entry
+point and then stopped at its own connectivity check without reaching ready.
 
 Codex's default mode, which starts a pid-managed background app-server, does not
 start under the test-owned containment profile: it reports `failed to invoke ps
 ... Operation not permitted`. The run therefore qualified Codex startup with
-`--no-daemon`. This is a limit of the containment mechanism, recorded below, not
-a Codex defect and not a difference the product introduces.
+`--no-daemon`. This is a limit of the containment wrapper, recorded below; Codex's
+default mode outside the wrapper was not observed in this run.
 
 ## Discovery class
 
@@ -67,8 +77,10 @@ through the files it created.
 | Antigravity CLI | `agy mcp add` and `agy mcp list` acted on the profile `.gemini` tree, whose `config/` and `antigravity-cli/` appeared inside the profile | `agy mcp list` showed the A marker in profile A and the B marker in profile B |
 | OpenCode | `opencode debug config` reported the profile `.opencode` directory; state landed in the profile `.local/share` and `.local/state` | `opencode debug config` reported the profile A directory in A and the profile B directory in B |
 
-No marker written in one profile was read by the other, and nothing a profile run
-wrote appeared in the synthetic host home.
+No read-back in one profile listed the other profile's marker, and nothing a
+profile run wrote appeared in the synthetic host home. That is a statement about
+what each CLI reported and wrote, not proof that a read was impossible: the read
+boundary is covered in the limits section.
 
 ## Authentication class
 
@@ -105,9 +117,10 @@ These are the limits this run observed, stated as observed:
   credential files `.claude/.credentials.json`, `.codex/auth.json` and
   `.local/share/opencode/auth.json`. This run tested readability only and read no
   content.
-- The macOS Keychain is one per user session and stays shared. No Keychain item
-  was read, and no `security` command was run. Antigravity reports the shared OS
-  credential service; OpenCode reports the shared background service port.
+- The macOS Keychain is one per user session and stays shared. No `security`
+  command was run, and whether a CLI queried the Keychain was not observed.
+  Antigravity reports the shared OS credential service; OpenCode reports the
+  shared background service port.
 - Host services outside the profile keep running as the user and stay visible to
   a profile session, exactly as [compatibility.md](../../skills/flyingnobita-agent-profiles/references/compatibility.md)
   states. A profile is not a security boundary.
@@ -118,9 +131,9 @@ Observation is only useful if the host is unchanged afterwards.
 
 | Check | Observed |
 | --- | --- |
-| Host configuration | `sha256` of host `.claude/settings.json`, `.codex/config.toml`, `.gemini/settings.json` and `.config/opencode/opencode.json` identical before and after the run |
-| Host credentials | size and modification time of host `.claude/.credentials.json`, `.codex/auth.json` and `.local/share/opencode/auth.json` unchanged; no value read |
-| Credential use | no login, no sign-in flow completed, no provider request, no Keychain read |
+| Host configuration | `sha256` unchanged before and after for exactly four files: host `.claude/settings.json`, `.codex/config.toml`, `.gemini/settings.json` and `.config/opencode/opencode.json`. The compared set is those four; no other host path was hashed |
+| Host credentials | size and modification time unchanged for host `.claude/.credentials.json`, `.codex/auth.json` and `.local/share/opencode/auth.json`; no value read. Byte-for-byte content equality is not claimed |
+| Credential use | no login, no sign-in flow completed, no provider request completed, no `security` command |
 | Disposable trees | synthetic home, disposable checkout and all profiles removed; no temporary profile directory left behind |
 | Processes | one leftover process whose environment still carried the disposable profile path was terminated during cleanup; a scan afterwards found none |
 | Private evidence | one stray private evidence directory written by an early aborted harness invocation was removed; raw logs remain private and outside Git |
@@ -134,7 +147,7 @@ removing it. Per agent, in the fresh profile it ran in:
 | --- | --- | --- |
 | Claude Code | `.claude/.claude.json` and one `.claude/backups` entry | session and configuration state, redirected |
 | Codex CLI | 68 files: `.codex` sqlite state, logs and queue databases, installation id, a plugin sync lock, and 49 bundled system skills under `.codex/skills` | configuration state plus materialized bundled content, redirected |
-| Antigravity CLI | 55 files: `.gemini/antigravity-cli` state database, log, bundled plugin payload, `bin/webm_encoder`, updater state including an update check timestamp and lock, plus `.gemini/config` | configuration state plus materialized bundled content; an update check ran and wrote updater state, with egress denied so nothing was fetched |
+| Antigravity CLI | 55 files: `.gemini/antigravity-cli` state database, log, bundled plugin payload, `bin/webm_encoder`, updater state including an update check timestamp and lock, plus `.gemini/config` | configuration state plus materialized bundled content; an update check ran and wrote updater state, the wrapper denied its egress, and no downloaded payload was observed |
 | OpenCode | `.local/share/opencode` database and log, `.local/state/opencode` TUI state, npm cache directories | session, state and cache data, redirected |
 
 Two things follow, and neither is a claim of containment:
@@ -162,10 +175,19 @@ are not claimed here.
 
 ## Reproduction
 
-The classes above are the repository's own surfaces, run inside a disposable
-synthetic home and a disposable checkout:
+Version, discovery and authentication are the repository's own surfaces, run
+inside a disposable synthetic home and a disposable checkout:
 `agent-profiles doctor --json --profile <name>`, `agent-profiles run --profile
 <name> -- <cli>`, and each CLI's own read-back (`claude mcp list`, `codex
-doctor`, `agy mcp list`, `opencode debug config`). The interactive startup probes
-use the repository PTY driver with a recorded timeout. Linux results are not
-evidence for macOS behavior and the reverse also holds.
+doctor`, `agy mcp list`, `opencode debug config`).
+
+The A/B markers were written with the CLIs' own commands: `claude mcp add` in
+each profile, `agy mcp add` in each profile, and a distinct marker model in each
+profile's own `config.toml` for `codex doctor` to report. Read-back then listed
+only that profile's marker.
+
+The startup class is not reproducible from this repository alone. It used the
+private `sandbox-exec` wrapper described above, plus the repository PTY driver
+with a recorded timeout. A Linux result is not evidence for macOS behavior, and
+the reverse also holds. The 2026-10-31 page remains the earlier host's historical
+snapshot and is not updated by this one.

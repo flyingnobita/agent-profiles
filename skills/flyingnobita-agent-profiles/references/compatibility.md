@@ -14,7 +14,7 @@ services remain.
 | Operating System | Status | Verification Notes |
 | --- | --- | --- |
 | Linux (x86_64) | Qualified | bubblewrap and unprivileged user namespaces required; host final QA 2026-10-29 |
-| macOS (arm64) | Qualified for profile mechanics, redirection and diagnostics | configuration redirection only (no mounts); stock `/bin/bash` 3.2, mise, git and python3; macOS 27.2 arm64 mechanics run in `docs/evidence/macos-2026-10-31.md`. Version, startup, discovery and authentication of the four real agent CLIs were observed on a later macOS arm64 desktop run in `docs/evidence/macos-2026-11-13-real-agent.md`; enforcement, offline containment and credentialed model runs remain unverified |
+| macOS (arm64) | Qualified for profile mechanics, redirection and diagnostics | configuration redirection only (no mounts); stock `/bin/bash` 3.2, mise, git and python3; macOS 27.2 arm64 mechanics run in `docs/evidence/macos-2026-10-31.md`. Version, startup, discovery and authentication of the four real agent CLIs were observed on a later macOS arm64 desktop run in `docs/evidence/macos-2026-11-13-real-agent.md`, under a test-only containment wrapper (Claude Code rendered its entry point without reaching ready; Codex CLI needed `--no-daemon`); enforcement, offline containment and credentialed model runs remain unverified |
 
 Linux redirects with a bubblewrap mount layer. On macOS there is no namespace
 to mount into, so a profile is redirected by pointing the agent CLIs and
@@ -55,7 +55,11 @@ integration.
 
 Version numbers come from the informational version probe and are recorded per
 release. A successful `--version` does not demonstrate startup, discovery,
-authentication or sandbox behavior; those are separate evidence classes.
+authentication or sandbox behavior; those are separate evidence classes. The
+versions in the matrix above come from the Linux run. The 2026-11-13 macOS arm64
+desktop run observed Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI
+1.5.8 and OpenCode 2.2.7 in that order; treat both sets as dated observations,
+not as a supported version range.
 
 ## Verified Evidence Classes
 
