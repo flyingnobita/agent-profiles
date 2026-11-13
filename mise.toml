@@ -8,7 +8,17 @@ node = "22.23.4"
 
 [tasks.test]
 description = "Run test suite"
-run = "bats -r tests/0*"
+run = """
+if [ "$(uname -s)" = "Darwin" ]; then
+  # The suite must execute under the stock /bin/bash 3.2. A newer bash earlier
+  # in PATH (Homebrew) fails the platform contract and makes the restricted-PATH
+  # fixtures resolve a Homebrew bash, so select the same PATH ordering the macOS
+  # CI job uses.
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+  export PATH
+fi
+bats -r tests/0*
+"""
 
 [tasks.lint]
 description = "Run all linters"
