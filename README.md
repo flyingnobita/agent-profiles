@@ -3,7 +3,7 @@
 **Separate logins, settings, skills and tools for your coding agents, per project.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platform: Linux](https://img.shields.io/badge/platform-Linux%20x86__64-informational)
+![Platform: Linux | macOS](https://img.shields.io/badge/platform-Linux%20x86__64%20%7C%20macOS%20arm64-informational)
 ![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity%20%7C%20OpenCode-8A2BE2)
 
 [What a profile isolates](#what-a-profile-isolates) •
@@ -32,7 +32,7 @@ directory are redirected there:
 
 | Isolated per profile | What that means |
 | --- | --- |
-| **Logins and accounts** | Each profile has its own credential storage, so `work` and `personal` can be logged into different accounts or plans. |
+| **Logins and accounts** | Each profile has its own credential storage, so `work` and `personal` can be logged into different accounts or plans. On macOS, logins an agent keeps in the Keychain stay shared (see [Platforms](#platforms)). |
 | **Settings, plugins, MCP servers and hooks** | The user-level ones, which mostly have no project-scope equivalent, or have one you would not want to commit. |
 | **Session history and state** | Transcripts, memory and caches stay with the profile. |
 | **User-installed tools** | `npm -g`, `cargo install`, `go install`, `uv tool` and `pip --user` install into the profile and come first on its `PATH`, so tool versions never collide with each other or with your host. |
@@ -53,8 +53,9 @@ What stays **shared** by every profile in the checkout:
 ## Quick start
 
 > [!NOTE]
-> Linux x86_64 only, with `bubblewrap`, `git`, `python3` and `mise` installed.
-> See [Install](#install) for details.
+> Linux x86_64 (with `bubblewrap`, `git`, `python3` and `mise`) or macOS arm64
+> (with `git`, `python3` and `mise`). On macOS, install the prerequisites first:
+> see [macOS](#macos). Details in [Install](#install).
 
 ```bash
 # 1. Install the skill into your agents
@@ -148,15 +149,41 @@ PS1='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PS1"
 
 ### Requirements
 
-- Linux x86_64 with unprivileged user namespaces enabled
-- `bubblewrap` (`bwrap`) for the directory redirection
-- `bash`, `git` and `python3` (standard library only)
-- `mise` for the global task and versioned deployment
-- at least one supported agent CLI; each is optional and diagnosed separately
+| | Linux x86_64 | macOS arm64 |
+| --- | --- | --- |
+| Redirection | `bubblewrap` (`bwrap`) mounts, with unprivileged user namespaces enabled | configuration variables and a profile `HOME`; nothing to install |
+| Shell | `bash` | the stock `/bin/bash` 3.2 is enough |
+| Tools | `git`, `python3` (standard library only), `mise` | `git`, `python3` (standard library only), `mise` |
+| Prerequisite install | `setup --apply` installs missing ones through `pacman` (Arch family) or `apt-get` (Debian family) | manual; setup never calls Homebrew |
 
-`setup --preview` reports which missing prerequisites the detected distribution
-can install (Arch-family `pacman`, Debian-family `apt-get`). `mise` itself is
-never installed by the helper.
+You also need at least one supported agent CLI; each is optional and diagnosed
+separately. `mise` itself is never installed by the helper.
+
+### macOS
+
+Install the prerequisites before the skill:
+
+```bash
+xcode-select --install   # git and python3 (skip if `git --version` already works)
+brew install mise        # or any installer from https://mise.jdx.dev
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
+
+Then follow [Quick start](#quick-start) unchanged: the skill, `setup` and `ap`
+commands are the same on both platforms. `setup --preview` on macOS reports
+bubblewrap as not applicable and lists any prerequisite still missing.
+
+Know the macOS limits before relying on a profile:
+
+- Redirection works only for programs that honor the agents' configuration
+  variables or `HOME`; a process that ignores them still reads host paths.
+- The Keychain is shared with the host. Claude Code and Antigravity CLI can
+  pick up host Keychain logins, so a profile is not a separate account for
+  them.
+- Intel Macs are untested: `doctor` warns, and `run` and `setup` do not
+  refuse, but nothing is validated there.
+
+See [Platforms](#platforms) for what was verified.
 
 ### Install the skill
 
@@ -296,15 +323,18 @@ own status. See
 ## Compatibility
 
 Verified on Linux x86_64 on 2026-10-28 (offline evidence) and 2026-10-29
-(final QA), with startup and discovery checks in disposable profiles. These are
-the four supported integrations:
+(final QA), and on macOS arm64 on 2026-10-31 (profile mechanics) and
+2026-11-13 (real agent CLIs), with startup and discovery checks in disposable
+profiles. These are the four supported integrations:
 
-| Agent integration | Command | Verified version | Profile redirection |
-| --- | --- | --- | --- |
-| Claude Code | `claude` | 2.1.312 | `CLAUDE_CONFIG_DIR`, `.claude` mount |
-| OpenAI Codex CLI | `codex` | 0.165.0 | `CODEX_HOME`, `.codex`/`.agents` mounts |
-| Google Antigravity CLI | `agy` | 1.4.9 | `.gemini`/`.agents` mounts, XDG roots |
-| OpenCode | `opencode` | 2.2.0 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
+| Agent integration | Command | Linux version | macOS version | Linux redirection |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude` | 2.1.312 | 2.1.323 | `CLAUDE_CONFIG_DIR`, `.claude` mount |
+| OpenAI Codex CLI | `codex` | 0.165.0 | 0.168.0 | `CODEX_HOME`, `.codex`/`.agents` mounts |
+| Google Antigravity CLI | `agy` | 1.4.9 | 1.5.8 | `.gemini`/`.agents` mounts, XDG roots |
+| OpenCode | `opencode` | 2.2.0 | 2.2.7 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
+
+Versions are dated observations, not a supported range.
 
 On macOS arm64 the same four integrations use configuration redirection only:
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, the XDG roots and a
@@ -314,8 +344,10 @@ the host.
 
 Logged-in model responses and model-driven skill use were not part of the
 verification. Sanitized results are in the
-[final QA summary](docs/evidence/linux-2026-10-29.md) and the
-[offline evidence](docs/evidence/linux-2026-10-28.md); per-agent limits are in
+Linux [final QA summary](docs/evidence/linux-2026-10-29.md) and
+[offline evidence](docs/evidence/linux-2026-10-28.md), and the macOS
+[mechanics run](docs/evidence/macos-2026-10-31.md) and
+[real-agent run](docs/evidence/macos-2026-11-13-real-agent.md); per-agent limits are in
 [compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md).
 
 ## Platforms
@@ -330,7 +362,7 @@ variables plus a profile `HOME`: nothing is mounted, and host files a CLI reads
 without honoring a variable stay readable. A 2026-11-13 desktop run with all
 four CLIs installed observed their version, startup, discovery and authentication
 classes in disposable profiles under a test-only containment wrapper, in
-`docs/evidence/macos-2026-11-13-real-agent.md`; that run changes nothing about
+[the real-agent evidence](docs/evidence/macos-2026-11-13-real-agent.md); that run changes nothing about
 enforcement, and credentialed model responses stay unverified. Linux keeps its
 bubblewrap mount layer, so the two platforms do not give the same enforcement.
 
