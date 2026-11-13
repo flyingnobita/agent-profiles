@@ -346,3 +346,65 @@ PY
   assert_success
   [[ "$(hash_tree "$prof_dir")" != "$profile_before" ]]
 }
+
+@test "darwin procscan: a process that exits between the ps and lsof snapshots is not a holder" {
+  load '../helpers/platform.bash'
+  local repo="$TEST_TMPDIR/repo-darwin-exited"
+  create_fixture_repo "$repo"
+  cd "$repo"
+
+  run bash "$AP_HELPER" init --profile target
+  assert_success
+
+  # A PID that has already exited, so it cannot hold anything. The ps stub adds
+  # it to the full process listing as an orphan of this user, which is what the
+  # inspector sees when a short-lived process such as Spotlight's
+  # mdworker_shared exits after ps runs and before lsof does.
+  sleep 0 &
+  local ghost=$!
+  wait "$ghost" 2>/dev/null || true
+  local stub_dir="$TEST_TMPDIR/inspector-stubs"
+  mkdir -p "$stub_dir"
+  local real_ps
+  real_ps=$(command -v /bin/ps /usr/bin/ps ps 2>/dev/null | head -n 1)
+  [[ -n "$real_ps" ]]
+  cat >"$stub_dir/ps" <<STUB
+#!/bin/sh
+"$real_ps" "\$@" || exit \$?
+case " \$* " in
+  *" -axo "*)
+    printf '%s 1 %s %s S Fri Nov 13 22:00:00 2026 /usr/libexec/ghost-exited\n' \
+      "$ghost" "$ghost" "\$(id -u)"
+    ;;
+esac
+STUB
+  chmod 700 "$stub_dir/ps"
+
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_PS="$stub_dir/ps" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_success
+  assert_output_not_contains "ghost-exited"
+
+  # A live orphan that lsof cannot describe is still relevant-unknown: the
+  # re-check drops only processes that are gone, never ones that are alive.
+  local live
+  live=$(ap_test_spawn_detached 30)
+  TEST_BG_PIDS+=("$live")
+  local real_lsof
+  real_lsof=$(command -v /usr/sbin/lsof /usr/bin/lsof lsof 2>/dev/null | head -n 1)
+  [[ -n "$real_lsof" ]]
+  cat >"$stub_dir/lsof" <<STUB
+#!/bin/sh
+"$real_lsof" "\$@" | awk -v hide="p$live" '/^p/ { skip = (\$0 == hide) } !skip'
+STUB
+  chmod 700 "$stub_dir/lsof"
+
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/lsof" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_failure 75
+  assert_output_contains "PID $live (sleep) [relevant-unknown"
+
+  kill -TERM -"$live" 2>/dev/null || kill -TERM "$live" 2>/dev/null || true
+}

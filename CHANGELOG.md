@@ -2,6 +2,8 @@
 
 - Nov-13, 2026 - 11:21 PM +08:00 - Plugin installs copy only `skills/` instead of the whole repository (about 470 KB instead of 1.5 MB): the manifests live in `skills/.claude-plugin/` and `skills/.codex-plugin/`, name the skill directory as their skills path (the only form Codex discovers), and the package check enforces both; the release notes now list plugin install
 
+- Nov-13, 2026 - 11:14 PM +08:00 - On macOS, `reset`, `remove`, `recover` and `migrate` no longer refuse because of a process that exited during the process scan, such as a short-lived Spotlight `mdworker_shared`; a process that is still alive and cannot be inspected still refuses
+
 - Nov-13, 2026 - 10:18 PM +08:00 - The repository is a plugin marketplace: the skill installs as the `agent-profiles` plugin in Claude Code, Codex CLI and Antigravity CLI (from GitHub or a local checkout), the README documents each plugin's install, update, removal and helper path plus a manual copy for OpenCode, and the package check fails when a plugin manifest's version drifts from `VERSION`
 
 - Nov-13, 2026 - 09:57 PM +08:00 - The README presents macOS arm64 as a supported platform: a platform badge and requirements table for both systems, a macOS install section (Xcode command line tools, Homebrew `mise`) with the configuration-only redirection, shared Keychain and Intel limits, and macOS-observed agent versions and evidence links in the compatibility section
