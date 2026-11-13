@@ -436,42 +436,59 @@ def _ps_rows():
     return rows
 
 
-def _still_running(pids):
-    """Returns the subset of pids that still exist and are not zombies.
+def _still_running(starts):
+    """Returns the PIDs in starts that are still the same live process.
 
     ps and lsof are two snapshots. A process that exits between them is in the
-    ps table but missing from lsof, which reads as "uninspectable". Re-reading
-    its state tells an exited process (it holds nothing) from a live one that
-    lsof could not describe. When the re-check itself cannot run, every PID is
-    kept, so a failed probe still fails closed.
+    ps table but missing from lsof, which reads as "uninspectable". starts maps
+    each candidate PID to its start time from the first ps snapshot. A PID is
+    dropped only on positive evidence that the original process is gone: the
+    kernel reports no such PID, ps shows it as a zombie, or ps shows a
+    different start time because the PID was reused. Anything the re-check
+    cannot establish keeps the PID, so a failed probe still fails closed.
     """
-    if not pids:
-        return set()
+    existing = set()
+    for pid in starts:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            pass
+        existing.add(pid)
+    if not existing:
+        return existing
     binary = _ps_bin()
     if not binary:
-        return set(pids)
+        return existing
     try:
         proc = subprocess.run(
-            [binary, "-o", "pid=,stat=", "-p", ",".join(str(pid) for pid in sorted(pids))],
+            [
+                binary,
+                "-o",
+                "pid=,stat=,lstart=",
+                "-p",
+                ",".join(str(pid) for pid in sorted(existing)),
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             universal_newlines=True,
         )
     except OSError:
-        return set(pids)
-    # ps exits 1 when some requested PIDs no longer exist and still lists the
-    # rest. Any other status is an unreliable answer.
-    if proc.returncode not in (0, 1):
-        return set(pids)
-    alive = set()
+        return existing
+    alive = set(existing)
     for line in proc.stdout.splitlines():
         fields = line.split()
-        if len(fields) < 2 or not fields[0].isdigit():
+        if len(fields) < 7 or not fields[0].isdigit():
+            continue
+        pid = int(fields[0])
+        if pid not in existing:
             continue
         if "Z" in fields[1]:
-            continue
-        alive.add(int(fields[0]))
-    return alive & set(pids)
+            alive.discard(pid)
+        elif starts.get(pid) and "_".join(fields[2:7]) != starts[pid]:
+            alive.discard(pid)
+    return alive
 
 
 def _comm_label(comm):
@@ -616,7 +633,8 @@ def cmd_darwin_proc_scan(args):
             ancestor = parents.get(ancestor, 0)
 
     if unknown:
-        alive = _still_running(set(pid for pid, _ in unknown))
+        starts = dict((row["pid"], row["start"]) for row in rows)
+        alive = _still_running(dict((pid, starts.get(pid)) for pid, _ in unknown))
         unknown = [(pid, comm) for pid, comm in unknown if pid in alive]
 
     return _refusal(label, relevant, unknown)

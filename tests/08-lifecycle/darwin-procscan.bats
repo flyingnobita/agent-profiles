@@ -391,6 +391,22 @@ STUB
   local live
   live=$(ap_test_spawn_detached 30)
   TEST_BG_PIDS+=("$live")
+  # Wait until the fixture has exec'd sleep and been reparented, so the scan
+  # sees the final command name and a parentless orphan.
+  local attempt=0 live_comm="" live_ppid=""
+  while [[ "$attempt" -lt 100 ]]; do
+    live_comm=$("$real_ps" -o comm= -p "$live" 2>/dev/null | sed 's#.*/##; s/[[:space:]]*$//')
+    live_ppid=$("$real_ps" -o ppid= -p "$live" 2>/dev/null | tr -d '[:space:]')
+    [[ "$live_comm" == "sleep" && "$live_ppid" == "1" ]] && break
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  [[ "$live_comm" == "sleep" ]]
+  if [[ "$live_ppid" != "1" ]]; then
+    # A child subreaper (systemd --user, some container inits) adopts the
+    # orphan instead of PID 1, so the scan never treats it as parentless.
+    skip "detached fixture was adopted by a subreaper (ppid $live_ppid), not PID 1"
+  fi
   local real_lsof
   real_lsof=$(command -v /usr/sbin/lsof /usr/bin/lsof lsof 2>/dev/null | head -n 1)
   [[ -n "$real_lsof" ]]
@@ -402,6 +418,23 @@ STUB
 
   run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
     AP_DARWIN_LSOF="$stub_dir/lsof" \
+    bash "$AP_HELPER" reset --profile target --yes
+  assert_failure 75
+  assert_output_contains "PID $live (sleep) [relevant-unknown"
+
+  # The re-check itself failing proves nothing about the process, so the live
+  # orphan must still refuse. This ps lists the full table but fails the
+  # per-PID re-check with no rows.
+  cat >"$stub_dir/ps-recheck-fails" <<STUB
+#!/bin/sh
+case " \$* " in
+  *" -p "*) exit 1 ;;
+esac
+exec "$real_ps" "\$@"
+STUB
+  chmod 700 "$stub_dir/ps-recheck-fails"
+  run env AP_TEST_PLATFORM_OS=Darwin AP_PROC_ROOT="$AP_DARWIN_TEST_NO_PROCFS" \
+    AP_DARWIN_LSOF="$stub_dir/lsof" AP_DARWIN_PS="$stub_dir/ps-recheck-fails" \
     bash "$AP_HELPER" reset --profile target --yes
   assert_failure 75
   assert_output_contains "PID $live (sleep) [relevant-unknown"
