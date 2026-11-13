@@ -237,7 +237,12 @@ import sys
 import time
 
 path, seconds = sys.argv[1], float(sys.argv[2])
-os.setsid()
+try:
+    os.setsid()
+except PermissionError:
+    # Under job control the background job already leads its own process
+    # group, which is all the caller's group kill needs.
+    pass
 with open(path, "r+") as handle:
     fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
     sys.stdout.write("%d\n" % os.getpid())
