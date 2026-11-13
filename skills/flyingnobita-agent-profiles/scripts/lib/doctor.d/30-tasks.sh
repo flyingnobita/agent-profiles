@@ -15,6 +15,9 @@ ap_doctor_task_marker() {
     release)
       sed -n 's/^# release: //p' "$file"
       ;;
+    skill_dir)
+      sed -n 's/^# skill-dir: //p' "$file"
+      ;;
   esac
 }
 
@@ -31,7 +34,13 @@ ap_doctor_check_tasks() {
   local task target release digest
   local -a managed_tasks=()
   local -a absent_tasks=()
-  local stale=0 broken=0 foreign=0
+  local stale=0 broken=0 foreign=0 unverified=0
+  # Run from a deployed release, the helper's own digest is always current, so the
+  # comparison must use the installed skill recorded in each task instead.
+  local from_release=0
+  if [[ "$(ap_setup_skill_dir)" == "$(ap_setup_release_root)"/* ]]; then
+    from_release=1
+  fi
   for task in ${AP_SETUP_TASKS[@]+"${AP_SETUP_TASKS[@]}"}; do
     target="$(ap_setup_task_path "$config_dir" "$task")"
     if [[ ! -e "$target" ]]; then
@@ -56,7 +65,23 @@ ap_doctor_check_tasks() {
       details+=("broken: release manifest verification failed at '$release'")
       continue
     fi
-    if [[ -n "$expected" && "$digest" != "$expected" ]]; then
+    local task_expected="$expected"
+    if [[ $from_release -eq 1 ]]; then
+      local skill_record
+      skill_record="$(ap_doctor_task_marker "$target" skill_dir)"
+      if [[ -z "$skill_record" || ! -d "$skill_record" ]]; then
+        unverified=1
+        details+=("cannot verify: installed skill for '$target' is not recorded or not found (rerun setup)")
+        continue
+      fi
+      task_expected="$(ap_setup_current_digest "$skill_record" 2>/dev/null || true)"
+      if [[ -z "$task_expected" ]]; then
+        unverified=1
+        details+=("cannot verify: installed skill '$skill_record' has no valid manifest")
+        continue
+      fi
+    fi
+    if [[ -n "$task_expected" && "$digest" != "$task_expected" ]]; then
       stale=1
       details+=("stale: deployed release '$release' does not match the installed skill (rerun setup)")
       continue
@@ -77,6 +102,9 @@ ap_doctor_check_tasks() {
   elif [[ $stale -eq 1 ]]; then
     status="warning"
     hint="Rerun 'agent-profiles setup --apply' to deploy the current skill version."
+  elif [[ $unverified -eq 1 ]]; then
+    status="warning"
+    hint="Rerun 'agent-profiles setup --apply' so doctor can compare the deployed task with the installed skill."
   elif [[ $foreign -eq 1 ]]; then
     status="warning"
     hint="Remove or rename the conflicting task before rerunning 'agent-profiles setup --apply'."

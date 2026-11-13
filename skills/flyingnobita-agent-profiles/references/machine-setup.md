@@ -146,8 +146,10 @@ manifest is checked after copying.
 `agent-profiles doctor` reports the `tasks` and `namespaces` checks:
 
 - `tasks` distinguishes available, missing, foreign, managed-configuration,
-  project-shadowed, `stale`, and `broken` deployments, and names the release
-  directory when it is broken
+  project-shadowed, `stale`, `broken`, and `cannot verify` deployments, and
+  names the release directory when it is broken. Run through the deployed task
+  (`ap doctor`), `stale` compares the task with the installed skill recorded at
+  setup; `cannot verify` means that record is missing or the skill is gone
 - `namespaces` runs an actual `bwrap --dev-bind / / true` probe and reports
   whether profile namespaces work
 
@@ -164,6 +166,9 @@ Doctor is read-only and does not install or deploy anything.
 - A task reports a missing helper or exit 78: the release moved or was removed.
   Rerun `agent-profiles setup --apply` from the installed skill.
 - Doctor reports `stale`: the installed skill changed after setup. Rerun setup.
+- Doctor reports `cannot verify`: the task does not record an installed skill
+  that still exists, as after a plugin update moved its directory or with a
+  task written by an older release. Rerun setup to record the current one.
 - Doctor reports `broken`: inspect the named release path and manifest, then
   rerun setup to redeploy.
 - Doctor reports a foreign task: rename or remove the conflicting task, then

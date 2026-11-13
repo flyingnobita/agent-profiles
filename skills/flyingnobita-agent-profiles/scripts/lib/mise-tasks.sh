@@ -353,8 +353,9 @@ ap_setup_manifest_content() {
 }
 
 ap_setup_current_digest() {
-  local content
-  content="$(ap_setup_manifest_content "$(ap_setup_skill_dir)")" || return 1
+  local content skill_dir="${1:-}"
+  [[ -n "$skill_dir" ]] || skill_dir="$(ap_setup_skill_dir)"
+  content="$(ap_setup_manifest_content "$skill_dir")" || return 1
   [[ -n "$content" ]] || return 1
   printf "%s\n" "$content" | ap_platform_sha256_text
 }
@@ -433,6 +434,7 @@ ap_setup_task_content() {
   printf '#MISE quiet=true\n'
   printf '# managed-by: flyingnobita-agent-profiles %s sha256:%s\n' "$version" "$digest"
   printf '# release: %s\n' "$release"
+  printf '# skill-dir: %s\n' "$(ap_setup_skill_dir)"
   printf 'helper=%q\n' "$helper"
   printf 'if [[ ! -f "$helper" ]]; then\n'
   printf '  echo "agent-profiles: error: helper missing at $helper; rerun agent-profiles setup --apply from the installed skill" >&2\n'
