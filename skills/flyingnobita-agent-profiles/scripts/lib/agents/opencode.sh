@@ -141,7 +141,7 @@ ap_opencode_lsof_lists_inspector() {
   if [[ "$rc" -ne 0 ]]; then
     return 1
   fi
-  printf '%s\n' "$out" | grep -qx "p$$"
+  printf '%s\n' "$out" | grep -x "p$$" >/dev/null
 }
 
 # Darwin has no procfs. lsof reports the listening socket table in read-only
