@@ -53,7 +53,7 @@ LIST_OUT=$(
   run_in_home "$T/home_default" skills add "$T/src" --list 2>&1
 ) || fail "skills add --list failed: $LIST_OUT"
 
-echo "$LIST_OUT" | grep -q "flyingnobita-agent-profiles" || fail "skills add --list did not find flyingnobita-agent-profiles:\n$LIST_OUT"
+echo "$LIST_OUT" | grep "flyingnobita-agent-profiles" >/dev/null || fail "skills add --list did not find flyingnobita-agent-profiles:\n$LIST_OUT"
 
 # Step 3: Install in default mode into home_default (symlink mode)
 echo "check-install: installing into home_default (symlink mode)..."

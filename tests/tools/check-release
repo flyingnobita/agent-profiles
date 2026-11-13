@@ -11,6 +11,11 @@
 # output, never private QA logs, and writes only to a temporary directory.
 set -euo pipefail
 
+# Pipelines below never use `grep -q`: under pipefail, grep -q exits at the
+# first match and the writer can die of SIGPIPE, which turns a match into a
+# failure. It surfaced only under parallel test load. Reading all input with
+# output to /dev/null keeps the same answer without the race.
+
 ROOT_DIR="${1:-$PWD}"
 shift || true
 
@@ -98,7 +103,7 @@ check_matrix() {
   [[ "$data" -eq 4 ]] \
     || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly 4"
   for agent in "${AGENTS[@]}"; do
-    printf '%s\n' "$rows" | grep -qF -- "$agent" \
+    printf '%s\n' "$rows" | grep -F -- "$agent" >/dev/null \
       || fail "${file#"$ROOT_DIR"/} '$heading' table does not name $agent"
   done
 }
@@ -134,31 +139,31 @@ check_platform_table() {
     || fail "${file#"$ROOT_DIR"/} '$heading' table does not name macOS"
 
   linux_status=$(row_status "$linux_row")
-  printf '%s\n' "$linux_status" | grep -qix -- "qualified" \
+  printf '%s\n' "$linux_status" | grep -ix -- "qualified" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} does not report Linux as Qualified (status: $linux_status)"
 
   macos_status=$(row_status "$macos_row")
-  printf '%s\n' "$macos_status" | grep -qiE -- "^qualified" \
+  printf '%s\n' "$macos_status" | grep -iE -- "^qualified" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} does not report macOS as Qualified (status: $macos_status)"
   # The documented cell is Qualified for profile mechanics and diagnostics. A
   # bare "Qualified" or a claim of Linux-equivalent coverage is not the same
   # statement and is refused.
-  printf '%s\n' "$macos_status" | grep -qiF -- "profile mechanics" \
+  printf '%s\n' "$macos_status" | grep -iF -- "profile mechanics" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} macOS status does not scope the qualification to profile mechanics (status: $macos_status)"
-  printf '%s\n' "$macos_status" | grep -qiF -- "diagnostics" \
+  printf '%s\n' "$macos_status" | grep -iF -- "diagnostics" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} macOS status does not name diagnostics (status: $macos_status)"
   # The limits travel with the claim: no agent CLI was installed on that host,
   # so the real CLI classes stay unverified there.
-  printf '%s\n' "$macos_row" | grep -qiF -- "agent cli" \
+  printf '%s\n' "$macos_row" | grep -iF -- "agent cli" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} macOS row does not name the real agent CLI classes"
-  printf '%s\n' "$macos_row" | grep -qiF -- "unverified" \
+  printf '%s\n' "$macos_row" | grep -iF -- "unverified" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} macOS row does not state that the real agent CLI classes were not observed there"
-  printf '%s\n' "$macos_row" | grep -qiF -- "configuration redirection only" \
+  printf '%s\n' "$macos_row" | grep -iF -- "configuration redirection only" >/dev/null \
     || fail "${file#"$ROOT_DIR"/} macOS row does not state configuration redirection only"
-  if printf '%s\n' "$macos_row" | grep -qiF -- "bubblewrap"; then
+  if printf '%s\n' "$macos_row" | grep -iF -- "bubblewrap" >/dev/null; then
     fail "${file#"$ROOT_DIR"/} macOS row requires bubblewrap"
   fi
-  if printf '%s\n' "$macos_row" | grep -qiF -- "not qualified"; then
+  if printf '%s\n' "$macos_row" | grep -iF -- "not qualified" >/dev/null; then
     fail "${file#"$ROOT_DIR"/} macOS row still claims macOS is not qualified"
   fi
 }
@@ -210,7 +215,7 @@ pass "every relative README link resolves to a real file"
 require_term "$README" "npx skills add flyingnobita/agent-profiles" \
   "the repository-source install command"
 if grep -qF -- "proposed, after publication" "$README" \
-  || grep -qF -- "flyingnobita/flyingnobita-agent-profiles" "$README"; then
+  || grep -F -- "flyingnobita/flyingnobita-agent-profiles" "$README" >/dev/null; then
   fail "README.md has obsolete pre-publication installation instructions"
 fi
 pass "README.md names the published repository installer"
@@ -233,10 +238,10 @@ pass "README.md states the security, shared-resource and macOS platform boundari
 
 # --- 3. Dated compatibility matrix -----------------------------------------
 check_matrix "$README" "## Compatibility"
-section_text "$README" "## Compatibility" | grep -qiF -- "2026-10-28" \
+section_text "$README" "## Compatibility" | grep -iF -- "2026-10-28" >/dev/null \
   || fail "README.md compatibility matrix has no verification date (2026-10-28)"
 for version in "${VERSIONS[@]}"; do
-  section_rows "$README" "## Compatibility" | grep -qF -- "$version" \
+  section_rows "$README" "## Compatibility" | grep -F -- "$version" >/dev/null \
     || fail "README.md compatibility matrix does not record tested version $version"
 done
 pass "README.md compatibility matrix is dated and names the four tested integrations"
@@ -249,7 +254,7 @@ pass "README.md platform table qualifies Linux and scopes macOS arm64 to profile
 require_file "$COMPAT"
 check_matrix "$COMPAT" "## Agent CLI Integration Matrix"
 for version in "${VERSIONS[@]}"; do
-  section_rows "$COMPAT" "## Agent CLI Integration Matrix" | grep -qF -- "$version" \
+  section_rows "$COMPAT" "## Agent CLI Integration Matrix" | grep -F -- "$version" >/dev/null \
     || fail "compatibility.md does not record tested version $version"
 done
 require_term "$COMPAT" "Linux (x86_64)" "the qualified Linux platform"
@@ -330,17 +335,17 @@ NOTES_SCOPE=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
   || fail "RELEASE_NOTES.md has no v$VERSION scope section"
 for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
   "no bubblewrap prerequisite" "credential-dependent" "not published"; do
-  printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "$term" \
+  printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "$term" >/dev/null \
     || fail "RELEASE_NOTES.md v$VERSION scope does not state: $term"
 done
 # The notes word the boundary as "neither platform is a security sandbox"; the
 # README wording is accepted too, so either way the scope must deny that a
 # profile is a security sandbox.
-if ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "not a security sandbox" \
-  && ! printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "neither platform is a security sandbox"; then
+if ! printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "not a security sandbox" >/dev/null \
+  && ! printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "neither platform is a security sandbox" >/dev/null; then
   fail "RELEASE_NOTES.md v$VERSION scope does not state: not a security sandbox"
 fi
-if printf '%s\n' "$NOTES_SCOPE" | grep -qiF -- "macOS is not qualified"; then
+if printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "macOS is not qualified" >/dev/null; then
   fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
 fi
 for agent in "${AGENTS[@]}"; do
