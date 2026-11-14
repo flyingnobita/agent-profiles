@@ -1,6 +1,6 @@
 # Changelog
 
-- Nov-14, 2026 - 02:00 PM +08:00 - Contributor guidelines in `CONTRIBUTING.md`: issue-first scope, setup and checks, Bash 3.2 and test-first conventions, commit and pull request rules, and how to submit AI-assisted changes (author accountability, verified claims, disclosure in the PR, no weakened checks)
+- Nov-14, 2026 - 02:00 PM +08:00 - Contributor guidelines in `CONTRIBUTING.md`: issue-first scope for outside contributors, setup and checks, Bash 3.2 and test-first conventions, commit and pull request rules, and how to submit AI-assisted changes (author accountability, verified claims, disclosure in the PR for outside contributors, no weakened checks)
 
 - Nov-14, 2026 - 01:49 PM +08:00 - Delivery runs verify locally with lint and targeted Bats files, leaving the full suite and install check to PR CI, so grilling no longer asks about test scope
 

@@ -5,11 +5,15 @@ change, the checks it must pass, and how to work with AI coding agents here.
 
 Contributions are accepted under the [MIT license](LICENSE).
 
+Rules marked **outside contributors** apply to anyone without write access
+to the repository. Maintainers and their agents follow [AGENTS.md](AGENTS.md)
+instead.
+
 ## Before you start
 
 - **Search first.** Look through [open and closed issues](https://github.com/flyingnobita/agent-profiles/issues?q=is%3Aissue)
   before filing a new one.
-- **Open an issue before a pull request** for anything beyond a typo or a small
+- **Outside contributors: open an issue before a pull request** for anything beyond a typo or a small
   documentation fix. Describe the problem, not only the solution, and wait for a
   maintainer to agree on scope. Pull requests are not treated as feature
   requests; an unrequested feature PR may be closed without review.
@@ -44,8 +48,8 @@ MISE_TRUSTED_CONFIG_PATHS="$PWD" mise install   # exact-pinned tools from mise.t
 | `mise run check-install` | Clean install from a disposable copy with `npx skills` |
 | `mise run ci` | All of the above; CI runs it on Linux and macOS |
 
-Locally, run `mise run lint` and the `.bats` files your change touches. The
-pull request's CI runs the full suite and the install check on Linux and
+**Outside contributors:** locally, run `mise run lint` and the `.bats` files
+your change touches. The pull request's CI runs the full suite and the install check on Linux and
 macOS, and both must pass before merge.
 
 ## Making a change
@@ -125,9 +129,10 @@ You are the author of everything you submit, whoever or whatever typed it:
 - **Verify claims yourself.** Agents report tests as passing, files as
   changed or bugs as fixed when they are not. Run the checks and read the
   output before putting a claim in a pull request.
-- **Disclose substantial AI use** in the pull request description: which
-  tool, and which parts it produced. Do not add AI attribution or
-  `Co-Authored-By` trailers to commits.
+- **Outside contributors: disclose substantial AI use** in the pull request
+  description: which tool, and which parts it produced.
+- **No AI attribution in commits.** Do not add AI attribution or
+  `Co-Authored-By` trailers.
 - **Keep scope tight.** Agents tend to refactor nearby code, add options and
   rewrite documentation. Remove anything the issue did not ask for.
 - **Do not weaken checks.** Deleting a failing assertion, adding a skip,
