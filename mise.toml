@@ -27,7 +27,7 @@ if [ -z "$jobs" ]; then
     jobs=8
   fi
 fi
-bats --jobs "$jobs" --parallel-binary-name rush -r tests/0*
+bats --jobs "$jobs" --parallel-binary-name rush -r tests/[0-9][0-9]-*
 """
 
 [tasks.lint]

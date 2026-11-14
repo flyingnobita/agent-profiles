@@ -28,11 +28,11 @@ ap_cmd_doctor() {
         [[ $# -ge 2 ]] || ap_die "$EX_USAGE" "--agent requires an argument"
         local agent_arg="$2"
         case "$agent_arg" in
-          claude | codex | agy | opencode)
+          claude | codex | agy | opencode | pi | omp)
             SELECTED_AGENTS+=("$agent_arg")
             ;;
           *)
-            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode, pi, omp"
             ;;
         esac
         shift 2
@@ -40,11 +40,11 @@ ap_cmd_doctor() {
       --agent=*)
         local agent_arg="${1#*=}"
         case "$agent_arg" in
-          claude | codex | agy | opencode)
+          claude | codex | agy | opencode | pi | omp)
             SELECTED_AGENTS+=("$agent_arg")
             ;;
           *)
-            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode"
+            ap_die "$EX_USAGE" "unsupported agent: $agent_arg. Supported agents: claude, codex, agy, opencode, pi, omp"
             ;;
         esac
         shift

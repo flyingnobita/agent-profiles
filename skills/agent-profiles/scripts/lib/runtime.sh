@@ -53,7 +53,7 @@ try:
             if len(parts) >= 5:
                 root = unescape(parts[3])
                 mp = unescape(parts[4])
-                if mp.startswith(home + "/.") and any(mp == os.path.join(home, d) for d in [".claude", ".codex", ".gemini", ".agents"]):
+                if mp.startswith(home + "/.") and any(mp == os.path.join(home, d) for d in [".claude", ".codex", ".gemini", ".agents", ".pi", ".omp"]):
                     if "/.agent-profiles/" in root or "/.agent-profiles/" in mp:
                         live_mounts.append((root, mp))
 except Exception:
@@ -182,6 +182,8 @@ ap_check_profile_aliasing() {
       .gemini
       .agents
       .opencode
+      .pi
+      .omp
       home
       bin
       npm-global
@@ -342,6 +344,8 @@ ap_init_profile() {
     .gemini
     .agents
     .opencode
+    .pi
+    .omp
     home
     bin
     npm-global
@@ -470,6 +474,7 @@ ap_prepare_profile_env() {
   unset UV_TOOL_DIR UV_TOOL_BIN_DIR UV_CACHE_DIR
   unset CARGO_INSTALL_ROOT GOBIN PYTHONUSERBASE
   unset CLAUDE_CONFIG_DIR CLAUDE_SECURESTORAGE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG_DIR
+  unset PI_CODING_AGENT_DIR PI_CODING_AGENT_SESSION_DIR
   unset PYTHONDONTWRITEBYTECODE PYTHONPYCACHEPREFIX
 
   # 3. Export profile variables
@@ -513,9 +518,9 @@ ap_prepare_profile_env() {
 
   # Darwin redirects by environment only, so HOME itself becomes the profile
   # root: every HOME-relative agent path ($HOME/.claude, .codex, .gemini,
-  # .agents) then lands in profile storage without a mount table. The existing
-  # home/ directory stays the initialization marker and is not HOME. Linux
-  # keeps the host HOME and binds the agent directories over it instead.
+  # .agents, .pi, .omp) then lands in profile storage without a mount table. The
+  # existing home/ directory stays the initialization marker and is not HOME.
+  # Linux keeps the host HOME and binds the agent directories over it instead.
   if ap_platform_host_is_darwin; then
     export HOME="$prof_dir"
   fi
@@ -529,7 +534,7 @@ ap_prepare_profile_env() {
   fi
 
   # Source bounded shipped agent modules and call agent environment hooks if defined
-  for ag in claude codex agy opencode; do
+  for ag in claude codex agy opencode pi omp; do
     local agent_module="$LIB_DIR/agents/$ag.sh"
     if [[ -f "$agent_module" ]]; then
       # shellcheck source=/dev/null
@@ -589,7 +594,7 @@ ap_build_bwrap_mounts() {
   local prof_dir="$repo_root/.agent-profiles/$profile"
   local storage_dir="$repo_root/.agent-profiles"
 
-  local redirect_dirs=(.claude .codex .gemini .agents)
+  local redirect_dirs=(.claude .codex .gemini .agents .pi .omp)
   local validated_sources=()
   local validated_targets=()
 

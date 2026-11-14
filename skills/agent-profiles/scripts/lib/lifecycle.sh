@@ -286,7 +286,7 @@ PY
 # validate recorded migration source paths during recovery.
 ap_migrate_is_agent_entry() {
   case "$1" in
-    .claude | .codex | .gemini | .agents | .opencode | .claude.json | home | bin | npm-global | uv-tools | cargo-global | python-user | .config | .local | .cache)
+    .claude | .codex | .gemini | .agents | .opencode | .pi | .omp | .claude.json | home | bin | npm-global | uv-tools | cargo-global | python-user | .config | .local | .cache)
       return 0
       ;;
   esac
@@ -306,7 +306,7 @@ import os, sys
 
 storage_dir = sys.argv[1]
 agent_subdirs = {
-    ".claude", ".codex", ".gemini", ".agents", ".opencode",
+    ".claude", ".codex", ".gemini", ".agents", ".opencode", ".pi", ".omp",
     "home", "bin", "npm-global", "uv-tools", "cargo-global",
     "python-user", ".config", ".local", ".cache", ".claude.json",
 }
@@ -344,7 +344,7 @@ sandbox_dir = os.path.join(repo_root, ".agent-sandbox")
 profiles_dir = os.path.join(repo_root, ".agent-profiles")
 
 agent_subdirs = {
-    ".claude", ".codex", ".gemini", ".agents", ".opencode",
+    ".claude", ".codex", ".gemini", ".agents", ".opencode", ".pi", ".omp",
     "home", "bin", "npm-global", "uv-tools", "cargo-global",
     "python-user", ".config", ".local", ".cache", ".claude.json",
 }

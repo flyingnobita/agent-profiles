@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-15, 2026 - 12:27 AM +08:00 - Pi (`pi`) and oh-my-pi (`omp`) are supported agent integrations: Linux profiles mount `.pi` and `.omp`, macOS profiles redirect them through the profile `HOME`, an inherited `PI_CODING_AGENT_DIR` is cleared because the two CLIs read it for different directories, `doctor --agent pi|omp` reports profile state and credential sources without values, and Bats plus opt-in live QA cover redirection, A/B separation and host preservation
+
 - Nov-14, 2026 - 11:48 PM +08:00 - The README marks OpenCode as not supported on macOS: a profile in a repository under the real home loads the host's `.agents` and `.claude` skills (#54)
 
 - Nov-14, 2026 - 02:00 PM +08:00 - Contributor guidelines in `CONTRIBUTING.md`: issue-first scope for outside contributors, setup and checks, Bash 3.2 and test-first conventions, commit and pull request rules, and how to submit AI-assisted changes (author accountability, verified claims, disclosure in the PR for outside contributors, no weakened checks)

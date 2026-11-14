@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform: Linux | macOS](https://img.shields.io/badge/platform-Linux%20x86__64%20%7C%20macOS%20arm64-informational)
-![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity%20%7C%20OpenCode-8A2BE2)
+![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Antigravity%20%7C%20OpenCode%20%7C%20Pi%20%7C%20oh--my--pi-8A2BE2)
 
 [What a profile isolates](#what-a-profile-isolates) •
 [Quick start](#quick-start) •
@@ -16,8 +16,8 @@ Coding agents keep everything in your home directory: one login, one set of
 settings, plugins and MCP servers, one session history, one set of globally
 installed tools. Agent profiles give a Git checkout any number of named,
 side-by-side setups for **Claude Code**, **OpenAI Codex CLI**,
-**Google Antigravity CLI** and **OpenCode**, while the repository itself stays
-shared.
+**Google Antigravity CLI**, **OpenCode**, **Pi** and **oh-my-pi**, while the
+repository itself stays shared.
 
 ```bash
 mise ap work claude      # Claude with your work account and settings
@@ -41,7 +41,7 @@ directory are redirected there:
 What stays **shared** by every profile in the checkout:
 
 - the repository working tree, its project-scope config (`.claude/`, `.agents/`,
-  `.opencode/`) and project skills
+  `.opencode/`, `.pi/`) and project skills
 - project package managers, lockfiles and your host `mise` configuration and tools
 - network access, OS services and environment variables exported by your shell
 
@@ -61,7 +61,7 @@ What stays **shared** by every profile in the checkout:
 # 1. Install the skill into your agents
 npx skills add flyingnobita/agent-profiles \
   --skill agent-profiles --copy -g -y \
-  --agent claude-code codex antigravity-cli opencode
+  --agent claude-code codex antigravity-cli opencode pi
 
 # 2. Install the global `mise ap` task (preview first, then apply)
 AP_HELPER="$HOME/.agents/skills/agent-profiles/scripts/agent-profiles"
@@ -84,7 +84,7 @@ rewrites your host credential files.
 
 | Command | Does |
 | --- | --- |
-| `ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`) or any command in profile `NAME` |
+| `ap NAME AGENT [ARGS...]` | Run an agent (`claude`, `codex`, `agy`, `opencode`, `pi`, `omp`) or any command in profile `NAME` |
 | `ap NAME` | Open your shell inside the profile |
 | `ap new NAME` | Create a profile without running anything |
 | `ap ls` | List the profiles in this checkout |
@@ -198,14 +198,15 @@ path differs, and you need that path once, for
 
 | Method | Agents | Helper path (`<skill-dir>`) |
 | --- | --- | --- |
-| [`skills` CLI](#with-the-skills-cli) | all four in one command | `~/.agents/skills/agent-profiles` |
+| [`skills` CLI](#with-the-skills-cli) | every supported agent in one command | `~/.agents/skills/agent-profiles` |
 | [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/agent-profiles` |
 | [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/agent-profiles` |
 | [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/agent-profiles` |
 | [Manual copy](#opencode-and-manual-copy) | OpenCode, or any agent | wherever you copy it |
 
 A plugin makes the skill available to that one agent only. Use the `skills` CLI
-when you want it in all four at once.
+when you want it in every agent at once. Pi installs into `~/.agents/skills`,
+the root oh-my-pi also reads, so one `--agent pi` install covers both.
 
 #### With the `skills` CLI
 
@@ -218,7 +219,7 @@ From the [published repository](https://github.com/flyingnobita/agent-profiles):
 ```bash
 npx skills add flyingnobita/agent-profiles \
   --skill agent-profiles --copy -g -y \
-  --agent claude-code codex antigravity-cli opencode
+  --agent claude-code codex antigravity-cli opencode pi
 ```
 
 From a local checkout:
@@ -227,7 +228,7 @@ From a local checkout:
 npx skills add /path/to/agent-profiles --list   # confirm discovery
 npx skills add /path/to/agent-profiles \
   --skill agent-profiles -g -y \
-  --agent claude-code codex antigravity-cli opencode
+  --agent claude-code codex antigravity-cli opencode pi
 ```
 
 The installed helper needs nothing outside its own directory, so it keeps
@@ -269,8 +270,8 @@ mkdir -p ~/.config/opencode/skills
 cp -R /tmp/agent-profiles/skills/agent-profiles ~/.config/opencode/skills/
 ```
 
-`~/.agents/skills/` works too, and is also read by Codex CLI and Antigravity
-CLI.
+`~/.agents/skills/` works too, and is also read by Codex CLI, Antigravity CLI,
+Pi and oh-my-pi.
 
 ### Set up the machine and the `ap` alias
 
@@ -298,7 +299,9 @@ pinned to that release.
 - Missing prerequisites and agent CLIs are installed only with `--apply`, only
   when actually missing, and only through the detected package manager or the
   mise registry. `--agent claude|codex|agy|opencode` limits which agent is
-  installed; `--tasks-only` installs nothing.
+  installed; `--tasks-only` installs nothing. Pi (`pi`) and oh-my-pi
+  (`oh-my-pi`, binary `omp`) are detected by `doctor` but are not setup
+  installation targets; install them with the mise registry directly.
 - Existing tasks you own are never overwritten, and a dotfiles-managed task
   directory gets prepared files instead (`--prepare-dir DIR`).
 - Setup removes the `agent-profiles-init` task of earlier versions after a
@@ -392,9 +395,10 @@ own status. See
 ## Compatibility
 
 Verified on Linux x86_64 on 2026-10-28 (offline evidence) and 2026-10-29
-(final QA), and on macOS arm64 on 2026-10-31 (profile mechanics) and
-2026-11-13 (real agent CLIs), with startup and discovery checks in disposable
-profiles. These are the four supported integrations:
+(final QA), on macOS arm64 on 2026-10-31 (profile mechanics) and 2026-11-13
+(real agent CLIs), and for Pi and oh-my-pi on Linux on 2026-11-15, with startup
+and discovery checks in disposable profiles. These are the six supported
+integrations:
 
 | Agent integration | Command | Linux version | macOS version | Linux redirection |
 | --- | --- | --- | --- | --- |
@@ -402,19 +406,24 @@ profiles. These are the four supported integrations:
 | OpenAI Codex CLI | `codex` | 0.165.0 | 0.168.0 | `CODEX_HOME`, `.codex`/`.agents` mounts |
 | Google Antigravity CLI | `agy` | 1.4.9 | 1.5.8 | `.gemini`/`.agents` mounts, XDG roots |
 | OpenCode | `opencode` | 2.2.0 | 2.2.7 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
+| Pi | `pi` | 1.5.2 | 1.5.2 (config only, 2026-11-14) | `.pi` mount; inherited `PI_CODING_AGENT_DIR` cleared |
+| oh-my-pi | `omp` | 18.20.0 | 18.20.0 (installed; not run in a profile) | `.omp` mount; inherited `PI_CODING_AGENT_DIR` cleared |
 
-Versions are dated observations, not a supported range.
+Versions are dated observations, not a supported range. Pi and oh-my-pi both
+read `PI_CODING_AGENT_DIR` for different directories, so profiles clear it and
+let the mount or profile `HOME` place each CLI's default root.
 
-On macOS arm64 the same four integrations use configuration redirection only:
+On macOS arm64 the same six integrations use configuration redirection only:
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, the XDG roots and a
-profile `HOME`. Antigravity CLI has no configuration variable, so `.gemini`
-follows `HOME`. The macOS Keychain and other native services stay shared with
-the host.
+profile `HOME`. Antigravity CLI, Pi and oh-my-pi have no per-agent variable the
+profile sets, so `.gemini`, `.pi` and `.omp` follow `HOME`. The macOS Keychain
+and other native services stay shared with the host.
 
 Logged-in model responses and model-driven skill use were not part of the
-verification. Sanitized results are in the
-Linux [final QA summary](docs/evidence/linux-2026-10-29.md) and
-[offline evidence](docs/evidence/linux-2026-10-28.md), and the macOS
+verification, including for Pi and oh-my-pi. Sanitized results are in the
+Linux [final QA summary](docs/evidence/linux-2026-10-29.md),
+[offline evidence](docs/evidence/linux-2026-10-28.md) and
+[Pi/oh-my-pi run](docs/evidence/linux-2026-11-15-pi-omp.md), and the macOS
 [mechanics run](docs/evidence/macos-2026-10-31.md) and
 [real-agent run](docs/evidence/macos-2026-11-13-real-agent.md); per-agent limits are in
 [compatibility.md](skills/agent-profiles/references/compatibility.md).
@@ -447,6 +456,8 @@ namespace refusal (exit 69).
 | Codex CLI | ✅ | ✅ |
 | Antigravity CLI | ✅ | ✅ |
 | OpenCode | ✅ | ❌ |
+| Pi | ✅ | ✅ |
+| oh-my-pi (`omp`) | ✅ | ✅* |
 
 OpenCode is not supported on macOS: it loads `.claude` and `.agents` skills
 from every directory above the repository, and a profile's `HOME` hides the
@@ -455,6 +466,12 @@ sees your host skills (observed 2026-11-14 with OpenCode 2.2.7 and 2.3.0,
 [#54](https://github.com/flyingnobita/agent-profiles/issues/54)). On Linux the
 bubblewrap mounts put profile storage at those paths, so a profile sees only
 its own skills.
+
+Pi and oh-my-pi keep their user state in `~/.pi` and `~/.omp` and read the
+shared `~/.agents/skills` root. Pi 1.5.2 was observed writing under a profile
+`HOME` on macOS; no real macOS profile run of oh-my-pi was recorded, so its row
+rests on the tested environment contract (profile `HOME`, no mounts) rather
+than on an observed run.
 
 ## Security and shared host resources
 
@@ -473,6 +490,9 @@ container.
   temporary directory (`/tmp/opencode`) is not redirected.
 - Services started outside a profile (`systemd --user`, D-Bus activation) cannot
   be attributed to a profile.
+- Pi and oh-my-pi keep their state and helper daemons under `~/.pi` and `~/.omp`,
+  which a profile redirects; a daemon the host started outside a profile stays a
+  host resource.
 
 Do not run untrusted code in a profile expecting containment; use a VM or a
 container with its own credentials and network policy.

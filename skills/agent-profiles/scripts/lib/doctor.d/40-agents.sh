@@ -83,7 +83,7 @@ ap_doctor_check_agents() {
     done
   fi
 
-  local target_agents=("claude" "codex" "agy" "opencode")
+  local target_agents=("claude" "codex" "agy" "opencode" "pi" "omp")
   if [[ ${#SELECTED_AGENTS[@]} -gt 0 ]]; then
     target_agents=(${SELECTED_AGENTS[@]+"${SELECTED_AGENTS[@]}"})
   fi

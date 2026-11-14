@@ -87,7 +87,10 @@ mise ap NAME claude --resume
 `--tasks-only` configures the tasks without installing prerequisites or agents.
 `--agent claude|codex|agy|opencode` installs only the named agent, and only when
 it is missing and available through the mise registry. The other agents remain
-optional and untouched. Task deployment never edits `config.toml`; a requested
+optional and untouched. Pi and oh-my-pi are detected and diagnosed, but setup
+does not install them: add `pi` or `oh-my-pi` through the mise registry
+yourself (`mise use --global pi@latest`, `mise use --global oh-my-pi@latest`);
+the second installs the `omp` binary. Task deployment never edits `config.toml`; a requested
 agent install does add its tool entry to the global mise configuration, and the
 previous configuration is copied to the backups directory first. A managed
 configuration (symlink, chezmoi, read-only, or a symlinked config directory) is

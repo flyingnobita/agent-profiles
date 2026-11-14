@@ -63,7 +63,7 @@ teardown() {
   assert_success
 }
 
-@test "release: compatibility matrix is dated and names exactly the four product integrations" {
+@test "release: compatibility matrix is dated and names exactly the six product integrations" {
   assert_file_exists "$README"
   assert_file_exists "$COMPAT"
 
@@ -75,12 +75,14 @@ teardown() {
       inside && /^\|/ { print }
     ' "$file")
     [[ -n "$rows" ]]
-    # Two header rows plus exactly four data rows.
-    [[ "$(printf '%s\n' "$rows" | grep -c '^|')" -eq 6 ]]
+    # Two header rows plus exactly six data rows.
+    [[ "$(printf '%s\n' "$rows" | grep -c '^|')" -eq 8 ]]
     printf '%s\n' "$rows" | grep -qF "Claude Code"
     printf '%s\n' "$rows" | grep -qF "Codex CLI"
     printf '%s\n' "$rows" | grep -qF "Antigravity CLI"
     printf '%s\n' "$rows" | grep -qF "OpenCode"
+    printf '%s\n' "$rows" | grep -qF "Pi"
+    printf '%s\n' "$rows" | grep -qF "oh-my-pi"
   done
 
   run grep -F -- "2026-10-28" "$README"
@@ -92,6 +94,10 @@ teardown() {
   run grep -F -- "1.4.9" "$COMPAT"
   assert_success
   run grep -F -- "2.2.0" "$COMPAT"
+  assert_success
+  run grep -F -- "1.5.2" "$COMPAT"
+  assert_success
+  run grep -F -- "18.20.0" "$COMPAT"
   assert_success
 }
 

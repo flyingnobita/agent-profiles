@@ -1,6 +1,6 @@
 ---
 name: agent-profiles
-description: 'Named agent profiles for Linux and macOS arm64 for Claude Code, Codex CLI, Antigravity CLI, and OpenCode with separate settings and tools while preserving shared host checkouts. Use for the `ap` / `mise ap` task and the `agent-profiles` helper (`ap new`, `ap ls`, `ap rm`, `ap reset`, `ap doctor`), including explaining any `agent-profiles: error:` output. Routes setup, repository operations, lifecycle, and Q&A to focused references.'
+description: 'Named agent profiles for Linux and macOS arm64 for Claude Code, Codex CLI, Antigravity CLI, OpenCode, Pi, and oh-my-pi with separate settings and tools while preserving shared host checkouts. Use for the `ap` / `mise ap` task and the `agent-profiles` helper (`ap new`, `ap ls`, `ap rm`, `ap reset`, `ap doctor`), including explaining any `agent-profiles: error:` output. Routes setup, repository operations, lifecycle, and Q&A to focused references.'
 license: MIT
 compatibility: Linux (bash, git, python3, mise, bubblewrap) and macOS arm64 (stock bash 3.2, git, python3, mise) with configuration redirection only
 metadata:
@@ -27,6 +27,8 @@ For questions, conceptual guidance, or documentation requests, read only the sin
 | OpenAI Codex CLI configuration and execution | [codex.md](references/agents/codex.md) |
 | Google Antigravity CLI configuration and execution | [antigravity.md](references/agents/antigravity.md) |
 | OpenCode configuration and execution | [opencode.md](references/agents/opencode.md) |
+| Pi configuration and execution | [pi.md](references/agents/pi.md) |
+| oh-my-pi (omp) configuration and execution | [omp.md](references/agents/omp.md) |
 
 ## Command Summary
 
@@ -38,7 +40,7 @@ in the target Git repository:
 AP_HELPER="<skill-directory>/scripts/agent-profiles"
 
 # Diagnose the machine, global tasks, namespaces and agent integrations
-bash "$AP_HELPER" doctor [--json] [--agent claude|codex|agy|opencode] [--profile NAME]
+bash "$AP_HELPER" doctor [--json] [--agent claude|codex|agy|opencode|pi|omp] [--profile NAME]
 
 # Create, inspect and use named profiles
 bash "$AP_HELPER" init [--profile NAME]
