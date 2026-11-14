@@ -456,6 +456,8 @@ namespace refusal (exit 69).
 | Codex CLI | ✅ | ✅ |
 | Antigravity CLI | ✅ | ✅ |
 | OpenCode | ✅ | ❌ |
+| Pi | ✅ | ✅ |
+| oh-my-pi (`omp`) | ✅ | ✅* |
 
 OpenCode is not supported on macOS: it loads `.claude` and `.agents` skills
 from every directory above the repository, and a profile's `HOME` hides the
@@ -464,6 +466,12 @@ sees your host skills (observed 2026-11-14 with OpenCode 2.2.7 and 2.3.0,
 [#54](https://github.com/flyingnobita/agent-profiles/issues/54)). On Linux the
 bubblewrap mounts put profile storage at those paths, so a profile sees only
 its own skills.
+
+Pi and oh-my-pi keep their user state in `~/.pi` and `~/.omp` and read the
+shared `~/.agents/skills` root. Pi 1.5.2 was observed writing under a profile
+`HOME` on macOS; no real macOS profile run of oh-my-pi was recorded, so its row
+rests on the tested environment contract (profile `HOME`, no mounts) rather
+than on an observed run.
 
 ## Security and shared host resources
 
