@@ -146,6 +146,29 @@ PROMPT='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PROMPT"
 PS1='${AGENT_PROFILES_NAME:+ap: $AGENT_PROFILES_NAME }'"$PS1"
 ```
 
+### Leave the profile when you leave the checkout
+
+A profile shell keeps its environment wherever you `cd`; only `exit` ends it.
+To leave it automatically when `cd` moves outside the checkout, add this to
+`~/.zshrc`:
+
+```zsh
+# Leave an `ap NAME` profile shell when cd moves outside its checkout
+if [[ -n "${AGENT_PROFILES_ROOT:-}" ]]; then
+  _ap_leave_on_cd() {
+    local root="${AGENT_PROFILES_ROOT%/.agent-profiles}"
+    [[ "$PWD" == "$root" || "$PWD" == "$root"/* ]] || exit 0
+  }
+  autoload -Uz add-zsh-hook
+  add-zsh-hook chpwd _ap_leave_on_cd
+fi
+```
+
+You return to the host shell in the directory where you ran `ap`, not the one
+you `cd`'d to. This works on Linux, where the profile shell keeps your `HOME`
+and reads `~/.zshrc`. On macOS the profile's `HOME` is the profile directory,
+so the host `~/.zshrc` is not read there.
+
 ## Install
 
 ### Requirements
