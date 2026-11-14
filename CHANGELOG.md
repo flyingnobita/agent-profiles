@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-15, 2026 - 01:37 AM +08:00 - The README shows a zsh hook that leaves an `ap NAME` profile shell when `cd` moves outside its checkout
+
 - Nov-15, 2026 - 12:27 AM +08:00 - Pi (`pi`) and oh-my-pi (`omp`) are supported agent integrations: Linux profiles mount `.pi` and `.omp`, macOS profiles redirect them through the profile `HOME`, an inherited `PI_CODING_AGENT_DIR` is cleared because the two CLIs read it for different directories, `doctor --agent pi|omp` reports profile state and credential sources without values, and Bats plus opt-in live QA cover redirection, A/B separation and host preservation
 
 - Nov-14, 2026 - 11:48 PM +08:00 - The README marks OpenCode as not supported on macOS: a profile in a repository under the real home loads the host's `.agents` and `.claude` skills (#54)
