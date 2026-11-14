@@ -122,7 +122,7 @@ These are the limits this run observed, stated as observed:
   Antigravity reports the shared OS credential service; OpenCode reports the
   shared background service port.
 - Host services outside the profile keep running as the user and stay visible to
-  a profile session, exactly as [compatibility.md](../../skills/flyingnobita-agent-profiles/references/compatibility.md)
+  a profile session, exactly as [compatibility.md](../../skills/agent-profiles/references/compatibility.md)
   states. A profile is not a security boundary.
 
 ## Preservation and cleanup

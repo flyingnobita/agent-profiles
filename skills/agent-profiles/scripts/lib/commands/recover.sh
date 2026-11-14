@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Command: recover - recover interrupted lifecycle operations
 # shellcheck disable=SC2034
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/procscan.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/procscan.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/lifecycle.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"

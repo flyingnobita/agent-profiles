@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Preflight hook: Legacy storage layout detection and refusal
 # shellcheck disable=SC2154
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/lifecycle.sh
 
 source "$LIB_DIR/lifecycle.sh"
 

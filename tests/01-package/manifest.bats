@@ -17,7 +17,7 @@ teardown() {
 copy_package() {
   local repo="$1"
   mkdir -p "$repo/skills"
-  cp -a "$AP_SKILL_DIR" "$repo/skills/flyingnobita-agent-profiles"
+  cp -a "$AP_SKILL_DIR" "$repo/skills/agent-profiles"
   cp -a "$AP_SUBJECT/skills/.claude-plugin" "$AP_SUBJECT/skills/.codex-plugin" "$repo/skills/"
   cp -a "$AP_SUBJECT/.claude-plugin" "$repo/"
 }
@@ -46,9 +46,16 @@ copy_package() {
 @test "manifest: SKILL.md frontmatter matches specification" {
   assert_file_exists "$AP_SKILL_DIR/SKILL.md"
   assert_file_exists "$AP_SKILL_DIR/VERSION"
-  ver=$(tr -d '[:space:]' < "$AP_SKILL_DIR/VERSION")
 
-  run grep "^name: flyingnobita-agent-profiles" "$AP_SKILL_DIR/SKILL.md"
+  # The skill is published under its unprefixed name, so the public router name
+  # and the release version are pinned rather than inferred from the folder.
+  run grep -x "name: agent-profiles" "$AP_SKILL_DIR/SKILL.md"
+  assert_success
+
+  run grep -x "0.4.0" "$AP_SKILL_DIR/VERSION"
+  assert_success
+
+  run grep -x "  version: 0.4.0" "$AP_SKILL_DIR/SKILL.md"
   assert_success
 
   run grep "^license: MIT" "$AP_SKILL_DIR/SKILL.md"
@@ -65,9 +72,6 @@ copy_package() {
   run grep -E "^compatibility: .*macOS not qualified" "$AP_SKILL_DIR/SKILL.md"
   assert_failure 1
 
-  run grep "version: $ver" "$AP_SKILL_DIR/SKILL.md"
-  assert_success
-
   # The description is routing metadata, so it names both qualified platforms
   # rather than the Linux-only wording that shipped before macOS arm64 was
   # qualified.
@@ -81,7 +85,7 @@ copy_package() {
   assert_file_exists "$CHECK_PACKAGE"
 
   local repo="$TEST_TMPDIR/package"
-  local skill="$repo/skills/flyingnobita-agent-profiles"
+  local skill="$repo/skills/agent-profiles"
   copy_package "$repo"
 
   # The documented surface is accepted before anything is changed.
@@ -140,7 +144,17 @@ PY
 
 @test "manifest: check-package keeps the plugin root at skills/ and its skill path exact" {
   local repo="$TEST_TMPDIR/package"
+  local manifest
   copy_package "$repo"
+
+  # Each manifest names the skill directory itself, and 0.4.0 publishes that
+  # directory without the prefix, so the exact path is asserted here instead of
+  # being inferred from the package check.
+  for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json; do
+    run python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["skills"])' "$repo/$manifest"
+    assert_output_equals "./agent-profiles"
+  done
+
   run bash "$CHECK_PACKAGE" "$repo"
   assert_success
 
@@ -159,7 +173,6 @@ PY
 
   # Codex finds no skill when the path names the plugin root ("./" or "."),
   # so each manifest names the skill directory itself.
-  local manifest
   for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json; do
     rm -rf "$repo"
     copy_package "$repo"

@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-14, 2026 - 12:46 PM +08:00 - The public skill installs as `agent-profiles` in 0.4.0, so existing installs remove `--skill flyingnobita-agent-profiles` and add `agent-profiles`; the XDG release, backup and live-evidence roots keep the old prefix
+
 - Nov-14, 2026 - 06:59 AM +08:00 - On macOS, the OpenCode service-port check no longer risks a spurious "unverified" result from a broken pipe when it confirms `lsof` can see its own process
 
 - Nov-14, 2026 - 06:53 AM +08:00 - `check-install` extracts the source archive from a temporary file instead of a pipe, so macOS CI no longer fails intermittently with exit 141 when `tar` stops reading before `git archive` finishes writing

@@ -7,7 +7,7 @@
 # to the current loop.
 ap_opencode_agent_module="$LIB_DIR/agents/opencode.sh"
 if [[ -f "$ap_opencode_agent_module" ]]; then
-  # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/agents/opencode.sh
+  # shellcheck source=skills/agent-profiles/scripts/lib/agents/opencode.sh
   source "$ap_opencode_agent_module"
   if declare -F ap_doctor_check_opencode_profile >/dev/null 2>&1; then
     ap_register_doctor_section "ap_doctor_check_opencode_profile"

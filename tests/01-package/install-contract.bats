@@ -26,12 +26,12 @@ teardown() {
     OPENCODE_CONFIG_DIR="$target_home/.opencode" \
     DISABLE_TELEMETRY=1 \
     npm_config_cache="$TEST_TMPDIR/npm_cache" \
-    skills add "$AP_SUBJECT" -g -y --copy --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode
+    skills add "$AP_SUBJECT" -g -y --copy --skill agent-profiles --agent claude-code codex antigravity-cli opencode
   assert_success
 
   # Verify all 4 agent registrations
-  assert_dir_exists "$target_home/.claude/skills/flyingnobita-agent-profiles"
-  assert_dir_exists "$target_home/.agents/skills/flyingnobita-agent-profiles"
+  assert_dir_exists "$target_home/.claude/skills/agent-profiles"
+  assert_dir_exists "$target_home/.agents/skills/agent-profiles"
 }
 
 @test "install contract: installed helper executes from a separate working directory with isolated environment" {
@@ -48,12 +48,12 @@ teardown() {
     OPENCODE_CONFIG_DIR="$target_home/.opencode" \
     DISABLE_TELEMETRY=1 \
     npm_config_cache="$TEST_TMPDIR/npm_cache" \
-    skills add "$AP_SUBJECT" -g -y --copy --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode
+    skills add "$AP_SUBJECT" -g -y --copy --skill agent-profiles --agent claude-code codex antigravity-cli opencode
 
   local sep_repo="$TEST_TMPDIR/sep_repo"
   create_fixture_repo "$sep_repo"
 
-  run env -i PATH="$PATH" HOME="$target_home" bash "$target_home/.agents/skills/flyingnobita-agent-profiles/scripts/agent-profiles" --version
+  run env -i PATH="$PATH" HOME="$target_home" bash "$target_home/.agents/skills/agent-profiles/scripts/agent-profiles" --version
   assert_success
   assert_output_contains "$(tr -d '[:space:]' <"$AP_SKILL_DIR/VERSION")"
 }

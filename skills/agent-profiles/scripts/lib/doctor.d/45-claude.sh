@@ -7,7 +7,7 @@
 # to the current loop.
 ap_claude_agent_module="$LIB_DIR/agents/claude.sh"
 if [[ -f "$ap_claude_agent_module" ]]; then
-  # shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/agents/claude.sh
+  # shellcheck source=skills/agent-profiles/scripts/lib/agents/claude.sh
   source "$ap_claude_agent_module"
   if declare -F ap_doctor_check_claude_profile >/dev/null 2>&1; then
     ap_register_doctor_section "ap_doctor_check_claude_profile"

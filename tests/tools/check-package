@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="${1:-$PWD}"
-SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+SKILL_DIR="$ROOT_DIR/skills/agent-profiles"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -46,8 +46,8 @@ else:
         sys.exit(f"name {data.get('name')!r} is not 'agent-profiles'")
     if data.get("version") != version:
         sys.exit(f"version {data.get('version')!r} does not match VERSION {version}")
-    if data.get("skills") != "./flyingnobita-agent-profiles":
-        sys.exit(f"skills {data.get('skills')!r} is not './flyingnobita-agent-profiles'")
+    if data.get("skills") != "./agent-profiles":
+        sys.exit(f"skills {data.get('skills')!r} is not './agent-profiles'")
 PY
   ) || fail "$manifest: $manifest_error"
 done
@@ -68,7 +68,7 @@ BYTE_COUNT=$(wc -c <"$SKILL_MD")
 [[ "$BYTE_COUNT" -le 6144 ]] || fail "SKILL.md exceeds 6 KB ($BYTE_COUNT bytes)"
 
 # Frontmatter checks
-grep -q "^name: flyingnobita-agent-profiles" "$SKILL_MD" || fail "SKILL.md missing name frontmatter"
+grep -q "^name: agent-profiles" "$SKILL_MD" || fail "SKILL.md missing name frontmatter"
 grep -q "^license: MIT" "$SKILL_MD" || fail "SKILL.md missing license: MIT"
 grep -q "^compatibility: .*Linux" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name Linux"
 grep -q "^compatibility: .*macOS arm64" "$SKILL_MD" || fail "SKILL.md compatibility statement does not name macOS arm64"

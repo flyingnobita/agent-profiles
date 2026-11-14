@@ -1,4 +1,31 @@
-# flyingnobita-agent-profiles v0.3.1
+# agent-profiles v0.4.0
+
+The skill is published as `agent-profiles`, without the `flyingnobita-` prefix.
+The `skills` installer names an installed skill after its directory, so the
+installed folder and the skill's lock key change. Existing installs must remove
+the old skill and add the new one:
+
+```bash
+npx skills remove -g -y --skill flyingnobita-agent-profiles
+npx skills add flyingnobita/agent-profiles \
+  --skill agent-profiles --copy -g -y \
+  --agent claude-code codex antigravity-cli opencode
+```
+
+Re-run `setup --apply` from the new path afterwards, so the deployed release and
+the `mise ap` task point at it. Plugin installs get the same renamed skill; the
+marketplace keeps its name.
+
+Platform behavior is unchanged. Linux and macOS arm64 remain supported with
+Claude Code, OpenAI Codex CLI, Google Antigravity CLI and OpenCode. MIT licensed.
+On Linux a profile is redirected with a bubblewrap mount layer. macOS arm64 has
+no bubblewrap prerequisite: nothing is mounted, and configuration is redirected
+through the agents' own variables, so the macOS layer is the weaker of the two.
+Neither platform is a security sandbox for untrusted code. Credential-dependent
+model behavior remains a credential-dependent gap. A tagged GitHub Release is
+not published for this version.
+
+## Earlier release: flyingnobita-agent-profiles v0.3.1
 
 A patch release for skill discovery and the missing-Git error. The skill
 description now names the `ap` tasks and the `agent-profiles: error:` prefix,

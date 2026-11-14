@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the versioned local release artifact set for
-# flyingnobita-agent-profiles: an installable skill tarball, its SHA-256
+# agent-profiles: an installable skill tarball, its SHA-256
 # checksum and the release notes.
 #
 # Usage: tools/release-artifacts [<repo-root>] [--output-dir DIR]
@@ -51,7 +51,7 @@ fail() {
 # Resolve the root first: the helper paths below must not depend on the caller's
 # working directory.
 ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
-SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+SKILL_DIR="$ROOT_DIR/skills/agent-profiles"
 NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
 PYTHON="$(command -v python3 || true)"
@@ -59,7 +59,7 @@ if [[ -z "$PYTHON" || ! -f "$SKILL_DIR/scripts/lib/platform.py" ]]; then
   fail "python3 and the internal platform helper are required"
 fi
 
-[[ -d "$SKILL_DIR" ]] || fail "skill directory is missing: skills/flyingnobita-agent-profiles"
+[[ -d "$SKILL_DIR" ]] || fail "skill directory is missing: skills/agent-profiles"
 [[ -f "$SKILL_DIR/VERSION" ]] || fail "VERSION file is missing"
 [[ -f "$NOTES" ]] || fail "RELEASE_NOTES.md is missing"
 [[ -f "$ROOT_DIR/LICENSE" ]] || fail "root LICENSE is missing"
@@ -72,7 +72,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 
-TARBALL="flyingnobita-agent-profiles-$VERSION.tar.gz"
+TARBALL="agent-profiles-$VERSION.tar.gz"
 
 # The same commit time for every member keeps the archive reproducible; a
 # source tree outside Git falls back to the current time.
@@ -94,7 +94,7 @@ import sys
 import tarfile
 
 source, target, epoch = sys.argv[1], sys.argv[2], int(sys.argv[3])
-prefix = "flyingnobita-agent-profiles"
+prefix = "agent-profiles"
 # Byte code is local build state, not shipped source, and would make the archive
 # depend on which interpreter last imported the helper.
 skipped = ("__pycache__",)

@@ -59,18 +59,18 @@ LIST_OUT=$(
   run_in_home "$T/home_default" skills add "$T/src" --list 2>&1
 ) || fail "skills add --list failed: $LIST_OUT"
 
-echo "$LIST_OUT" | grep "flyingnobita-agent-profiles" >/dev/null || fail "skills add --list did not find flyingnobita-agent-profiles:\n$LIST_OUT"
+echo "$LIST_OUT" | grep "agent-profiles" >/dev/null || fail "skills add --list did not find agent-profiles:\n$LIST_OUT"
 
 # Step 3: Install in default mode into home_default (symlink mode)
 echo "check-install: installing into home_default (symlink mode)..."
 INSTALL1_OUT=$(
-  run_in_home "$T/home_default" skills add "$T/src" -g -y --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
+  run_in_home "$T/home_default" skills add "$T/src" -g -y --skill agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
 ) || fail "install default failed: $INSTALL1_OUT"
 
 # Step 4: Install in --copy mode into home_copy
 echo "check-install: installing into home_copy (--copy mode)..."
 INSTALL2_OUT=$(
-  run_in_home "$T/home_copy" skills add "$T/src" -g -y --copy --skill flyingnobita-agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
+  run_in_home "$T/home_copy" skills add "$T/src" -g -y --copy --skill agent-profiles --agent claude-code codex antigravity-cli opencode 2>&1
 ) || fail "install --copy failed: $INSTALL2_OUT"
 
 # Step 5: Delete disposable source
@@ -88,10 +88,10 @@ for mode in "default" "copy"; do
   echo "check-install: verifying installed instance in home_$mode..."
 
   # Verify all 4 agent registrations:
-  # claude-code registers under ~/.claude/skills/flyingnobita-agent-profiles
-  # codex, antigravity-cli, opencode register under ~/.agents/skills/flyingnobita-agent-profiles
-  claude_target="$home_dir/.claude/skills/flyingnobita-agent-profiles"
-  universal_target="$home_dir/.agents/skills/flyingnobita-agent-profiles"
+  # claude-code registers under ~/.claude/skills/agent-profiles
+  # codex, antigravity-cli, opencode register under ~/.agents/skills/agent-profiles
+  claude_target="$home_dir/.claude/skills/agent-profiles"
+  universal_target="$home_dir/.agents/skills/agent-profiles"
 
   [[ -d "$claude_target" ]] || fail "claude-code registration target missing: $claude_target"
   [[ -d "$universal_target" ]] || fail "universal agent registration target missing: $universal_target"

@@ -2,7 +2,7 @@
 # Command: ap
 # Short, profile-first grammar behind the global `mise ap` task. Every form
 # delegates to the long commands in a fresh helper process.
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/runtime.sh
 
 source "$LIB_DIR/runtime.sh"
 

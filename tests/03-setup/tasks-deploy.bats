@@ -177,7 +177,7 @@ PY
 }
 
 @test "setup apply: a copied installed skill deploys durable tasks that survive its removal" {
-  local installed="$TEST_TMPDIR/installed/skills/flyingnobita-agent-profiles"
+  local installed="$TEST_TMPDIR/installed/skills/agent-profiles"
   mkdir -p "$(dirname "$installed")"
   cp -a "$AP_SKILL_DIR" "$installed"
 

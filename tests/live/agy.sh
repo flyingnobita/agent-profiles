@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-AP_HELPER="$REPO_ROOT/skills/flyingnobita-agent-profiles/scripts/agent-profiles"
+AP_HELPER="$REPO_ROOT/skills/agent-profiles/scripts/agent-profiles"
 EVIDENCE_DIR="${AP_EVIDENCE_DIR:-$HOME/.local/state/flyingnobita-agent-profiles/evidence}"
 mkdir -p "$EVIDENCE_DIR"
 chmod 700 "$EVIDENCE_DIR"

@@ -14,6 +14,9 @@ teardown() {
 @test "doctor: runs successfully in text mode" {
   run bash "$AP_HELPER" doctor
   assert_success
+  # The banner names the published skill, so the old prefix must be gone.
+  assert_equal "$(printf '%s\n' "$output" | head -1)" \
+    "agent-profiles doctor v$(tr -d '[:space:]' <"$AP_SKILL_DIR/VERSION")"
   assert_output_contains "OS:"
   assert_output_contains "Dependencies:"
   assert_output_contains "Agents:"

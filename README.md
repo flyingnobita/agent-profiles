@@ -60,11 +60,11 @@ What stays **shared** by every profile in the checkout:
 ```bash
 # 1. Install the skill into your agents
 npx skills add flyingnobita/agent-profiles \
-  --skill flyingnobita-agent-profiles --copy -g -y \
+  --skill agent-profiles --copy -g -y \
   --agent claude-code codex antigravity-cli opencode
 
 # 2. Install the global `mise ap` task (preview first, then apply)
-AP_HELPER="$HOME/.agents/skills/flyingnobita-agent-profiles/scripts/agent-profiles"
+AP_HELPER="$HOME/.agents/skills/agent-profiles/scripts/agent-profiles"
 bash "$AP_HELPER" setup --preview
 bash "$AP_HELPER" setup --apply
 
@@ -196,10 +196,10 @@ path differs, and you need that path once, for
 
 | Method | Agents | Helper path (`<skill-dir>`) |
 | --- | --- | --- |
-| [`skills` CLI](#with-the-skills-cli) | all four in one command | `~/.agents/skills/flyingnobita-agent-profiles` |
-| [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/flyingnobita-agent-profiles` |
-| [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/flyingnobita-agent-profiles` |
-| [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/flyingnobita-agent-profiles` |
+| [`skills` CLI](#with-the-skills-cli) | all four in one command | `~/.agents/skills/agent-profiles` |
+| [Claude Code plugin](#as-a-plugin) | Claude Code | `~/.claude/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/agent-profiles` |
+| [Codex plugin](#as-a-plugin) | Codex CLI | `~/.codex/plugins/cache/flyingnobita-agent-profiles/agent-profiles/<version>/agent-profiles` |
+| [Antigravity plugin](#as-a-plugin) | Antigravity CLI | `~/.gemini/config/plugins/agent-profiles/agent-profiles` |
 | [Manual copy](#opencode-and-manual-copy) | OpenCode, or any agent | wherever you copy it |
 
 A plugin makes the skill available to that one agent only. Use the `skills` CLI
@@ -211,25 +211,20 @@ The npm `skills` package installs into every agent at once (this repository's
 own tests pin 1.7.4 in `mise.toml`). Select the skill explicitly, and drop `-g`
 for project scope.
 
-> [!NOTE]
-> Before the skill is published to the public registry it will be renamed
-> without the `flyingnobita-` prefix, to `agent-profiles`. Commands that name
-> `flyingnobita-agent-profiles` will change accordingly.
-
 From the [published repository](https://github.com/flyingnobita/agent-profiles):
 
 ```bash
 npx skills add flyingnobita/agent-profiles \
-  --skill flyingnobita-agent-profiles --copy -g -y \
+  --skill agent-profiles --copy -g -y \
   --agent claude-code codex antigravity-cli opencode
 ```
 
 From a local checkout:
 
 ```bash
-npx skills add /path/to/flyingnobita-agent-profiles --list   # confirm discovery
-npx skills add /path/to/flyingnobita-agent-profiles \
-  --skill flyingnobita-agent-profiles -g -y \
+npx skills add /path/to/agent-profiles --list   # confirm discovery
+npx skills add /path/to/agent-profiles \
+  --skill agent-profiles -g -y \
   --agent claude-code codex antigravity-cli opencode
 ```
 
@@ -257,8 +252,8 @@ agy plugin install https://github.com/flyingnobita/agent-profiles
 ```
 
 Each command also takes a local checkout path in place of the GitHub source.
-Inside the agent, the skill is named `agent-profiles:flyingnobita-agent-profiles`
-in Claude Code and Codex, and `flyingnobita-agent-profiles` in Antigravity.
+Inside the agent, the skill is named `agent-profiles:agent-profiles`
+in Claude Code and Codex, and `agent-profiles` in Antigravity.
 
 #### OpenCode and manual copy
 
@@ -269,7 +264,7 @@ skills root yourself:
 ```bash
 git clone https://github.com/flyingnobita/agent-profiles /tmp/agent-profiles
 mkdir -p ~/.config/opencode/skills
-cp -R /tmp/agent-profiles/skills/flyingnobita-agent-profiles ~/.config/opencode/skills/
+cp -R /tmp/agent-profiles/skills/agent-profiles ~/.config/opencode/skills/
 ```
 
 `~/.agents/skills/` works too, and is also read by Codex CLI and Antigravity
@@ -307,12 +302,12 @@ pinned to that release.
 - Setup removes the `agent-profiles-init` task of earlier versions after a
   backup.
 
-Details: [machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md).
+Details: [machine-setup.md](skills/agent-profiles/references/machine-setup.md).
 
 ## Update
 
 ```bash
-npx skills update flyingnobita-agent-profiles -g -y   # refresh the installed skill
+npx skills update agent-profiles -g -y   # refresh the installed skill
 bash "$AP_HELPER" setup --apply                       # redeploy the release and task
 ap doctor                                             # confirm it is current
 ```
@@ -341,7 +336,7 @@ ap rm demo --yes
 ap doctor
 
 # 2. Uninstall the skill. The helper is gone after this step.
-npx skills remove -g -y --skill flyingnobita-agent-profiles
+npx skills remove -g -y --skill agent-profiles
 # or, for a plugin install:
 claude plugin uninstall agent-profiles@flyingnobita-agent-profiles
 codex plugin remove agent-profiles@flyingnobita-agent-profiles
@@ -389,8 +384,8 @@ Exit codes: 64 usage, 65 invalid name or data, 66 not a Git checkout or profile
 missing, 69 dependency or namespace unavailable, 73 unsafe layout, 75 busy,
 77 refused, 78 broken task or deployment; `run` otherwise returns the agent's
 own status. See
-[lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecycle.md) and
-[troubleshooting.md](skills/flyingnobita-agent-profiles/references/troubleshooting.md).
+[lifecycle.md](skills/agent-profiles/references/lifecycle.md) and
+[troubleshooting.md](skills/agent-profiles/references/troubleshooting.md).
 
 ## Compatibility
 
@@ -420,7 +415,7 @@ Linux [final QA summary](docs/evidence/linux-2026-10-29.md) and
 [offline evidence](docs/evidence/linux-2026-10-28.md), and the macOS
 [mechanics run](docs/evidence/macos-2026-10-31.md) and
 [real-agent run](docs/evidence/macos-2026-11-13-real-agent.md); per-agent limits are in
-[compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md).
+[compatibility.md](skills/agent-profiles/references/compatibility.md).
 
 ## Platforms
 
@@ -467,13 +462,13 @@ container with its own credentials and network policy.
 
 | Topic | Reference |
 | --- | --- |
-| Concepts, credentials, FAQ | [questions.md](skills/flyingnobita-agent-profiles/references/questions.md) |
-| Profile init, list, run | [repository-operations.md](skills/flyingnobita-agent-profiles/references/repository-operations.md) |
-| Prerequisites, doctor, `mise ap` task | [machine-setup.md](skills/flyingnobita-agent-profiles/references/machine-setup.md) |
-| Reset, remove, migrate, recover | [lifecycle.md](skills/flyingnobita-agent-profiles/references/lifecycle.md) |
-| Diagnostics and exit codes | [troubleshooting.md](skills/flyingnobita-agent-profiles/references/troubleshooting.md) |
-| Platform and agent matrix | [compatibility.md](skills/flyingnobita-agent-profiles/references/compatibility.md) |
-| Per-agent notes | [Claude Code](skills/flyingnobita-agent-profiles/references/agents/claude-code.md), [Codex](skills/flyingnobita-agent-profiles/references/agents/codex.md), [Antigravity](skills/flyingnobita-agent-profiles/references/agents/antigravity.md), [OpenCode](skills/flyingnobita-agent-profiles/references/agents/opencode.md) |
+| Concepts, credentials, FAQ | [questions.md](skills/agent-profiles/references/questions.md) |
+| Profile init, list, run | [repository-operations.md](skills/agent-profiles/references/repository-operations.md) |
+| Prerequisites, doctor, `mise ap` task | [machine-setup.md](skills/agent-profiles/references/machine-setup.md) |
+| Reset, remove, migrate, recover | [lifecycle.md](skills/agent-profiles/references/lifecycle.md) |
+| Diagnostics and exit codes | [troubleshooting.md](skills/agent-profiles/references/troubleshooting.md) |
+| Platform and agent matrix | [compatibility.md](skills/agent-profiles/references/compatibility.md) |
+| Per-agent notes | [Claude Code](skills/agent-profiles/references/agents/claude-code.md), [Codex](skills/agent-profiles/references/agents/codex.md), [Antigravity](skills/agent-profiles/references/agents/antigravity.md), [OpenCode](skills/agent-profiles/references/agents/opencode.md) |
 
 ## Development
 

@@ -18,7 +18,7 @@ COMMANDS_DIR="$LIB_DIR/commands"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 VERSION_FILE="$SKILL_DIR/VERSION"
 
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/common.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/common.sh
 source "$LIB_DIR/common.sh"
 
 usage() {

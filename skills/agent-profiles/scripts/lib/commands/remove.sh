@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Command: reset - reset an agent profile to an empty initial state
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/procscan.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+# Command: remove - delete an existing agent profile
+# shellcheck source=skills/agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/procscan.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/lifecycle.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"
 source "$LIB_DIR/procscan.sh"
 source "$LIB_DIR/lifecycle.sh"
 
-ap_cmd_reset() {
+ap_cmd_remove() {
   local profile=""
   local profile_specified=0
   local assume_unrelated=""
@@ -43,13 +43,13 @@ ap_cmd_reset() {
         shift
         ;;
       *)
-        ap_die "$EX_USAGE" "unknown option for reset: '$1'"
+        ap_die "$EX_USAGE" "unknown option for remove: '$1'"
         ;;
     esac
   done
 
   if [[ $profile_specified -eq 0 || -z "$profile" ]]; then
-    ap_die "$EX_USAGE" "reset requires --profile NAME"
+    ap_die "$EX_USAGE" "remove requires --profile NAME"
   fi
 
   local repo_root
@@ -86,11 +86,11 @@ ap_cmd_reset() {
   ap_scan_processes "$repo_root" "$profile" "$assume_unrelated"
 
   if [[ $yes_flag -eq 0 ]]; then
-    printf "Reset preview for profile '%s':\n" "$profile"
+    printf "Remove preview for profile '%s':\n" "$profile"
     printf "  Path: %s\n" "$prof_dir"
-    printf "  Consequences: settings, transcripts, credentials, and installed tools will be cleared\n"
+    printf "  Consequences: profile directory and all stored settings, transcripts, credentials, and installed tools will be deleted\n"
     ap_preview_profile_categories "$prof_dir"
-    printf "Pass --yes to proceed with reset.\n"
+    printf "Pass --yes to proceed with remove.\n"
     ap_unlock_profile
     ap_unlock_storage
     return 0
@@ -98,7 +98,7 @@ ap_cmd_reset() {
 
   # 4. Mutating state machine with atomic journal
   ap_ensure_journal_dir "$repo_root"
-  local journal_file="$repo_root/.agent-profiles/.journal/reset-$profile.json"
+  local journal_file="$repo_root/.agent-profiles/.journal/remove-$profile.json"
   ap_lock_journal "$journal_file"
   # The journal is created only by the first atomic write below, so a crash in
   # this window leaves no unparseable journal behind.
@@ -114,19 +114,15 @@ ap_cmd_reset() {
 
   # Record the intended trash path before moving anything so recovery can roll
   # forward when the process dies between the rename and the next checkpoint.
-  ap_record_journal "$journal_file" "reset" "$profile" "planned" "$prof_dir" "$trash_path" "$assume_unrelated"
+  ap_record_journal "$journal_file" "remove" "$profile" "planned" "$prof_dir" "$trash_path" "$assume_unrelated"
 
   mv "$prof_dir" "$trash_path"
 
-  ap_record_journal "$journal_file" "reset" "$profile" "trashed" "$prof_dir" "$trash_path" "$assume_unrelated"
-
-  # Rebuild empty profile
-  ap_init_profile "$repo_root" "$profile"
-  ap_record_journal "$journal_file" "reset" "$profile" "rebuilt" "$prof_dir" "$trash_path" "$assume_unrelated"
+  ap_record_journal "$journal_file" "remove" "$profile" "trashed" "$prof_dir" "$trash_path" "$assume_unrelated"
 
   # Delete trash path without dereferencing symlinks
   rm -rf "$trash_path"
-  ap_record_journal "$journal_file" "reset" "$profile" "trash-deleted" "$prof_dir" "" "$assume_unrelated"
+  ap_record_journal "$journal_file" "remove" "$profile" "trash-deleted" "$prof_dir" "" "$assume_unrelated"
 
   # Done: clear journal and release locks
   ap_unlock_journal
@@ -135,5 +131,5 @@ ap_cmd_reset() {
   ap_unlock_profile
   ap_unlock_storage
 
-  printf "Reset profile '%s' successfully.\n" "$profile"
+  printf "Removed profile '%s' successfully.\n" "$profile"
 }

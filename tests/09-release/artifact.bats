@@ -17,7 +17,7 @@ setup() {
   RELEASE_TOOL="$AP_SUBJECT/tools/release-artifacts"
   NOTES="$AP_SUBJECT/RELEASE_NOTES.md"
   VERSION="$(tr -d '[:space:]' <"$AP_SKILL_DIR/VERSION")"
-  TARBALL_NAME="flyingnobita-agent-profiles-$VERSION.tar.gz"
+  TARBALL_NAME="agent-profiles-$VERSION.tar.gz"
 }
 
 teardown() {
@@ -136,15 +136,27 @@ with tarfile.open(tarball, "r:gz") as archive:
 PY
 }
 
-@test "release: versioned release notes describe the local v0.3.0 scope" {
+@test "release: versioned release notes describe the local v0.4.0 scope" {
   assert_file_exists "$NOTES"
-  run grep -E "^# .*flyingnobita-agent-profiles v$VERSION$" "$NOTES"
+  # The heading names the published skill, so the old prefixed heading cannot
+  # satisfy it.
+  run grep -Fx -- "# agent-profiles v$VERSION" "$NOTES"
   assert_success
+
+  # Existing installs keep the old prefixed skill under its old lock key, so the
+  # notes must tell them to remove that name and add the published one.
+  local migration
+  migration=$(awk '/^# agent-profiles v[0-9]+\.[0-9]+\.[0-9]+$/ { inside = 1; next }
+    /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = 0 }
+    inside' "$NOTES")
+  printf '%s\n' "$migration" | grep -F -- "--skill flyingnobita-agent-profiles"
+  printf '%s\n' "$migration" | grep -F -- "npx skills add flyingnobita/agent-profiles"
+  printf '%s\n' "$migration" | grep -F -- "--skill agent-profiles"
 
   # Only the current scope is asserted. The archived v0.1.0 section truthfully
   # records that macOS was not qualified in that release.
   local scope
-  scope=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
+  scope=$(awk -v title="agent-profiles v$VERSION" '
     /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
     inside { print }
   ' "$NOTES")
@@ -181,11 +193,11 @@ PY
   run bash "$RELEASE_TOOL" "$AP_SUBJECT" --output-dir "$out"
   assert_success
 
-  assert_file_exists "$out/flyingnobita-agent-profiles-$VERSION.tar.gz"
-  assert_file_exists "$out/flyingnobita-agent-profiles-$VERSION.tar.gz.sha256"
+  assert_file_exists "$out/agent-profiles-$VERSION.tar.gz"
+  assert_file_exists "$out/agent-profiles-$VERSION.tar.gz.sha256"
   assert_file_exists "$out/RELEASE_NOTES.md"
 
-  run ap_test_manifest_verify "$out" "$out/flyingnobita-agent-profiles-$VERSION.tar.gz.sha256"
+  run ap_test_manifest_verify "$out" "$out/agent-profiles-$VERSION.tar.gz.sha256"
   assert_success
 
   # Build output must not become tracked content.
@@ -247,8 +259,8 @@ PY
   # it. Before the fix this raised AbsoluteLinkError/
   # LinkOutsideDestinationError from inside extractall and was reported as
   # "artifact could not be extracted".
-  local shipped="$repo/skills/flyingnobita-agent-profiles/scripts/lib/agents/claude.sh"
-  local member="flyingnobita-agent-profiles/scripts/lib/agents/claude.sh"
+  local shipped="$repo/skills/agent-profiles/scripts/lib/agents/claude.sh"
+  local member="agent-profiles/scripts/lib/agents/claude.sh"
   local outside="$TEST_TMPDIR/dist-member-outside"
   rm -f "$shipped"
   ln -s /tmp/questions.md "$shipped"
@@ -298,7 +310,7 @@ PY
   cp -p "$tarball.sha256" "$TEST_TMPDIR/pristine.tar.gz.sha256"
 
   # Stale content: the artifact was built, then one shipped source file changed.
-  local shipped="$repo/skills/flyingnobita-agent-profiles/references/agents/codex.md"
+  local shipped="$repo/skills/agent-profiles/references/agents/codex.md"
   assert_file_exists "$shipped"
   cp -p "$shipped" "$TEST_TMPDIR/codex.md"
   printf '\nStale marker added after the build.\n' >>"$shipped"
@@ -312,13 +324,13 @@ PY
 
   # Missing and extra members are still rejected when the checksum is refreshed,
   # so the entry comparison - not the checksum - covers the source tree.
-  repack_artifact "$tarball" drop "flyingnobita-agent-profiles/references/agents/codex.md"
+  repack_artifact "$tarball" drop "agent-profiles/references/agents/codex.md"
   run bash "$CHECK_RELEASE" "$repo" --artifacts "$out"
   assert_failure
   assert_output_contains "artifact is missing shipped source"
 
   cp -p "$TEST_TMPDIR/pristine.tar.gz" "$tarball"
-  repack_artifact "$tarball" add "flyingnobita-agent-profiles/references/agents/extra.md"
+  repack_artifact "$tarball" add "agent-profiles/references/agents/extra.md"
   run bash "$CHECK_RELEASE" "$repo" --artifacts "$out"
   assert_failure
   assert_output_contains "artifact contains an unexpected member"
@@ -348,7 +360,7 @@ PY
 
   # A shipped symlink is compared by target, not by the file it points at.
   local link_out="$TEST_TMPDIR/dist-link"
-  local link_dir="$repo/skills/flyingnobita-agent-profiles/references/linked"
+  local link_dir="$repo/skills/agent-profiles/references/linked"
   mkdir -p "$link_dir"
   ln -s "../questions.md" "$link_dir/questions.md"
   run bash "$RELEASE_TOOL" "$repo" --output-dir "$link_out"
@@ -425,7 +437,7 @@ SHIM
   local extract="$TEST_TMPDIR/extract"
   mkdir -p "$extract"
   extract_artifact "$first/$TARBALL_NAME" "$extract"
-  local helper="$extract/flyingnobita-agent-profiles/scripts/agent-profiles"
+  local helper="$extract/agent-profiles/scripts/agent-profiles"
   assert_file_exists "$helper"
 
   run bash "$helper" --version
@@ -473,7 +485,7 @@ if checks["bwrap"]["status"] != "not_applicable":
   run bash "$RELEASE_TOOL" "$AP_SUBJECT" --output-dir "$out"
   assert_success
 
-  printf 'x' >>"$out/flyingnobita-agent-profiles-$VERSION.tar.gz"
+  printf 'x' >>"$out/agent-profiles-$VERSION.tar.gz"
   run bash "$CHECK_RELEASE" "$AP_SUBJECT" --artifacts "$out"
   assert_failure
   assert_output_contains "artifact checksum verification failed"

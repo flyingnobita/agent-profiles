@@ -144,7 +144,7 @@ git -C "$REPO" config commit.gpgsign false
 git -C "$REPO" add .gitkeep
 git -C "$REPO" commit -q -m "initial commit"
 
-HELPER="$ROOT_DIR/skills/flyingnobita-agent-profiles/scripts/agent-profiles"
+HELPER="$ROOT_DIR/skills/agent-profiles/scripts/agent-profiles"
 if [[ ! -f "$HELPER" ]]; then
   echo "opencode live: helper not found at $HELPER" >&2
   exit 66
