@@ -11,8 +11,8 @@
 # shellcheck disable=SC2034
 
 AP_LIVE_LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-AP_LIVE_PLATFORM_SH="${AP_LIVE_PLATFORM_SH:-$AP_LIVE_LIB_DIR/../../skills/flyingnobita-agent-profiles/scripts/lib/platform.sh}"
-AP_LIVE_PLATFORM_PY="${AP_LIVE_PLATFORM_PY:-$AP_LIVE_LIB_DIR/../../skills/flyingnobita-agent-profiles/scripts/lib/platform.py}"
+AP_LIVE_PLATFORM_SH="${AP_LIVE_PLATFORM_SH:-$AP_LIVE_LIB_DIR/../../skills/agent-profiles/scripts/lib/platform.sh}"
+AP_LIVE_PLATFORM_PY="${AP_LIVE_PLATFORM_PY:-$AP_LIVE_LIB_DIR/../../skills/agent-profiles/scripts/lib/platform.py}"
 AP_LIVE_PTY_EXEC="${AP_LIVE_PTY_EXEC:-$AP_LIVE_LIB_DIR/pty-exec.py}"
 
 if [[ ! -f "$AP_LIVE_PLATFORM_SH" || ! -f "$AP_LIVE_PLATFORM_PY" ]]; then

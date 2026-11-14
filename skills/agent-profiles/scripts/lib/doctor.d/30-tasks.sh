@@ -2,7 +2,7 @@
 # Doctor section: global mise task deployment and release health (ticket 03)
 # shellcheck disable=SC2034
 
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise-tasks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/mise-tasks.sh
 source "$LIB_DIR/mise-tasks.sh"
 
 ap_doctor_task_marker() {

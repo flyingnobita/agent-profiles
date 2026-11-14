@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Doctor section: Lifecycle and journal diagnostics
 # shellcheck disable=SC2154
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/lifecycle.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/lifecycle.sh"
 source "$LIB_DIR/locks.sh"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Command: run
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/mise.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/mise.sh"

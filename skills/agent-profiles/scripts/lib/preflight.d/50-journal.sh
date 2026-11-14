@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Preflight hook: Stale journal detection and enforcement
 # shellcheck disable=SC2154
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/lifecycle.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/lifecycle.sh
 
 source "$LIB_DIR/locks.sh"
 source "$LIB_DIR/lifecycle.sh"

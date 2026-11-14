@@ -3,7 +3,7 @@
 # tasks without touching unrelated configuration. Linux keeps its
 # package-manager and bubblewrap prerequisites; macOS is detected through
 # sw_vers and only redirects agent configuration by environment.
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/mise-tasks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/mise-tasks.sh
 
 source "$LIB_DIR/mise-tasks.sh"
 

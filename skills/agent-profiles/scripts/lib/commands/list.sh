@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Command: list
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/runtime.sh
-# shellcheck source=skills/flyingnobita-agent-profiles/scripts/lib/locks.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/runtime.sh
+# shellcheck source=skills/agent-profiles/scripts/lib/locks.sh
 
 source "$LIB_DIR/runtime.sh"
 source "$LIB_DIR/locks.sh"

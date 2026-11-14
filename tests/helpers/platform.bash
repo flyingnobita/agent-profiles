@@ -16,7 +16,7 @@
 
 AP_TEST_HELPERS_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -z "${AP_SKILL_DIR:-}" ]]; then
-  AP_SKILL_DIR="$(cd -P "$AP_TEST_HELPERS_DIR/../../skills/flyingnobita-agent-profiles" && pwd -P)"
+  AP_SKILL_DIR="$(cd -P "$AP_TEST_HELPERS_DIR/../../skills/agent-profiles" && pwd -P)"
 fi
 export AP_SKILL_DIR
 

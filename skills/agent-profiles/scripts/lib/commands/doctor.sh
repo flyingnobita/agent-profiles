@@ -117,7 +117,7 @@ print(json.dumps(data, indent=2))
   fi
 
   # Text output
-  printf "flyingnobita-agent-profiles doctor v%s\n\n" "$ver"
+  printf "agent-profiles doctor v%s\n\n" "$ver"
 
   printf "OS:\n"
   printf "  System: %s (%s)\n" "$OS_NAME" "$OS_DISTRO"

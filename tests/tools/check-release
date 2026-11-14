@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release readiness contract for flyingnobita-agent-profiles.
+# Release readiness contract for agent-profiles.
 #
 # Usage: tests/tools/check-release <repo-root> [--artifacts DIR]
 #
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
-SKILL_DIR="$ROOT_DIR/skills/flyingnobita-agent-profiles"
+SKILL_DIR="$ROOT_DIR/skills/agent-profiles"
 README="$ROOT_DIR/README.md"
 COMPAT="$SKILL_DIR/references/compatibility.md"
 EVIDENCE_LINUX="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
@@ -186,7 +186,7 @@ pass "root LICENSE is the bundled MIT license"
 require_file "$README"
 
 for term in \
-  "--skill flyingnobita-agent-profiles" \
+  "--skill agent-profiles" \
   "npx skills add"; do
   require_term "$README" "$term" "the explicit skill selection install command"
 done
@@ -322,12 +322,12 @@ pass "docs/evidence/macos-2026-10-31.md is sanitized and records the unobserved 
 
 # --- 4b. Versioned release notes --------------------------------------------
 require_file "$RELEASE_NOTES"
-grep -qE "^# +.*flyingnobita-agent-profiles v$VERSION$" "$RELEASE_NOTES" \
-  || fail "RELEASE_NOTES.md needs a top-level heading naming flyingnobita-agent-profiles v$VERSION"
+grep -qxE "# agent-profiles v$VERSION" "$RELEASE_NOTES" \
+  || fail "RELEASE_NOTES.md needs a top-level heading naming agent-profiles v$VERSION"
 # The current scope only. The archived v0.1.0 section truthfully records that
 # macOS was not qualified in that release, so the claim is read from the v$VERSION
 # section alone and a reversion to the deferred-platform wording is refused.
-NOTES_SCOPE=$(awk -v title="flyingnobita-agent-profiles v$VERSION" '
+NOTES_SCOPE=$(awk -v title="# agent-profiles v$VERSION" '
   /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
   inside { print }
 ' "$RELEASE_NOTES")
@@ -357,11 +357,11 @@ pass "RELEASE_NOTES.md is versioned and describes the local release scope"
 verify_artifacts() (
   local dir tarball work helper fingerprint
   dir="$(cd "$1" && pwd)"
-  tarball="$dir/flyingnobita-agent-profiles-$VERSION.tar.gz"
+  tarball="$dir/agent-profiles-$VERSION.tar.gz"
 
   require_file "$tarball"
   require_file "$tarball.sha256"
-  python3 "$ROOT_DIR/skills/flyingnobita-agent-profiles/scripts/lib/platform.py" \
+  python3 "$ROOT_DIR/skills/agent-profiles/scripts/lib/platform.py" \
     manifest-verify "$dir" "$dir/$(basename "$tarball").sha256" >/dev/null \
     || fail "artifact checksum verification failed for $(basename "$tarball")"
   pass "artifact checksum verifies: $(basename "$tarball").sha256"
@@ -384,7 +384,7 @@ import sys
 import tarfile
 
 source, tarball = sys.argv[1], sys.argv[2]
-prefix = "flyingnobita-agent-profiles"
+prefix = "agent-profiles"
 # Byte code is local build state, not shipped source (see tools/release-artifacts).
 skipped = ("__pycache__",)
 
@@ -556,11 +556,11 @@ with tarfile.open(tarball, "r:gz") as archive:
 PY
   for required in "SKILL.md" "VERSION" "LICENSE" "scripts/agent-profiles" \
     "references/compatibility.md"; do
-    [[ -f "$work/flyingnobita-agent-profiles/$required" ]] \
-      || fail "artifact is missing flyingnobita-agent-profiles/$required"
+    [[ -f "$work/agent-profiles/$required" ]] \
+      || fail "artifact is missing agent-profiles/$required"
   done
   pass "artifact contains the installable skill bundle and license"
-  helper="$work/flyingnobita-agent-profiles/scripts/agent-profiles"
+  helper="$work/agent-profiles/scripts/agent-profiles"
 
   [[ "$(bash "$helper" --version)" == "$VERSION" ]] \
     || fail "extracted helper does not report VERSION $VERSION"
