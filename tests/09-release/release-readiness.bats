@@ -32,7 +32,9 @@ teardown() {
 
 @test "release: README documents explicit installation, update, removal and maintenance" {
   assert_file_exists "$README"
-  run grep -F -- "--skill flyingnobita-agent-profiles" "$README"
+  run grep -F -- "--skill agent-profiles" "$README"
+  assert_success
+  run grep -F -- "npx skills update agent-profiles" "$README"
   assert_success
   run grep -F -- "npx skills add" "$README"
   assert_success
@@ -195,7 +197,7 @@ teardown() {
   mkdir -p "$repo"
   cp -a "$AP_SUBJECT/." "$repo/"
   rm -rf "$repo/.git" "$repo/dist"
-  local compat_path="$repo/skills/flyingnobita-agent-profiles/references/compatibility.md"
+  local compat_path="$repo/skills/agent-profiles/references/compatibility.md"
 
   # The documented surface is accepted before anything is changed.
   run bash "$CHECK_RELEASE" "$repo"
@@ -252,7 +254,7 @@ PY
 import sys
 
 path, version = sys.argv[1], sys.argv[2]
-title = "# flyingnobita-agent-profiles v%s\n" % version
+title = "# agent-profiles v%s\n" % version
 with open(path) as handle:
     lines = handle.readlines()
 with open(path, "w") as handle:
@@ -279,7 +281,7 @@ PY
   mkdir -p "$repo"
   cp -a "$AP_SUBJECT/." "$repo/"
   rm -rf "$repo/.git" "$repo/dist"
-  local compat_path="$repo/skills/flyingnobita-agent-profiles/references/compatibility.md"
+  local compat_path="$repo/skills/agent-profiles/references/compatibility.md"
 
   run bash "$CHECK_RELEASE" "$repo"
   assert_success
