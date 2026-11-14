@@ -183,6 +183,8 @@ Know the macOS limits before relying on a profile:
   logins there, so expect a profile to see host Keychain logins and not act as a
   separate account for them. Keychain access was not observed in the macOS
   evidence runs.
+- OpenCode is not supported: a profile sees your host skills (see
+  [Agent support](#agent-support)).
 - Intel Macs are untested: `doctor` warns, and `run` and `setup` do not
   refuse, but nothing is validated there.
 
@@ -436,6 +438,23 @@ bubblewrap mount layer, so the two platforms do not give the same enforcement.
 Default Docker containers usually block unprivileged user namespaces. Setup,
 `doctor` and `init` were verified there; running a profile returns the
 namespace refusal (exit 69).
+
+## Agent support
+
+| Agent | Linux x86_64 | macOS arm64 |
+| --- | --- | --- |
+| Claude Code | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ |
+| Antigravity CLI | ✅ | ✅ |
+| OpenCode | ✅ | ❌ |
+
+OpenCode is not supported on macOS: it loads `.claude` and `.agents` skills
+from every directory above the repository, and a profile's `HOME` hides the
+real home from its check. A profile in a repository under your home therefore
+sees your host skills (observed 2026-11-14 with OpenCode 2.2.7 and 2.3.0,
+[#54](https://github.com/flyingnobita/agent-profiles/issues/54)). On Linux the
+bubblewrap mounts put profile storage at those paths, so a profile sees only
+its own skills.
 
 ## Security and shared host resources
 
