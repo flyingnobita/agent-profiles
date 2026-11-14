@@ -480,7 +480,9 @@ mise run ci                   # lint, tests and clean-install checks
 mise run release-artifacts    # release checks and local artifacts in dist/
 ```
 
-Releasing, tagging and deployment are separate, explicit maintainer actions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow, test
+conventions and guidance on AI-assisted changes. Releasing, tagging and
+deployment are separate, explicit maintainer actions.
 Offline live QA is opt-in per agent:
 `AP_EVIDENCE_DIR=<private-dir> bash tests/live/claude.sh` (also `codex.sh`,
 `agy.sh`, `opencode.sh`).
