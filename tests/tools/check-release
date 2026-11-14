@@ -45,8 +45,12 @@ EVIDENCE_LINUX="$ROOT_DIR/docs/evidence/linux-2026-10-28.md"
 EVIDENCE_DARWIN="$ROOT_DIR/docs/evidence/macos-2026-10-31.md"
 RELEASE_NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
-AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
-VERSIONS=("2.1.312" "0.165.0" "1.4.9" "2.2.0")
+AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode" "Pi" "oh-my-pi")
+VERSIONS=("2.1.312" "0.165.0" "1.4.9" "2.2.0" "1.5.2" "18.20.0")
+# Evidence summaries and the current release notes describe the four
+# integrations observed when they were written; Pi and oh-my-pi have their own
+# 2026-11-15 summary and join the release notes at the next release.
+EVIDENCE_AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
 
 fail() {
   echo "check-release: FAIL: $*" >&2
@@ -92,7 +96,7 @@ section_rows() {
   ' "$file"
 }
 
-# Verifies a table section holds exactly four data rows and names each agent.
+# Verifies a table section holds one data row per supported agent and names it.
 check_matrix() {
   local file="$1" heading="$2" rows total data agent
   require_file "$file"
@@ -100,8 +104,8 @@ check_matrix() {
   [[ -n "$rows" ]] || fail "${file#"$ROOT_DIR"/} has no table under '$heading'"
   total=$(printf '%s\n' "$rows" | grep -c '^|')
   data=$((total - 2))
-  [[ "$data" -eq 4 ]] \
-    || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly 4"
+  [[ "$data" -eq ${#AGENTS[@]} ]] \
+    || fail "${file#"$ROOT_DIR"/} '$heading' table has $data data rows; expected exactly ${#AGENTS[@]}"
   for agent in "${AGENTS[@]}"; do
     printf '%s\n' "$rows" | grep -F -- "$agent" >/dev/null \
       || fail "${file#"$ROOT_DIR"/} '$heading' table does not name $agent"
@@ -244,7 +248,7 @@ for version in "${VERSIONS[@]}"; do
   section_rows "$README" "## Compatibility" | grep -F -- "$version" >/dev/null \
     || fail "README.md compatibility matrix does not record tested version $version"
 done
-pass "README.md compatibility matrix is dated and names the four tested integrations"
+pass "README.md compatibility matrix is dated and names the six tested integrations"
 
 PLATFORM_ROWS=$(section_rows "$README" "## Platforms")
 [[ -n "$PLATFORM_ROWS" ]] || fail "README.md has no '## Platforms' table"
@@ -274,7 +278,7 @@ pass "references/compatibility.md is dated, qualifies macOS arm64 and matches th
 # CLI existed on the Darwin host, so those classes stay unobserved rather than
 # borrowed across platforms.
 require_file "$EVIDENCE_LINUX"
-for agent in "${AGENTS[@]}"; do
+for agent in "${EVIDENCE_AGENTS[@]}"; do
   require_term "$EVIDENCE_LINUX" "$agent" "evidence for $agent"
 done
 for class in "Version" "Startup" "Discovery" "Auth" "Sandbox"; do
@@ -286,7 +290,7 @@ require_term "$EVIDENCE_LINUX" "sanitized" "that only sanitized evidence is publ
 pass "docs/evidence/linux-2026-10-28.md is sanitized and separates the evidence classes"
 
 require_file "$EVIDENCE_DARWIN"
-for agent in "${AGENTS[@]}"; do
+for agent in "${EVIDENCE_AGENTS[@]}"; do
   require_term "$EVIDENCE_DARWIN" "$agent" "Darwin evidence for $agent"
 done
 for class in "Profile mechanics" "Configuration redirection" "Diagnostics" \
@@ -348,7 +352,7 @@ fi
 if printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "macOS is not qualified" >/dev/null; then
   fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
 fi
-for agent in "${AGENTS[@]}"; do
+for agent in "${EVIDENCE_AGENTS[@]}"; do
   require_term "$RELEASE_NOTES" "$agent" "the release notes integration list"
 done
 pass "RELEASE_NOTES.md is versioned and describes the local release scope"

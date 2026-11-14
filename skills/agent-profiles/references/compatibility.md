@@ -47,11 +47,20 @@ is not claimed and no bypass is attempted.
 | OpenAI Codex CLI | `codex` | 0.165.0 | `CODEX_HOME` plus `.codex` and `.agents` mounts |
 | Google Antigravity CLI | `agy` | 1.4.9 | `.gemini` and `.agents` mounts plus XDG roots |
 | OpenCode | `opencode` | 2.2.0 | `OPENCODE_CONFIG_DIR` plus XDG roots |
+| Pi | `pi` | 1.5.2 | `.pi` mount plus profile `HOME`; `PI_CODING_AGENT_DIR` cleared |
+| oh-my-pi | `omp` | 18.20.0 | `.omp` mount plus profile `HOME`; `PI_CODING_AGENT_DIR` cleared |
 
-Exactly these four agent CLIs are integrated. Gemini CLI is a different tool and
+Exactly these six agent CLIs are integrated. Gemini CLI is a different tool and
 is not supported; `.gemini` is Antigravity CLI storage. A delivery or
 orchestration harness used to build this release is not a supported agent
 integration.
+
+Pi and oh-my-pi share the name `PI_CODING_AGENT_DIR` for two different agent
+directories (`~/.pi/agent` and `~/.omp/agent`), so profiles do not export it:
+an inherited value is cleared and each CLI keeps its HOME-relative default,
+which the Linux mount or the macOS profile `HOME` redirects. oh-my-pi's native
+`OMP_PROFILE` isolation is not used because its `logs`, `natives` and `run`
+directories stay under the shared `~/.omp`; the mount covers the whole tree.
 
 Version numbers come from the informational version probe and are recorded per
 release. A successful `--version` does not demonstrate startup, discovery,
@@ -59,7 +68,9 @@ authentication or sandbox behavior; those are separate evidence classes. The
 versions in the matrix above come from the Linux run. The 2026-11-13 macOS arm64
 desktop run observed Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI
 1.5.8 and OpenCode 2.2.7 in that order; treat both sets as dated observations,
-not as a supported version range.
+not as a supported version range. Pi 1.5.2 and oh-my-pi 18.20.0 were observed on
+Linux x86_64 on 2026-11-15 (`docs/evidence/linux-2026-11-15-pi-omp.md`), and Pi
+1.5.2 was also observed on a macOS arm64 desktop host on 2026-11-14.
 
 ## Verified Evidence Classes
 
@@ -81,6 +92,14 @@ home. The sanitized results are published in
 | Codex CLI 0.165.0 | ready (sign-in screen offline) | profile, repository and bundled skill roots; parent directory outside the repo excluded | fresh profile reports not logged in; environment key reported by name | enforced: read-only sandbox denies a controlled write (final QA) |
 | Antigravity CLI 1.4.9 | ready (sign-in screen offline, session bus masked) | three `.gemini` skill roots and per-profile plugins; profile `.agents` not read | no profile credential file; environment names only; OS credential service shared | credential-dependent: denial needs a model turn |
 | OpenCode 2.2.0 | ready (TUI composer offline) | profile, repository and bundled skills; private `--standalone` server | profile and environment sources separated by name; no values printed | not claimed: no enforced denial surface; shell command works without a model turn |
+| Pi 1.5.2 | no-credentials exit (not a readiness marker) | `.pi/agent/skills` and `.agents/skills` markers written; reads unobserved without a credentialed turn | fresh profile files and inherited environment name separated; no values printed | not claimed: no enforced denial tested |
+| oh-my-pi 18.20.0 | unauthenticated startup (harness timeout; not a readiness marker) | `.omp/agent/skills` and `.agents/skills` markers written; reads unobserved without a credentialed turn | profile database and inherited environment name separated; database not opened | not claimed: no enforced denial tested |
+
+Pi and oh-my-pi discovery and sandbox classes need an authenticated model turn,
+so the offline QA records them as gaps instead of passes. Their profile
+redirection, host preservation and A/B separation were verified in disposable
+profiles with synthetic host markers, and the pre-change leak was reproduced
+(the CLIs wrote into the host `~/.pi` and `~/.omp` before this integration).
 
 ## Credential-Dependent Gaps
 
@@ -109,6 +128,16 @@ as unverified, not assumed to work.
   without the flag, such as `service`, still manage a background service on
   that port. The shared temporary directory (`/tmp/opencode`) is not
   redirected by a profile.
+- **Pi and oh-my-pi state.** Pi keeps everything under `$HOME/.pi`; oh-my-pi
+  keeps its agent directory and its `logs`, `natives` and `run` helper daemons
+  under `$HOME/.omp`. Both trees are redirected, so helper daemons started
+  inside a profile keep their sockets in profile storage. A daemon started by
+  the host outside a profile belongs to the host, not to a profile.
+- **Skill installation.** The `skills` CLI installs a Pi skill to
+  `~/.agents/skills` with `--agent pi`. oh-my-pi has no separate `skills` CLI
+  entry but reads the same root, as do Codex CLI and Antigravity CLI, so one
+  install serves all of them. Claude Code plugins do not apply to Pi or
+  oh-my-pi.
 - **Host services.** Services started by the host outside a profile namespace
   (`systemd --user`, D-Bus activation) carry no profile marker and cannot be
   attributed to a profile by the process scan.
