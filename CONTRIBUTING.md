@@ -40,12 +40,13 @@ MISE_TRUSTED_CONFIG_PATHS="$PWD" mise install   # exact-pinned tools from mise.t
 | --- | --- |
 | `mise run lint` | ShellCheck, shfmt, markdownlint, package contract |
 | `mise run test` | Full Bats suite, in parallel (`AP_TEST_JOBS=1` runs serially) |
-| `bats tests/<area>/<file>.bats` | One test file, for fast iteration |
+| `mise exec -- bats tests/<area>/<file>.bats` | One test file |
 | `mise run check-install` | Clean install from a disposable copy with `npx skills` |
 | `mise run ci` | All of the above; CI runs it on Linux and macOS |
 
-While iterating, run `mise run lint` and the test files your change touches.
-CI runs the full suite on every pull request.
+Locally, run `mise run lint` and the `.bats` files your change touches. The
+pull request's CI runs the full suite and the install check on Linux and
+macOS, and both must pass before merge.
 
 ## Making a change
 

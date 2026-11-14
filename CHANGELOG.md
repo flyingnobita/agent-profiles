@@ -2,6 +2,8 @@
 
 - Nov-14, 2026 - 02:00 PM +08:00 - Contributor guidelines in `CONTRIBUTING.md`: issue-first scope, setup and checks, Bash 3.2 and test-first conventions, commit and pull request rules, and how to submit AI-assisted changes (author accountability, verified claims, disclosure in the PR, no weakened checks)
 
+- Nov-14, 2026 - 01:49 PM +08:00 - Delivery runs verify locally with lint and targeted Bats files, leaving the full suite and install check to PR CI, so grilling no longer asks about test scope
+
 - Nov-14, 2026 - 12:46 PM +08:00 - The public skill installs as `agent-profiles` in 0.4.0, so existing installs remove `--skill flyingnobita-agent-profiles` and add `agent-profiles`; the XDG release, backup and live-evidence roots keep the old prefix
 
 - Nov-14, 2026 - 06:59 AM +08:00 - On macOS, the OpenCode service-port check no longer risks a spurious "unverified" result from a broken pipe when it confirms `lsof` can see its own process
