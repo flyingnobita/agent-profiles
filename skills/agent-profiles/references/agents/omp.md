@@ -37,19 +37,24 @@ storage isolation. The mount or `HOME` redirect covers the whole tree instead.
 ## macOS arm64 (Darwin)
 
 macOS arm64 is qualified for profile mechanics, configuration redirection and
-diagnostics only. The Darwin contract is covered with a synthetic executable in
-`tests/11-omp/darwin-env.bats`:
+diagnostics only. Observed on a macOS 27.2.1 arm64 desktop host on 2026-11-15
+with oh-my-pi 18.20.0:
 
-- the profile `HOME` puts `$HOME/.omp/agent`, `logs`, `natives` and the
-  `$HOME/.agents` skill root inside the profile;
-- an inherited `PI_CODING_AGENT_DIR` is cleared;
+- a disposable profile run created `.omp/agent/agent.db`, `models.db`,
+  `skill-descriptions.db` and `sessions/` under the profile, and the host
+  `~/.omp/agent/sessions` stayed free of that checkout;
+- the profile `HOME` covers `$HOME/.omp` and the `$HOME/.agents` skill root;
 - no bubblewrap and no mount table are needed.
+
+The Darwin contract is also covered with a synthetic executable in
+`tests/11-omp/darwin-env.bats`, which adds the inherited
+`PI_CODING_AGENT_DIR` clearing check.
 
 Observed limits:
 
 - A build that resolves the account home through `getpwuid` instead of `HOME`
-  would see host paths. That was not observed with `omp` 18.20.0 on Linux; the
-  macOS run of a real `omp` profile was not recorded for this release.
+  would see host paths. That was not observed with `omp` 18.20.0 on Linux or
+  macOS.
 - Network access is not blocked on Darwin.
 - The macOS Keychain is shared with the host; whether oh-my-pi uses it for any
   credential class was not inspected.
@@ -123,10 +128,11 @@ arbitrary host access. Approval modes control tool use, not host visibility.
 
 ## Versions and Onboarding
 
-Tested version: oh-my-pi 18.20.0 (`omp/18.20.0`) on Linux x86_64, 2026-11-15, in
-disposable profiles (`tests/live/omp.sh`). The macOS arm64 observation was the
-installed 18.20.0 binary; a real macOS profile run was not recorded for this
-release. These are dated observations, not a supported version range.
+Tested version: oh-my-pi 18.20.0 (`omp/18.20.0`) on Linux x86_64 and macOS
+27.2.1 arm64, both on 2026-11-15, in disposable profiles (`tests/live/omp.sh`
+covers Linux; the macOS run is in
+`docs/evidence/macos-2026-11-15-pi-omp.md`). These are dated observations, not a
+supported version range.
 
 Onboarding is interactive (`omp` then `/login`). An unauthenticated
 non-interactive run waits for a model turn and is not a readiness marker; it

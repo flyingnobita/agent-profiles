@@ -36,11 +36,14 @@ directory is shared with the repository by design.
 ## macOS arm64 (Darwin)
 
 macOS arm64 is qualified for profile mechanics, configuration redirection and
-diagnostics only. Observed on a macOS arm64 desktop host on 2026-11-14 with Pi
-1.5.2 (`tests/10-pi/darwin-env.bats`, synthetic executable):
+diagnostics only. Observed on macOS arm64 hosts with Pi 1.5.2:
 
-- a profile run wrote `.pi/agent/settings.json`, `auth.json`, `trust.json`,
-  `models-store.json` and `sessions/` under the profile, not the host `~/.pi`;
+- 2026-11-14: a profile run wrote `.pi/agent/settings.json`, `auth.json`,
+  `trust.json`, `models-store.json` and `sessions/` under the profile, not the
+  host `~/.pi`;
+- 2026-11-15: a disposable profile run on macOS 27.2.1 created
+  `.pi/agent/auth.json`, `models-store.json` and a session directory inside the
+  profile, and no session for that checkout appeared under the host `~/.pi`;
 - the profile `HOME` covers the `$HOME/.agents` skill root;
 - the platform adapter needs no bubblewrap and no mount table.
 
@@ -115,9 +118,9 @@ tested; Linux bubblewrap mounts redirect known paths, not arbitrary host access.
 ## Versions and Onboarding
 
 Tested version: Pi 1.5.2. The Linux observation was made on 2026-11-15 in
-disposable profiles on x86_64 (`tests/live/pi.sh`); the macOS arm64 observation
-was made on 2026-11-14. These are dated observations, not a supported version
-range.
+disposable profiles on x86_64 (`tests/live/pi.sh`); macOS arm64 profile runs
+were observed on 2026-11-14 and again on 2026-11-15 (macOS 27.2.1). These are
+dated observations, not a supported version range.
 
 Onboarding is interactive (`pi` then `/login`, or `pi auth login`). An
 unauthenticated non-interactive run exits with "No API key found for the

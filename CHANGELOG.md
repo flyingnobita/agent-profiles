@@ -1,5 +1,7 @@
 # Changelog
 
+- Nov-15, 2026 - 01:48 PM +08:00 - Disposable macOS 27.2.1 profiles kept Pi 1.5.2 and oh-my-pi 18.20.0 state (`.pi/agent`, `.omp/agent`) inside the profile with no host session leak, closing the macOS profile-run gap recorded for 0.5.0
+
 - Nov-15, 2026 - 09:46 AM +08:00 - agent-profiles 0.5.0 adds Pi and oh-my-pi support, bumps the skill and plugin manifests to 0.5.0, and publishes the first tagged GitHub Release with the reproducible skill tarball, its SHA-256 checksum and release notes
 
 - Nov-15, 2026 - 01:37 AM +08:00 - The README shows a zsh hook that leaves an `ap NAME` profile shell when `cd` moves outside its checkout

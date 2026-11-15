@@ -69,8 +69,10 @@ versions in the matrix above come from the Linux run. The 2026-11-13 macOS arm64
 desktop run observed Claude Code 2.1.323, Codex CLI 0.168.0, Antigravity CLI
 1.5.8 and OpenCode 2.2.7 in that order; treat both sets as dated observations,
 not as a supported version range. Pi 1.5.2 and oh-my-pi 18.20.0 were observed on
-Linux x86_64 on 2026-11-15 (`docs/evidence/linux-2026-11-15-pi-omp.md`), and Pi
-1.5.2 was also observed on a macOS arm64 desktop host on 2026-11-14.
+Linux x86_64 on 2026-11-15 (`docs/evidence/linux-2026-11-15-pi-omp.md`). Pi 1.5.2
+was observed on a macOS arm64 desktop host on 2026-11-14, and both CLIs were
+observed in disposable macOS 27.2.1 profiles on 2026-11-15
+(`docs/evidence/macos-2026-11-15-pi-omp.md`).
 
 ## Verified Evidence Classes
 

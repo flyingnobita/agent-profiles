@@ -50,8 +50,9 @@ evidence of stock macOS bash 3.2 or of real CLI behavior.
 
 A macOS arm64 desktop host independently observed Pi 1.5.2 writing
 `.pi/agent/{settings.json,auth.json,trust.json,models-store.json,sessions/}`
-under the profile `HOME` on 2026-11-14 (recorded on issue #34). oh-my-pi was
-installed there but not run inside a profile for this release.
+under the profile `HOME` on 2026-11-14 (recorded on issue #34). Both CLIs were
+later observed in disposable macOS 27.2.1 profiles on 2026-11-15; see
+[macos-2026-11-15-pi-omp.md](macos-2026-11-15-pi-omp.md).
 
 ## Gaps
 
