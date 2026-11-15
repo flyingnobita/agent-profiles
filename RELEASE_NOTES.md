@@ -1,4 +1,46 @@
-# agent-profiles v0.4.0
+# agent-profiles v0.5.0
+
+Pi (`pi` 1.5.2) and oh-my-pi (`omp` 18.20.0) join the supported integrations.
+A profile now redirects their state on both platforms: Linux mounts `.pi` and
+`.omp` into profile storage, while macOS arm64 redirects them through the
+profile `HOME`. Both CLIs read `PI_CODING_AGENT_DIR` for different directories,
+so a profile clears an inherited value instead of exporting one; each CLI then
+uses its HOME-relative default inside the profile. A profile run no longer reads
+or writes the host `~/.pi` or `~/.omp`.
+
+`ap doctor --agent pi|omp --profile NAME` reports the profile state, artifact
+presence and credential sources by path or environment-variable name, never by
+value. The compatibility matrix, the README agent support table and the
+per-agent references record the tested versions and the gaps.
+
+Install or update:
+
+```bash
+npx skills add flyingnobita/agent-profiles \
+  --skill agent-profiles --copy -g -y \
+  --agent claude-code codex antigravity-cli opencode pi
+```
+
+oh-my-pi has no separate `skills` CLI entry; it reads the same
+`~/.agents/skills` root as Pi, Codex CLI and Antigravity CLI. Existing 0.4.0
+installs update in place; pre-0.4.0 installs use the migration in the 0.4.0
+notes. Re-run `setup --apply` after updating so the deployed release and the
+`mise ap` task point at the new skill.
+
+Six integrations are supported: Claude Code, OpenAI Codex CLI, Google
+Antigravity CLI, OpenCode, Pi and oh-my-pi. MIT licensed. Linux and macOS arm64
+remain supported. On Linux a profile is redirected with a bubblewrap mount
+layer. macOS arm64 has no bubblewrap prerequisite: nothing is mounted, and
+configuration is redirected through the agents' own variables and a profile
+`HOME`, so the macOS layer is the weaker of the two.
+Neither platform is a security sandbox for untrusted code.
+Credential-dependent model behavior remains a credential-dependent gap.
+
+This version is published as a tagged GitHub Release with the skill tarball,
+its SHA-256 checksum and these notes. The tarball is built reproducibly from the
+release commit by `mise run release-artifacts`; no npm package is published.
+
+## Earlier release: agent-profiles v0.4.0
 
 The skill is published as `agent-profiles`, without the `flyingnobita-` prefix.
 The `skills` installer names an installed skill after its directory, so the

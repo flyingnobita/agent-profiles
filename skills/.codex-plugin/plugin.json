@@ -1,7 +1,7 @@
 {
   "name": "agent-profiles",
-  "version": "0.4.0",
-  "description": "Named agent profiles: separate logins, settings, skills and tools for Claude Code, Codex CLI, Antigravity CLI and OpenCode, per Git checkout.",
+  "version": "0.5.0",
+  "description": "Named agent profiles: separate logins, settings, skills and tools for Claude Code, Codex CLI, Antigravity CLI, OpenCode, Pi and oh-my-pi, per Git checkout.",
   "author": {
     "name": "flyingnobita"
   },
@@ -14,7 +14,9 @@
     "claude-code",
     "codex",
     "antigravity",
-    "opencode"
+    "opencode",
+    "pi",
+    "oh-my-pi"
   ],
   "skills": "./agent-profiles"
 }
