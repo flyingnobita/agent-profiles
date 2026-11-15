@@ -47,9 +47,9 @@ RELEASE_NOTES="$ROOT_DIR/RELEASE_NOTES.md"
 
 AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode" "Pi" "oh-my-pi")
 VERSIONS=("2.1.312" "0.165.0" "1.4.9" "2.2.0" "1.5.2" "18.20.0")
-# Evidence summaries and the current release notes describe the four
-# integrations observed when they were written; Pi and oh-my-pi have their own
-# 2026-11-15 summary and join the release notes at the next release.
+# The shipped evidence summaries describe the four integrations observed when
+# they were written; Pi and oh-my-pi have their own 2026-11-15 summary. Release
+# notes from 0.5.0 on list every supported integration.
 EVIDENCE_AGENTS=("Claude Code" "Codex CLI" "Antigravity CLI" "OpenCode")
 
 fail() {
@@ -338,7 +338,7 @@ NOTES_SCOPE=$(awk -v title="# agent-profiles v$VERSION" '
 [[ -n "$NOTES_SCOPE" ]] \
   || fail "RELEASE_NOTES.md has no v$VERSION scope section"
 for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
-  "no bubblewrap prerequisite" "credential-dependent" "not published"; do
+  "no bubblewrap prerequisite" "credential-dependent" "GitHub Release"; do
   printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "$term" >/dev/null \
     || fail "RELEASE_NOTES.md v$VERSION scope does not state: $term"
 done
@@ -352,10 +352,10 @@ fi
 if printf '%s\n' "$NOTES_SCOPE" | grep -iF -- "macOS is not qualified" >/dev/null; then
   fail "RELEASE_NOTES.md v$VERSION scope still claims macOS is not qualified"
 fi
-for agent in "${EVIDENCE_AGENTS[@]}"; do
+for agent in "${AGENTS[@]}"; do
   require_term "$RELEASE_NOTES" "$agent" "the release notes integration list"
 done
-pass "RELEASE_NOTES.md is versioned and describes the local release scope"
+pass "RELEASE_NOTES.md is versioned and describes the release scope"
 
 # --- 4c. Versioned artifacts with a disposable extract and run --------------
 verify_artifacts() (

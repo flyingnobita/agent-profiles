@@ -4,7 +4,7 @@ description: 'Named agent profiles for Linux and macOS arm64 for Claude Code, Co
 license: MIT
 compatibility: Linux (bash, git, python3, mise, bubblewrap) and macOS arm64 (stock bash 3.2, git, python3, mise) with configuration redirection only
 metadata:
-  version: 0.4.0
+  version: 0.5.0
 ---
 
 # Agent Profiles

@@ -52,10 +52,10 @@ copy_package() {
   run grep -x "name: agent-profiles" "$AP_SKILL_DIR/SKILL.md"
   assert_success
 
-  run grep -x "0.4.0" "$AP_SKILL_DIR/VERSION"
+  run grep -x "0.5.0" "$AP_SKILL_DIR/VERSION"
   assert_success
 
-  run grep -x "  version: 0.4.0" "$AP_SKILL_DIR/SKILL.md"
+  run grep -x "  version: 0.5.0" "$AP_SKILL_DIR/SKILL.md"
   assert_success
 
   run grep "^license: MIT" "$AP_SKILL_DIR/SKILL.md"
@@ -147,7 +147,7 @@ PY
   local manifest
   copy_package "$repo"
 
-  # Each manifest names the skill directory itself, and 0.4.0 publishes that
+  # Each manifest names the skill directory itself, and 0.5.0 publishes that
   # directory without the prefix, so the exact path is asserted here instead of
   # being inferred from the package check.
   for manifest in skills/.claude-plugin/plugin.json skills/.codex-plugin/plugin.json; do

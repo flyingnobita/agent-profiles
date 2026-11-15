@@ -136,25 +136,15 @@ with tarfile.open(tarball, "r:gz") as archive:
 PY
 }
 
-@test "release: versioned release notes describe the local v0.4.0 scope" {
+@test "release: versioned release notes describe the v0.5.0 scope" {
   assert_file_exists "$NOTES"
   # The heading names the published skill, so the old prefixed heading cannot
   # satisfy it.
   run grep -Fx -- "# agent-profiles v$VERSION" "$NOTES"
   assert_success
 
-  # Existing installs keep the old prefixed skill under its old lock key, so the
-  # notes must tell them to remove that name and add the published one.
-  local migration
-  migration=$(awk '/^# agent-profiles v[0-9]+\.[0-9]+\.[0-9]+$/ { inside = 1; next }
-    /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = 0 }
-    inside' "$NOTES")
-  printf '%s\n' "$migration" | grep -F -- "--skill flyingnobita-agent-profiles"
-  printf '%s\n' "$migration" | grep -F -- "npx skills add flyingnobita/agent-profiles"
-  printf '%s\n' "$migration" | grep -F -- "--skill agent-profiles"
-
-  # Only the current scope is asserted. The archived v0.1.0 section truthfully
-  # records that macOS was not qualified in that release.
+  # Only the current scope is asserted. The archived sections truthfully record
+  # the state of their own releases.
   local scope
   scope=$(awk -v title="agent-profiles v$VERSION" '
     /^#+ .*v[0-9]+\.[0-9]+\.[0-9]+/ { inside = index($0, title) > 0 }
@@ -163,7 +153,8 @@ PY
   [[ -n "$scope" ]]
 
   for term in "MIT" "Linux" "macOS arm64" "nothing is mounted" "weaker" \
-    "no bubblewrap prerequisite" "credential-dependent" "not published"; do
+    "no bubblewrap prerequisite" "credential-dependent" "GitHub Release" \
+    "Pi" "oh-my-pi"; do
     printf '%s\n' "$scope" | grep -qiF -- "$term"
   done
 
