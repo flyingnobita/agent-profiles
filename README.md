@@ -429,8 +429,8 @@ integrations:
 | OpenAI Codex CLI | `codex` | 0.165.0 | 0.168.0 | `CODEX_HOME`, `.codex`/`.agents` mounts |
 | Google Antigravity CLI | `agy` | 1.4.9 | 1.5.8 | `.gemini`/`.agents` mounts, XDG roots |
 | OpenCode | `opencode` | 2.2.0 | 2.2.7 | `OPENCODE_CONFIG_DIR`, XDG roots; private `--standalone` server |
-| Pi | `pi` | 1.5.2 | 1.5.2 (config only, 2026-11-14) | `.pi` mount; inherited `PI_CODING_AGENT_DIR` cleared |
-| oh-my-pi | `omp` | 18.20.0 | 18.20.0 (installed; not run in a profile) | `.omp` mount; inherited `PI_CODING_AGENT_DIR` cleared |
+| Pi | `pi` | 1.5.2 | 1.5.2 (profile run 2026-11-15) | `.pi` mount; inherited `PI_CODING_AGENT_DIR` cleared |
+| oh-my-pi | `omp` | 18.20.0 | 18.20.0 (profile run 2026-11-15) | `.omp` mount; inherited `PI_CODING_AGENT_DIR` cleared |
 
 Versions are dated observations, not a supported range. Pi and oh-my-pi both
 read `PI_CODING_AGENT_DIR` for different directories, so profiles clear it and
@@ -491,10 +491,9 @@ bubblewrap mounts put profile storage at those paths, so a profile sees only
 its own skills.
 
 Pi and oh-my-pi keep their user state in `~/.pi` and `~/.omp` and read the
-shared `~/.agents/skills` root. Pi 1.5.2 was observed writing under a profile
-`HOME` on macOS; no real macOS profile run of oh-my-pi was recorded, so its row
-rests on the tested environment contract (profile `HOME`, no mounts) rather
-than on an observed run.
+shared `~/.agents/skills` root. Both were observed writing under a profile
+`HOME` on a macOS arm64 host on 2026-11-15 (Pi 1.5.2, oh-my-pi 18.20.0), with
+no session for the test checkout left in the host state.
 
 ## Security and shared host resources
 
